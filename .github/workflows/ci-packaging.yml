@@ -1,0 +1,50 @@
+name: CI (packaging)
+
+# Paths-filtered PR lane for packaging/ — runs in a bookworm container (the .deb build
+# environment). The `push:` trigger carries a positive `branches:` filter alongside
+# `paths:` so a PR-branch push does not double-fire (CI/CD standard — trigger hygiene).
+on:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - ".github/workflows/ci-packaging.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packaging/**"
+      - ".github/workflows/ci-packaging.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packaging:
+    name: Packaging contract (bookworm)
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      # git is needed by actions/checkout; devscripts/dpkg-dev provide dch +
+      # dpkg-parsechangelog for the version-injection path; ccache is the C-build cache
+      # the packaging wave will use.
+      - name: Install build prerequisites
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git ca-certificates devscripts dpkg-dev ccache
+
+      - uses: actions/checkout@v7
+
+      - name: Cache ccache (forward-looking for the packaging wave's C builds)
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-bookworm-${{ hashFiles('packaging/**') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-bookworm-
+
+      - name: Run packaging contract lane
+        run: bash packaging/ci/contract.sh

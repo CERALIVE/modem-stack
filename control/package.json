@@ -1,0 +1,26 @@
+{
+	"name": "@ceralive/modem-control",
+	"version": "0.1.0",
+	"type": "module",
+	"description": "Cellular modem control for CeraLive — ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, USB composition-mode model, data-usage sampler.",
+	"license": "AGPL-3.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/CERALIVE/modem-stack.git",
+		"directory": "control"
+	},
+	"publishConfig": {
+		"registry": "https://registry.npmjs.org/",
+		"access": "public"
+	},
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"files": [
+		"src"
+	],
+	"scripts": {
+		"test": "bun test",
+		"typecheck": "tsc --noEmit"
+	}
+}

@@ -1,0 +1,19 @@
+version: 2
+# Weekly, grouped, no auto-merge — per the CeraLive CI/CD standard.
+# github-actions (all workflows) + npm (the Bun workspace at the repo root).
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm:
+        patterns: ["*"]

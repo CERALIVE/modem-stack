@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Local QA evidence (agent-generated, never committed)
+test-results/
+
+# Local orchestration scratch dir (workspace-local, never committed)
+.omo/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store

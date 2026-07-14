@@ -1,0 +1,25 @@
+{
+	"name": "modem-stack",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Cellular modem control for CeraLive — @ceralive/modem-control library, bench CLI, and ModemManager-stack .deb packaging (Phase A, standalone).",
+	"license": "AGPL-3.0",
+	"packageManager": "bun@1.3.14",
+	"workspaces": [
+		"control",
+		"cli"
+	],
+	"scripts": {
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.3",
+		"@ceralive/biome-config": "2026.6.2",
+		"@types/bun": "1.3.14",
+		"typescript": "^5"
+	}
+}
