@@ -24,6 +24,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@httptoolkit/dbus-native": "0.1.5"
+		"@httptoolkit/dbus-native": "0.1.5",
+		"zod": "4.4.3"
 	}
 }
