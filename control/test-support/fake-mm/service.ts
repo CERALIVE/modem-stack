@@ -31,9 +31,16 @@ import {
 	simObject,
 	simPath,
 } from './object-model';
+import { makePreviousEpoch, type PreviousEpoch } from './previous-epoch';
 import { emitInterfacesAdded, emitInterfacesRemoved, emitPropertiesChanged } from './signals';
 
 const TRIPWIRE_ERROR = 'tv.ceralive.FakeModemManager.Error.BearerTripwire';
+
+// DBus name-request flags. A current owner claims with ALLOW_REPLACEMENT so a fresh
+// epoch can take the name over WITHOUT the old connection dropping — the state a
+// `restartRetainingPrevious()` needs to emit a genuine old-epoch straggler signal.
+const NAME_FLAG_ALLOW_REPLACEMENT = 0x1;
+const NAME_FLAG_REPLACE_EXISTING = 0x2;
 
 export interface FakeModemManagerOptions extends BusAddress {
 	readonly shape?: MmShape;
@@ -72,7 +79,7 @@ export class FakeModemManager {
 		}
 		fake.#registerAll();
 		// Claiming the name completes only after Hello, so `uniqueName` is set afterwards.
-		await session.requestName(BUS_NAME);
+		await session.requestName(BUS_NAME, NAME_FLAG_ALLOW_REPLACEMENT);
 		return fake;
 	}
 
@@ -159,7 +166,7 @@ export class FakeModemManager {
 
 	/** Re-claim the name on the SAME connection — `NameOwnerChanged` ("" → owner). */
 	async reclaimName(): Promise<void> {
-		await this.#session.requestName(BUS_NAME);
+		await this.#session.requestName(BUS_NAME, NAME_FLAG_ALLOW_REPLACEMENT);
 	}
 
 	/** Restart under a FRESH connection (new unique owner = new epoch), re-serving the model. */
@@ -167,8 +174,25 @@ export class FakeModemManager {
 		const previous = this.#session;
 		this.#session = await BusSession.connect(this.#address);
 		this.#registerAll();
-		await this.#session.requestName(BUS_NAME);
+		await this.#session.requestName(BUS_NAME, NAME_FLAG_ALLOW_REPLACEMENT);
 		await previous.disconnect();
+	}
+
+	/**
+	 * Restart to a NEW epoch that REPLACES the old owner while KEEPING the previous
+	 * connection alive. The new connection takes the name via REPLACE_EXISTING (the old
+	 * claim allowed replacement), so `NameOwnerChanged` (old → new) fires with both
+	 * connections up. The returned handle can emit stale old-epoch signals.
+	 */
+	async restartRetainingPrevious(): Promise<PreviousEpoch> {
+		const handle = makePreviousEpoch(this.#session, new Map(this.#specs), this.#shape);
+		this.#session = await BusSession.connect(this.#address);
+		this.#registerAll();
+		await this.#session.requestName(
+			BUS_NAME,
+			NAME_FLAG_ALLOW_REPLACEMENT | NAME_FLAG_REPLACE_EXISTING,
+		);
+		return handle;
 	}
 
 	async stop(): Promise<void> {

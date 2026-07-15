@@ -98,8 +98,8 @@ export class BusSession {
 		return this.#bus.name;
 	}
 
-	async requestName(name: string): Promise<void> {
-		await this.#bus.requestName(name, 0);
+	async requestName(name: string, flags = 0): Promise<void> {
+		await this.#bus.requestName(name, flags);
 	}
 
 	async releaseName(name: string): Promise<void> {
