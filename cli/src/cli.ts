@@ -8,6 +8,7 @@
 import { parseArgs } from 'node:util';
 import { MM_USB_MODES, type MmUsbMode } from '@ceralive/modem-control';
 import { runApply } from './commands/apply';
+import { type CertifyArgs, certifyDepsFromContext, runCertify } from './commands/certify';
 import { runProbe } from './commands/probe';
 import { runSetUsbMode, type UsbModeArgs } from './commands/set-usb-mode';
 import { runUnlock } from './commands/unlock';
@@ -27,6 +28,7 @@ Commands:
   watch                          Live event stream of observation changes
   apply --policy <file>          Reconcile a desired-state policy (JSON/YAML); prints receipts
   set-usb-mode <slot> <target> --confirm   Certified USB-mode switch (refuses without --confirm)
+  certify <slot>                 Capture a redacted, schema-validated certification bundle
   usage                          Print the data-usage sampler snapshot
   unlock-pin [slot]              Unlock a SIM PIN (redacted prompt)
   unlock-puk [slot]              Unblock a SIM PUK (redacted prompts)
@@ -38,7 +40,10 @@ Global options:
 Command options:
   --policy <file>                (apply) desired-state file (.json / .yaml / .yml)
   --confirm                      (set-usb-mode) maps to the transaction confirm gate
-  --duration <ms> | --events <n> (watch) exit bound; default runs until Ctrl-C`;
+  --duration <ms> | --events <n> (watch) exit bound; default runs until Ctrl-C
+  --transition <mode>            (certify) capture transition evidence into <mode> (qmi/mbim/ecm-ncm)
+  --output <file>                (certify) write the bundle here (default: stdout)
+  --synthetic                    (certify) mark the bundle a synthetic sample (never for real captures)`;
 
 /** Run one CLI invocation. Returns a process exit code. */
 export async function runCli(argv: readonly string[], io: CliIo): Promise<number> {
@@ -52,6 +57,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 			confirm: { type: 'boolean', default: false },
 			duration: { type: 'string' },
 			events: { type: 'string' },
+			transition: { type: 'string' },
+			output: { type: 'string' },
+			synthetic: { type: 'boolean', default: false },
+			signals: { type: 'string' },
+			window: { type: 'string' },
 			help: { type: 'boolean', default: false },
 		},
 	});
@@ -99,6 +109,30 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 			const args: UsbModeArgs = { slot, target, confirm: values.confirm, maintenance: true };
 			return withStack(global, io, (ctx) =>
 				runSetUsbMode(io, buildRequestResolver(ctx), buildUsbModeTransition(ctx), args),
+			);
+		}
+		case 'certify': {
+			const slot = positionals[1];
+			if (slot === undefined) {
+				io.err('certify: usage: certify <slot> [--transition <mode>] [--output <file>]');
+				return 2;
+			}
+			if (values.transition !== undefined && !isMmUsbMode(values.transition)) {
+				io.err(
+					`certify: invalid --transition '${values.transition}' (expected ${MM_USB_MODES.join(' | ')})`,
+				);
+				return 2;
+			}
+			const args: CertifyArgs = {
+				slot,
+				synthetic: values.synthetic,
+				...(values.transition !== undefined ? { transition: values.transition as MmUsbMode } : {}),
+				...(values.output !== undefined ? { output: values.output } : {}),
+				...(values.signals !== undefined ? { maxSignals: Number(values.signals) } : {}),
+				...(values.window !== undefined ? { windowMs: Number(values.window) } : {}),
+			};
+			return withStack(global, io, (ctx) =>
+				runCertify(ctx, io, args, certifyDepsFromContext(ctx, args)),
 			);
 		}
 		case 'usage':

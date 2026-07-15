@@ -2,8 +2,7 @@
 
 The iteration surface for the CeraLive modem stack. It drives the
 [`@ceralive/modem-control`](../control/) library against real modems on a bench device
-to mature the package and (with `certify`, a later task) capture per-SKU certification
-bundles.
+to mature the package and (with `certify`) capture per-SKU certification bundles.
 
 ## Commands
 
@@ -13,6 +12,7 @@ bundles.
 | `watch` | Live event stream. Prints `+ ADDED` / `~ CHANGED` / `- REMOVED` per change and `! SOURCE-UNAVAILABLE` on a bus drop. A bus drop / MM restart marks a modem source-unavailable with its row **retained** — never a removal (A3.1 epoch authority). `--duration <ms>` / `--events <n>` bound the run; otherwise it runs until Ctrl-C. |
 | `apply --policy <file>` | Reads a JSON/YAML desired-state policy, derives the modem's durable binding key (refusing an ambiguous identity), runs the reconcile planner, applies the ops, and prints one receipt per policy dimension. |
 | `set-usb-mode <slot> <target> --confirm` | Runs a certified USB-mode transition. **Omitting `--confirm` refuses the transition with zero side effects.** `<target>` is one of `qmi` / `mbim` / `ecm-ncm`. |
+| `certify <slot>` | Captures a redacted, schema-validated certification bundle: `lsusb -v`, `usb-devices`, the slot's udev properties, an `mmcli -K` dump, a redacted `GetManagedObjects`, and a bounded signal window. `--transition <mode>` adds transition evidence (before/after descriptors, the executed AT command, and the port-drop / re-enumeration timeline) shaped to drop straight into an A4.2 catalog entry. Prints `CERTIFY OK: sha256=<hash> …` — the sha256 is the value a reviewer records in a catalog entry's `evidenceBundleSha256`. Real captures are marked `synthetic: false`; ICCID / IMSI / EID are masked; a malformed capture exits non-zero with a clear error rather than writing a broken bundle. `--output <file>` writes the bundle JSON (default stdout). |
 | `usage` | Prints the data-usage sampler snapshot (per-slot cumulative-cycle bytes; advisory threshold). |
 | `unlock-pin [slot]` / `unlock-puk [slot]` | Prompts for the PIN / PUK with **terminal echo disabled** (the secret is never printed back) and submits it. |
 
