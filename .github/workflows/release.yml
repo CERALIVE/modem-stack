@@ -128,51 +128,56 @@ jobs:
         run: npm publish --access public
 
   build-deb:
-    name: Build .deb set (specified version injection)
+    name: Build .deb set + contract + daemon smoke (real artifacts)
     needs: [tag-guard, test]
+    # Runs on the runner host (NOT inside a container): build-bookworm.sh and the contract /
+    # smoke scripts each launch their OWN debian:bookworm containers, so the job needs the
+    # host docker daemon, not to be a container itself.
     runs-on: ubuntu-latest
-    container: debian:bookworm
     steps:
-      # git for actions/checkout; devscripts/dpkg-dev provide dch + dpkg-parsechangelog.
-      - name: Install build prerequisites
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            git ca-certificates devscripts dpkg-dev ccache
-
       - uses: actions/checkout@v7
 
-      # Strip the leading `v` and inject <upstream>-<rev>~ceraliveX.Y.Z as the top
-      # debian/changelog entry of each of the 4 sources via
-      #   dch --force-bad-version --newversion "<version>" "CeraLive rebuild"
-      # (--force-bad-version is REQUIRED — the tilde version is LOWER than the pinned
-      # <upstream>-1 changelog top; plain `dch --newversion` refuses it, per dch(1)).
-      # Until the packaging wave lands real changelogs this documents the exact per-source
-      # invocation and exits 0.
-      - name: Inject encoded .deb version into each source changelog
+      # arm64 .debs are built under full-system QEMU (never cross-compiled); register binfmt.
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      # Real rebuilds. RELEASE_VERSION injects <upstream>-<rev>~ceraliveX.Y.Z into a COPY of
+      # each source's debian/changelog inside the container (the committed tree is never
+      # mutated), builds in bootstrap order on native amd64 + QEMU arm64, and asserts the
+      # 9-package runtime closure per arch. --force-bad-version is applied by inject-deb-version.
+      - name: Build the MM 1.24 stack (.deb) — amd64 + arm64
         env:
-          DEBFULLNAME: CeraLive CI
-          DEBEMAIL: ci@ceralive.tv
-        run: bash packaging/ci/inject-deb-version.sh "${{ github.event.inputs.tag }}"
-
-      - name: Assemble release manifest (tag -> deb versions)
+          RELEASE_VERSION: ${{ github.event.inputs.tag }}
         run: |
-          mkdir -p dist
-          {
-            echo "tag: ${{ github.event.inputs.tag }}"
-            echo "version: ${{ needs.tag-guard.outputs.version }}"
-            echo "deb_version_suffix: ~ceralive${{ needs.tag-guard.outputs.version }}"
-            echo "sources: [ModemManager, libmbim, libqmi, libqrtr-glib]"
-          } > dist/release-manifest.txt
-          cat dist/release-manifest.txt
+          packaging/ci/build-bookworm.sh amd64
+          packaging/ci/build-bookworm.sh arm64
 
-      # `warn` (not `error`): no real .deb exists until the packaging wave lands recipes;
-      # the manifest still uploads so the release artifact set is present.
+      # Package contract: amd64 full (metadata / closure install / upgrade / rollback /
+      # coherence / ordering / tag-guard / piuparts); arm64 metadata-level (apt-install under
+      # QEMU is prohibitively slow on a runner — the metadata/coherence/ordering proofs run).
+      - name: Package contract suite
+        run: |
+          packaging/ci/test-package-contract.sh amd64
+          packaging/ci/test-package-contract.sh arm64
+
+      # Daemon smoke: system D-Bus + polkit + NetworkManager 1.42, start MM, busctl
+      # introspect the root ObjectManager, mmcli --version == 1.24.0, udev/FCC/GIR/Vala paths.
+      - name: Daemon smoke (amd64)
+        run: packaging/ci/daemon-smoke.sh amd64
+
+      # Per-release manifest: the release tag -> the 9 runtime deb versions per arch
+      # (Phase-B apt publication consumes this as its package -> source -> version matrix).
+      - name: Generate release manifest
+        run: packaging/ci/generate-release-manifest.sh "${{ github.event.inputs.tag }}"
+
+      # Upload the REAL built .debs (both arches: 9 runtime + dev/gir/dbgsym) + the manifest as
+      # CI release artifacts. Bench devices download this set and `apt install ./*.deb`.
       - name: Upload .deb artifacts + release manifest
         uses: actions/upload-artifact@v7
         with:
           name: modem-stack-debs-${{ needs.tag-guard.outputs.version }}
           path: |
-            dist/**
-            packaging/**/*.deb
-          if-no-files-found: warn
+            dist/release-manifest.txt
+            packaging/build/amd64/*.deb
+            packaging/build/arm64/*.deb
+          if-no-files-found: error

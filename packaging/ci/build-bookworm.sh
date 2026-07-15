@@ -70,9 +70,12 @@ if [ "${BUILD_IN_CONTAINER:-0}" != "1" ]; then
 	echo "build-bookworm: output=$OUT"
 
 	# Mount packaging/ read-only at /pkg; output read-write at /out. Re-invoke self in-container.
+	# RELEASE_VERSION (optional): a vX.Y.Z tag → build ~ceraliveX.Y.Z debs. Unset → dev build
+	# (~ceralive0.0.0~dev). release.yml passes the release tag here; local/CI dev builds omit it.
 	docker run --rm --platform "$PLATFORM" \
 		-e BUILD_IN_CONTAINER=1 \
 		-e ARCH="$ARCH" \
+		-e RELEASE_VERSION="${RELEASE_VERSION:-}" \
 		-v "$PKG_ROOT":/pkg:ro \
 		-v "$OUT":/out \
 		debian:bookworm \
@@ -135,8 +138,11 @@ refresh_repo() {
 }
 
 # ---- version injection: A1.1's script, run against the writable packaging copy -----------
-step "inject dev version (~ceralive0.0.0~dev) via ci/inject-deb-version.sh"
-( cd "$PKGW" && bash ci/inject-deb-version.sh --dev )
+# RELEASE_VERSION set (a vX.Y.Z tag) → inject ~ceraliveX.Y.Z; unset → the dev suffix. Either
+# way this runs against the WRITABLE copy ($PKGW), never the committed source-of-truth tree.
+INJECT_ARG="${RELEASE_VERSION:-}"; [ -n "$INJECT_ARG" ] || INJECT_ARG="--dev"
+step "inject version ($INJECT_ARG) via ci/inject-deb-version.sh"
+( cd "$PKGW" && bash ci/inject-deb-version.sh "$INJECT_ARG" )
 
 # ---- tiny pin reader (same awk shape as verify-upstream-pins.sh) -------------------------
 pin_scalar() {

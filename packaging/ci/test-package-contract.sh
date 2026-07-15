@@ -1,0 +1,382 @@
+#!/usr/bin/env bash
+# test-package-contract.sh <amd64|arm64> — the package contract suite for the bookworm
+# ModemManager 1.24 stack rebuilds.
+#
+# Runs the A5.1 build output (packaging/build/<arch>/*.deb) through the contract every
+# device install must satisfy. All checks are REAL executed commands inside a throwaway
+# `debian:bookworm` container — nothing is narrated. It NEVER mutates the committed
+# packaging tree (version-injection experiments operate on ephemeral strings / copies).
+#
+# CHECKS
+#   1  metadata/arch      — Package/Version/Architecture over the 9-package runtime closure
+#   2  closure install    — clean bookworm: `apt-get install ./*.deb` of the 9, no missing deps
+#   3  upgrade            — stock modemmanager 1.20.4 -> the tag-encoded ceralive set
+#   4  rollback           — ceralive set -> stock, correct apt semantics (source-disable +
+#                           explicit stock versions + --allow-downgrades)
+#   5  coherence          — every runtime deb carries the SAME ~ceralive<X.Y.Z> suffix
+#                           (+ a mismatched-libqmi negative fixture that must fail closed)
+#   6  ordering           — REAL `dpkg --compare-versions` proofs of the tilde ordering
+#   7  tag-guard negative — a pre-release tag is rejected BEFORE any deb is produced
+#   8  piuparts-style     — install then purge each package; assert zero leftover files
+#
+# MODES (per plan: "amd64 full; arm64 metadata + QEMU install where runner permits")
+#   full      — all 8 checks (default for amd64)
+#   metadata  — checks 1,5,6 only, the fast dpkg-metadata proofs (default for arm64, whose
+#               apt-install-under-QEMU is prohibitively slow on a CI runner)
+#   Override with CONTRACT_MODE=full|metadata.
+#
+# USAGE
+#   packaging/ci/test-package-contract.sh amd64
+#   CONTRACT_MODE=full packaging/ci/test-package-contract.sh arm64   # force full under QEMU
+#
+# EXIT  0 all checks pass. 2 usage/env (no debs, no docker). non-zero = a contract breach.
+set -euo pipefail
+
+# The 9-package runtime closure (contract constant, matches build-bookworm.sh).
+RUNTIME_PKGS=(modemmanager libmm-glib0 libmbim-glib4 libmbim-proxy libmbim-utils \
+	libqmi-glib5 libqmi-proxy libqmi-utils libqrtr-glib0)
+STOCK_MM_UPSTREAM="1.20.4"   # bookworm's stock modemmanager upstream version
+
+# ==========================================================================================
+# HOST ROLE — tag-guard preamble (no container needed), then launch the container.
+# ==========================================================================================
+if [ "${IN_CONTAINER:-0}" != "1" ]; then
+	ARCH="${1:-amd64}"
+	case "$ARCH" in
+		amd64) PLATFORM="linux/amd64" ;;
+		arm64) PLATFORM="linux/arm64" ;;
+		*) echo "usage: test-package-contract.sh <amd64|arm64>" >&2; exit 2 ;;
+	esac
+	MODE="${CONTRACT_MODE:-$([ "$ARCH" = amd64 ] && echo full || echo metadata)}"
+
+	HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	PKG_ROOT="$(cd "$HERE/.." && pwd)"
+	BUILD_DIR="${BUILD_DIR:-$PKG_ROOT/build/$ARCH}"
+
+	command -v docker >/dev/null 2>&1 || { echo "contract: docker not found" >&2; exit 2; }
+	ls "$BUILD_DIR"/*.deb >/dev/null 2>&1 || {
+		echo "contract: no .deb in $BUILD_DIR — run ci/build-bookworm.sh $ARCH first" >&2; exit 2; }
+
+	echo "======================================================================"
+	echo "package contract suite   arch=$ARCH   mode=$MODE"
+	echo "  packaging root: $PKG_ROOT"
+	echo "  build dir:      $BUILD_DIR"
+	echo "======================================================================"
+
+	# ---- CHECK 7 (host-side, before any container/deb work) ------------------------------
+	# The tag-guard runs FIRST in release.yml and gates build-deb, so a pre-release tag is
+	# rejected before a single .deb exists. Prove that here, with no debs touched.
+	echo
+	echo "==== CHECK 7: tag-guard negative (pre-release rejected before any deb build) ===="
+	guard_reject() {
+		if bash "$HERE/tag-guard.sh" "$1" >/dev/null 2>&1; then
+			echo "  FAIL: tag-guard ACCEPTED '$1' (should reject before build)"; return 1
+		fi
+		echo "  ok: rejected '$1' (no deb produced)"
+	}
+	guard_accept() {
+		local v; v="$(bash "$HERE/tag-guard.sh" "$1")" || { echo "  FAIL: tag-guard rejected valid '$1'"; return 1; }
+		echo "  ok: accepted '$1' -> $v"
+	}
+	guard_reject "v1.0.0-rc.1"
+	guard_reject "v1.0.0+build5"
+	guard_reject "1.0.0"
+	guard_accept "v1.2.3"
+	echo "  CHECK 7 PASS: the tag guard fails closed on pre-release/metadata tags."
+
+	# Mount packaging/ (ro, for the ci/ scripts) + the built debs (ro). Re-invoke in-container.
+	docker run --rm --platform "$PLATFORM" \
+		-e IN_CONTAINER=1 -e ARCH="$ARCH" -e CONTRACT_MODE="$MODE" \
+		-e STOCK_MM_UPSTREAM="$STOCK_MM_UPSTREAM" \
+		-v "$PKG_ROOT":/pkg:ro \
+		-v "$BUILD_DIR":/debs:ro \
+		debian:bookworm \
+		bash /pkg/ci/test-package-contract.sh "$ARCH"
+
+	echo
+	echo "======================================================================"
+	echo "CONTRACT SUITE PASS [$ARCH, mode=$MODE]"
+	echo "======================================================================"
+	exit 0
+fi
+
+# ==========================================================================================
+# CONTAINER ROLE — the real dpkg/apt checks, inside debian:bookworm.
+# ==========================================================================================
+ARCH="${ARCH:-$(dpkg --print-architecture)}"
+MODE="${CONTRACT_MODE:-full}"
+STOCK_MM_UPSTREAM="${STOCK_MM_UPSTREAM:-1.20.4}"
+export DEBIAN_FRONTEND=noninteractive
+
+echo
+echo "== in-container contract (arch=$(dpkg --print-architecture), target=$ARCH, mode=$MODE) =="
+
+# apt drops to the unprivileged _apt user for acquire and cannot read a local file: repo
+# under a 0700 dir — same fix build-bookworm.sh uses.
+echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01-no-sandbox
+apt-get update -qq
+# dpkg-scanpackages (local-repo index for the upgrade/rollback scenarios) ships in dpkg-dev;
+# base debian:bookworm has dpkg-deb/dpkg-query but not dpkg-dev.
+apt-get install -y -qq dpkg-dev >/dev/null 2>&1
+
+# Resolve each runtime package name to its single .deb file (exact Package match — so
+# libmbim-glib4 is never confused with libmbim-glib4-dbgsym).
+declare -A DEB_OF
+resolve_debs() {
+	local deb pkg
+	for deb in /debs/*.deb; do
+		pkg="$(dpkg-deb -f "$deb" Package)"
+		DEB_OF["$pkg"]="$deb"
+	done
+	local missing=0
+	for pkg in "${RUNTIME_PKGS[@]}"; do
+		[ -n "${DEB_OF[$pkg]:-}" ] || { echo "  MISSING runtime deb: $pkg" >&2; missing=1; }
+	done
+	[ "$missing" -eq 0 ] || { echo "STOP: runtime closure incomplete in /debs" >&2; exit 3; }
+}
+resolve_debs
+
+# ------------------------------------------------------------------------------------------
+# CHECK 1 — metadata / architecture over the 9-package runtime closure.
+# ------------------------------------------------------------------------------------------
+check_metadata() {
+	echo; echo "==== CHECK 1: metadata / arch over the 9-package runtime closure ===="
+	local pkg deb ver arch fail=0
+	printf '  %-20s %-32s %s\n' "PACKAGE" "VERSION" "ARCH"
+	for pkg in "${RUNTIME_PKGS[@]}"; do
+		deb="${DEB_OF[$pkg]}"
+		ver="$(dpkg-deb -f "$deb" Version)"
+		arch="$(dpkg-deb -f "$deb" Architecture)"
+		printf '  %-20s %-32s %s\n' "$pkg" "$ver" "$arch"
+		[ "$arch" = "$ARCH" ]        || { echo "    FAIL: arch $arch != $ARCH"; fail=1; }
+		[ "${ver#*~ceralive}" != "$ver" ] || { echo "    FAIL: version has no ~ceralive suffix"; fail=1; }
+	done
+	[ "$fail" -eq 0 ] || { echo "  CHECK 1 FAIL"; return 1; }
+	echo "  CHECK 1 PASS: 9 runtime packages, all Architecture=$ARCH, all ~ceralive-suffixed."
+}
+
+# ------------------------------------------------------------------------------------------
+# CHECK 5 — coherence: every runtime deb carries the SAME ~ceralive<X.Y.Z> suffix.
+# assert_coherent <version...> — returns 0 iff every arg shares one ~ceralive suffix.
+# ------------------------------------------------------------------------------------------
+assert_coherent() {
+	local v suf first=""
+	for v in "$@"; do
+		suf="~ceralive${v##*~ceralive}"
+		[ "$suf" != "~ceralive$v" ] || { echo "    no ~ceralive suffix in '$v'"; return 1; }
+		if [ -z "$first" ]; then first="$suf"
+		elif [ "$suf" != "$first" ]; then
+			echo "    incoherent: '$suf' != '$first'"; return 1
+		fi
+	done
+	echo "$first"
+}
+check_coherence() {
+	echo; echo "==== CHECK 5: coherence (identical ~ceralive suffix across all 9) ===="
+	local pkg vers=()
+	for pkg in "${RUNTIME_PKGS[@]}"; do vers+=("$(dpkg-deb -f "${DEB_OF[$pkg]}" Version)"); done
+	local suffix
+	if ! suffix="$(assert_coherent "${vers[@]}")"; then
+		echo "  CHECK 5 FAIL: runtime versions are not coherent"; return 1
+	fi
+	echo "  ok: all 9 runtime debs share suffix '${suffix}'"
+
+	# Negative fixture: a mismatched libqmi suffix MUST fail closed (QA-failure evidence).
+	echo "  negative fixture (mismatched libqmi suffix expected to fail):"
+	local tampered=("1.24.0-1~ceralive0.1.0" "1.32.0-1~ceralive0.1.0" "1.36.0-1~ceralive0.2.0")
+	if assert_coherent "${tampered[@]}" >/dev/null 2>&1; then
+		echo "  CHECK 5 FAIL: coherence accepted a mismatched-libqmi set"; return 1
+	fi
+	echo "  ok: mismatched-libqmi set rejected (fails closed)"
+	echo "  CHECK 5 PASS."
+}
+
+# ------------------------------------------------------------------------------------------
+# CHECK 6 — REAL dpkg --compare-versions ordering proofs of the tilde encoding.
+# ------------------------------------------------------------------------------------------
+check_ordering() {
+	echo; echo "==== CHECK 6: dpkg --compare-versions ordering proofs (real invocations) ===="
+	local fail=0
+	prove_lt() {
+		if dpkg --compare-versions "$1" lt "$2"; then echo "  ok: '$1' lt '$2'"
+		else echo "  FAIL: '$1' NOT lt '$2'"; fail=1; fi
+	}
+	prove_not_lt() {
+		if dpkg --compare-versions "$1" lt "$2"; then echo "  FAIL: '$1' lt '$2' (expected NOT)"; fail=1
+		else echo "  ok: '$1' not lt '$2'"; fi
+	}
+	prove_lt "1.24.0-1~ceralive0.1.0"  "1.24.0-1~ceralive0.2.0"
+	prove_lt "1.24.0-1~ceralive0.9.0"  "1.24.0-1~ceralive0.10.0"
+	prove_lt "1.24.0-1~ceralive0.1.0"  "1.24.0-1"
+	prove_lt "1.24.0-1~ceralive0.0.0~dev" "1.24.0-1~ceralive0.1.0"
+	# comparator must be real, not always-true:
+	prove_not_lt "1.24.0-1~ceralive0.2.0" "1.24.0-1~ceralive0.1.0"
+	[ "$fail" -eq 0 ] || { echo "  CHECK 6 FAIL"; return 1; }
+	echo "  CHECK 6 PASS: tilde ordering holds (pre-suffix < release; N.9 < N.10; dev < first)."
+}
+
+# ---- local apt repo helpers (for install/upgrade/rollback scenarios) ---------------------
+REPO="/tmp/localrepo"
+setup_local_repo() {
+	rm -rf "$REPO"; mkdir -p "$REPO"
+	cp /debs/*.deb "$REPO/"
+	( cd "$REPO" && dpkg-scanpackages -m . /dev/null > Packages 2>/dev/null )
+	echo "deb [trusted=yes] file:$REPO ./" > /etc/apt/sources.list.d/local-mm.list
+	# Pin the local (freshly built) stack above bookworm-main so the coherent ceralive set
+	# wins even where its upstream matches (libqrtr-glib 1.2.2 == bookworm's, tilde-lower).
+	cat > /etc/apt/preferences.d/local-mm.pref <<'EOF'
+Package: *
+Pin: origin ""
+Pin-Priority: 1001
+EOF
+	apt-get update -qq
+}
+disable_local_repo() {
+	rm -f /etc/apt/sources.list.d/local-mm.list /etc/apt/preferences.d/local-mm.pref
+	apt-get update -qq
+}
+purge_stack() {
+	apt-get purge -y -qq "${RUNTIME_PKGS[@]}" >/dev/null 2>&1 || true
+	apt-get autoremove -y -qq >/dev/null 2>&1 || true
+}
+dpkg_ver() { dpkg-query -W -f='${Version}' "$1" 2>/dev/null || echo "(absent)"; }
+
+# ------------------------------------------------------------------------------------------
+# CHECK 2 — clean-bookworm dependency-closure install via `apt-get install ./*.deb`.
+# ------------------------------------------------------------------------------------------
+check_closure_install() {
+	echo; echo "==== CHECK 2: clean-bookworm dependency-closure install (apt-get install ./*.deb) ===="
+	purge_stack
+	local files=()
+	for pkg in "${RUNTIME_PKGS[@]}"; do files+=("${DEB_OF[$pkg]}"); done
+	echo "  installing the 9 runtime debs as local files (deps resolve from bookworm-main)..."
+	apt-get install -y -qq "${files[@]}" >/tmp/closure.log 2>&1 || { sed 's/^/    /' /tmp/closure.log; echo "  CHECK 2 FAIL: install error"; return 1; }
+	local pkg fail=0
+	for pkg in "${RUNTIME_PKGS[@]}"; do
+		local v; v="$(dpkg_ver "$pkg")"
+		case "$v" in *~ceralive*) echo "  ok: $pkg = $v" ;; *) echo "  FAIL: $pkg = $v (not ceralive)"; fail=1 ;; esac
+	done
+	# No unmet dependencies anywhere.
+	if ! apt-get check >/tmp/aptcheck.log 2>&1; then sed 's/^/    /' /tmp/aptcheck.log; echo "  CHECK 2 FAIL: apt-get check reports broken deps"; return 1; fi
+	[ "$fail" -eq 0 ] || { echo "  CHECK 2 FAIL"; return 1; }
+	echo "  ok: apt-get check clean (no missing deps)"
+	echo "  CHECK 2 PASS: the 9-package closure installs cleanly on stock bookworm."
+	purge_stack
+}
+
+# ------------------------------------------------------------------------------------------
+# CHECK 3 — upgrade: stock modemmanager 1.20.4 -> the tag-encoded ceralive set.
+# ------------------------------------------------------------------------------------------
+check_upgrade() {
+	echo; echo "==== CHECK 3: upgrade (stock modemmanager ${STOCK_MM_UPSTREAM} -> ceralive set) ===="
+	purge_stack
+	disable_local_repo
+	echo "  installing stock bookworm modemmanager + utils..."
+	apt-get install -y -qq modemmanager libmbim-utils libqmi-utils >/tmp/stock.log 2>&1 || { sed 's/^/    /' /tmp/stock.log; echo "  CHECK 3 FAIL: stock install"; return 1; }
+	local before; before="$(dpkg_ver modemmanager)"
+	echo "  stock modemmanager installed: $before"
+	case "$before" in ${STOCK_MM_UPSTREAM}*) echo "  ok: stock is ${STOCK_MM_UPSTREAM}-series" ;; *) echo "  note: bookworm stock modemmanager is $before" ;; esac
+
+	echo "  enabling local ceralive repo and upgrading the coherent set..."
+	setup_local_repo
+	# --allow-downgrades: libqrtr-glib 1.2.2-1~ceralive is tilde-LOWER than bookworm's 1.2.2-1
+	# (same upstream), so landing the FULL coherent ceralive set is a downgrade for that one
+	# package even though modemmanager itself genuinely upgrades 1.20.4 -> 1.24.0.
+	apt-get install -y -qq --allow-downgrades "${RUNTIME_PKGS[@]}" >/tmp/upgrade.log 2>&1 || { sed 's/^/    /' /tmp/upgrade.log; echo "  CHECK 3 FAIL: upgrade"; return 1; }
+	local after; after="$(dpkg_ver modemmanager)"
+	echo "  modemmanager after upgrade: $after"
+	dpkg --compare-versions "$before" lt "$after" || { echo "  CHECK 3 FAIL: modemmanager did not move UP ($before !< $after)"; return 1; }
+	case "$after" in 1.24.0*~ceralive*) echo "  ok: modemmanager upgraded to 1.24.0 ceralive" ;; *) echo "  CHECK 3 FAIL: unexpected upgraded version $after"; return 1 ;; esac
+	local pkg fail=0
+	for pkg in "${RUNTIME_PKGS[@]}"; do case "$(dpkg_ver "$pkg")" in *~ceralive*) : ;; *) echo "  FAIL: $pkg not on ceralive after upgrade"; fail=1 ;; esac; done
+	[ "$fail" -eq 0 ] || { echo "  CHECK 3 FAIL"; return 1; }
+	echo "  CHECK 3 PASS: apt upgraded modemmanager 1.20.4 -> 1.24.0 and landed the full coherent set."
+	purge_stack
+	disable_local_repo
+}
+
+# ------------------------------------------------------------------------------------------
+# CHECK 4 — rollback: ceralive set -> stock, correct apt semantics.
+# ------------------------------------------------------------------------------------------
+check_rollback() {
+	echo; echo "==== CHECK 4: rollback (ceralive set -> stock, apt downgrade semantics) ===="
+	purge_stack
+	setup_local_repo
+	echo "  installing the ceralive set..."
+	apt-get install -y -qq --allow-downgrades "${RUNTIME_PKGS[@]}" >/tmp/rb-install.log 2>&1 || { sed 's/^/    /' /tmp/rb-install.log; echo "  CHECK 4 FAIL: ceralive install"; return 1; }
+	echo "  ceralive modemmanager: $(dpkg_ver modemmanager)"
+
+	# Correct apt rollback = BOTH: disable the local source AND pin explicit stock versions
+	# with --allow-downgrades. The stock version is read from `apt-cache madison` (the INDEX
+	# view) NOT `apt-cache policy` Candidate — because apt refuses to auto-downgrade to a
+	# version below priority 1000, Candidate keeps reporting the installed ceralive version.
+	# madison lists only indexed versions, so once the local repo is gone it yields the real
+	# bookworm-main version (never hardcoded — point releases like +deb12u1 shift it).
+	echo "  disabling local repo and pinning explicit stock versions..."
+	disable_local_repo
+	local specs=() pkg stock
+	for pkg in "${RUNTIME_PKGS[@]}"; do
+		stock="$(apt-cache madison "$pkg" 2>/dev/null | awk -F'|' 'NR==1{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}')"
+		[ -n "$stock" ] || { echo "  note: $pkg has no bookworm stock version in the index — skipping"; continue; }
+		specs+=("${pkg}=${stock}")
+	done
+	echo "  downgrading to: ${specs[*]}"
+	apt-get install -y -qq --allow-downgrades "${specs[@]}" >/tmp/rollback.log 2>&1 || { sed 's/^/    /' /tmp/rollback.log; echo "  CHECK 4 FAIL: rollback"; return 1; }
+	local after; after="$(dpkg_ver modemmanager)"
+	echo "  modemmanager after rollback: $after"
+	case "$after" in *~ceralive*) echo "  CHECK 4 FAIL: still on ceralive after rollback"; return 1 ;; ${STOCK_MM_UPSTREAM}*) echo "  ok: back to stock ${STOCK_MM_UPSTREAM}" ;; *) echo "  ok: back to stock $after" ;; esac
+	echo "  CHECK 4 PASS: apt cleanly downgraded the stack back to stock bookworm."
+	purge_stack
+}
+
+# ------------------------------------------------------------------------------------------
+# CHECK 8 — piuparts-style install/purge cleanliness (lightweight approximation).
+# ------------------------------------------------------------------------------------------
+check_piuparts() {
+	echo; echo "==== CHECK 8: piuparts-style install -> purge cleanliness ===="
+	echo "  (lightweight install/purge/leftover-scan; real piuparts 1.1.7 exists in bookworm"
+	echo "   but needs a privileged debootstrap chroot not available in this container.)"
+	purge_stack
+	local files=()
+	for pkg in "${RUNTIME_PKGS[@]}"; do files+=("${DEB_OF[$pkg]}"); done
+	apt-get install -y -qq "${files[@]}" >/tmp/piu-install.log 2>&1 || { sed 's/^/    /' /tmp/piu-install.log; echo "  CHECK 8 FAIL: install"; return 1; }
+	# Record every regular file the 9 packages own, before purge.
+	local owned; owned="$(mktemp)"
+	local pkg
+	for pkg in "${RUNTIME_PKGS[@]}"; do
+		dpkg-query -L "$pkg" 2>/dev/null
+	done | sort -u > "$owned"
+	local nfiles; nfiles="$(wc -l < "$owned")"
+	echo "  installed file entries owned by the 9 packages: $nfiles"
+	echo "  purging all 9..."
+	apt-get purge -y -qq "${RUNTIME_PKGS[@]}" >/tmp/piu-purge.log 2>&1 || { sed 's/^/    /' /tmp/piu-purge.log; echo "  CHECK 8 FAIL: purge"; return 1; }
+	# Any REGULAR FILE (not a dir — dirs may be shared with base packages) still present is a leak.
+	local leftovers=0 f
+	while IFS= read -r f; do
+		[ -f "$f" ] && { echo "  LEFTOVER: $f"; leftovers=$((leftovers + 1)); }
+	done < "$owned"
+	rm -f "$owned"
+	[ "$leftovers" -eq 0 ] || { echo "  CHECK 8 FAIL: $leftovers file(s) survived purge"; return 1; }
+	# Config tree must be gone too.
+	[ ! -e /etc/ModemManager/fcc-unlock.d ] || { echo "  note: /etc/ModemManager remnant (dir may be base-owned)"; }
+	echo "  CHECK 8 PASS: no owned regular file survived purge."
+}
+
+# ------------------------------------------------------------------------------------------
+# Run the selected checks.
+# ------------------------------------------------------------------------------------------
+check_metadata
+check_coherence
+check_ordering
+if [ "$MODE" = full ]; then
+	check_closure_install
+	check_upgrade
+	check_rollback
+	check_piuparts
+else
+	echo; echo "== mode=metadata: skipping install/upgrade/rollback/piuparts (apt-under-QEMU is"
+	echo "   prohibitively slow on a CI runner). Metadata/coherence/ordering ran natively above. =="
+fi
+
+echo
+echo "IN-CONTAINER CONTRACT CHECKS PASS [$ARCH, mode=$MODE]"
