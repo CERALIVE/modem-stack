@@ -11,6 +11,10 @@ export {
 	type InterfaceEntry,
 	type ManagedObject,
 	type ManagedObjects,
+	MM_LOCK_NONE,
+	MM_LOCK_SIM_PIN,
+	MM_LOCK_SIM_PUK,
+	MM_MANAGER_IFACE,
 	type MmShape,
 	MODEM_IFACE,
 	MODEM3GPP_IFACE,
@@ -20,13 +24,19 @@ export {
 	type PropEntry,
 	ROOT_PATH,
 	type ScannedNetworkEntry,
+	SIGNAL_IFACE,
 	SIM_IFACE,
 	SIMPLE_IFACE,
 	type SimSpec,
 	simPath,
 } from './object-model';
 export type { PreviousEpoch } from './previous-epoch';
-export { FakeModemManager, type FakeModemManagerOptions, TRIPWIRE_ERROR } from './service';
+export {
+	FakeModemManager,
+	type FakeModemManagerOptions,
+	type SignalSetupCall,
+	TRIPWIRE_ERROR,
+} from './service';
 export {
 	asManagedObjects,
 	type DecodedInterfaces,

@@ -6,7 +6,8 @@
 // `src` (not the A2.3 test fake's `tree.ts`) because the observer that ships must not
 // import test-support — the published package would not contain it.
 
-import type { DbusValue, DbusVariant } from '../transport';
+import type { DbusTransport, DbusValue, DbusVariant } from '../transport';
+import { MM_ROOT_PATH, OBJECT_MANAGER_IFACE } from './constants';
 
 /** One interface's property entries: `[propertyName, variant][]`. */
 export type DecodedProps = ReadonlyArray<readonly [string, DbusVariant]>;
@@ -23,6 +24,20 @@ export function asManagedObjects(value: DbusValue | undefined): DecodedManagedOb
 		throw new TypeError('managed-objects payload is not an array');
 	}
 	return value as unknown as DecodedManagedObjects;
+}
+
+/** Call `ObjectManager.GetManagedObjects` on `destination` and decode the reply. */
+export async function fetchManagedObjects(
+	transport: DbusTransport,
+	destination: string,
+): Promise<DecodedManagedObjects> {
+	const reply = await transport.callMethod({
+		destination,
+		path: MM_ROOT_PATH,
+		interface: OBJECT_MANAGER_IFACE,
+		member: 'GetManagedObjects',
+	});
+	return asManagedObjects(reply.body[0]);
 }
 
 /** Treat an `InterfacesAdded` body (`[path, interfaces]`) as one decoded object. */
@@ -57,6 +72,11 @@ export function pathsWithInterface(tree: DecodedManagedObjects, iface: string): 
 	return tree
 		.filter(([, interfaces]) => interfaces.some(([name]) => name === iface))
 		.map(([path]) => path);
+}
+
+/** Whether an object exposes a given interface. */
+export function hasInterface(tree: DecodedManagedObjects, path: string, iface: string): boolean {
+	return findInterface(tree, path, iface) !== undefined;
 }
 
 /** The inner value of a property (a variant's `.value`), or `undefined`. */

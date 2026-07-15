@@ -31,6 +31,15 @@ import {
 	simObject,
 	simPath,
 } from './object-model';
+import { simLockError, submitPin, submitPuk, type UnlockOutcome } from './unlock-state';
+
+/** One recorded `Signal.Setup` call — the modem, its rate, and the serving epoch owner. */
+export interface SignalSetupCall {
+	readonly modemIndex: number;
+	readonly rate: number;
+	readonly owner: string | undefined;
+}
+
 import { makePreviousEpoch, type PreviousEpoch } from './previous-epoch';
 import { emitInterfacesAdded, emitInterfacesRemoved, emitPropertiesChanged } from './signals';
 
@@ -53,7 +62,11 @@ export class FakeModemManager {
 	readonly #shape: MmShape;
 	readonly #specs = new Map<number, ModemSpec>();
 	readonly #scans = new Map<number, readonly ScannedNetworkEntry[]>();
+	readonly #cells = new Map<number, readonly (readonly PropEntry[])[]>();
 	readonly #expectedPins = new Map<string, string>();
+	readonly #expectedPuks = new Map<string, string>();
+	readonly #callLog: string[] = [];
+	readonly #signalSetupLog: SignalSetupCall[] = [];
 	readonly #ctx: HandlerContext;
 	#session: BusSession;
 	#replyDelayMs = 0;
@@ -65,9 +78,13 @@ export class FakeModemManager {
 		this.#ctx = {
 			tree: () => managedObjects([...this.#specs.values()], this.#shape),
 			scanReply: (index) => (this.#scans.get(index) ?? []).map(scanEntry),
-			checkPin: (path, pin) => this.#checkPin(path, pin),
+			cellInfo: (index) => this.#cells.get(index) ?? [],
+			submitPin: (index, sp, pin) => this.#submitPin(index, sp, pin),
+			submitPuk: (index, sp, puk, newPin) => this.#submitPuk(index, sp, puk, newPin),
+			recordSignalSetup: (index, rate) => this.#recordSignalSetup(index, rate),
 			tripwire: (iface, member) => this.#tripwire(iface, member),
 			delay: (value) => this.#delay(value),
+			traced: (member, index, produce) => this.#traced(member, index, produce),
 		};
 	}
 
@@ -144,6 +161,32 @@ export class FakeModemManager {
 		this.#expectedPins.set(simPath(simIndex), pin);
 	}
 
+	/** Make a SIM demand a specific PUK; a wrong `SendPuk` throws the MM SimPuk error. */
+	expectPuk(simIndex: number, puk: string): void {
+		this.#expectedPuks.set(simPath(simIndex), puk);
+	}
+
+	/** Configure what `Modem.GetCellInfo` returns for a modem (`aa{sv}` encode form). */
+	configureCellInfo(modemIndex: number, cells: readonly (readonly PropEntry[])[]): void {
+		this.#cells.set(modemIndex, cells);
+	}
+
+	/** The ordered disruptive-op call log (`member:start:<idx>` / `member:end:<idx>`). */
+	get callLog(): readonly string[] {
+		return [...this.#callLog];
+	}
+
+	/** Every recorded `Signal.Setup` call, in order, tagged with its serving owner. */
+	get signalSetupCalls(): readonly SignalSetupCall[] {
+		return [...this.#signalSetupLog];
+	}
+
+	/** Reset the call + Signal.Setup logs (use between scenario phases). */
+	clearLogs(): void {
+		this.#callLog.length = 0;
+		this.#signalSetupLog.length = 0;
+	}
+
 	/** Delay every subsequent method reply by `ms` (0 disables) — late-reply scenarios. */
 	setReplyDelay(ms: number): void {
 		this.#replyDelayMs = ms;
@@ -206,14 +249,62 @@ export class FakeModemManager {
 		}
 	}
 
-	#checkPin(path: string, pin: unknown): null {
-		const expected = this.#expectedPins.get(path);
-		if (expected !== undefined && pin !== expected) {
-			const error = new Error(`incorrect PIN for ${path}`) as Error & { dbusName?: string };
-			error.dbusName = 'org.freedesktop.ModemManager1.Error.MobileEquipment.SimPin';
-			throw error;
+	#submitPin(index: number, simObjectPath: string, pin: unknown): null {
+		return this.#applyUnlock(index, simObjectPath, (spec) =>
+			submitPin(spec, this.#expectedPins.get(simObjectPath), pin),
+		);
+	}
+
+	#submitPuk(index: number, simObjectPath: string, puk: unknown, _newPin: unknown): null {
+		return this.#applyUnlock(index, simObjectPath, (spec) =>
+			submitPuk(spec, this.#expectedPuks.get(simObjectPath), puk),
+		);
+	}
+
+	#applyUnlock(
+		index: number,
+		simObjectPath: string,
+		run: (spec: ModemSpec) => UnlockOutcome,
+	): null {
+		const spec = this.#specs.get(index);
+		if (spec === undefined) {
+			return null;
+		}
+		const outcome = run(spec);
+		this.#specs.set(index, outcome.next);
+		if (outcome.reject !== undefined) {
+			simLockError(simObjectPath, outcome.reject);
 		}
 		return null;
+	}
+
+	#recordSignalSetup(index: number, rate: unknown): void {
+		this.#signalSetupLog.push({
+			modemIndex: index,
+			rate: typeof rate === 'number' ? rate : Number(rate),
+			owner: this.#session.uniqueName,
+		});
+	}
+
+	#traced<T>(member: string, index: number, produce: () => T): T | Promise<T> {
+		this.#callLog.push(`${member}:start:${index}`);
+		const finish = (): T => {
+			const value = produce();
+			this.#callLog.push(`${member}:end:${index}`);
+			return value;
+		};
+		if (this.#replyDelayMs <= 0) {
+			return finish();
+		}
+		return new Promise<T>((resolve, reject) => {
+			setTimeout(() => {
+				try {
+					resolve(finish());
+				} catch (error) {
+					reject(error instanceof Error ? error : new Error(String(error)));
+				}
+			}, this.#replyDelayMs);
+		});
 	}
 
 	#tripwire(iface: string, member: string): never {

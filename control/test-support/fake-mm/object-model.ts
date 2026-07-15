@@ -19,11 +19,18 @@ export const ROOT_PATH = '/org/freedesktop/ModemManager1';
 export const BUS_NAME = 'org.freedesktop.ModemManager1';
 
 export const OBJECT_MANAGER_IFACE = 'org.freedesktop.DBus.ObjectManager';
+export const MM_MANAGER_IFACE = 'org.freedesktop.ModemManager1';
 export const MODEM_IFACE = 'org.freedesktop.ModemManager1.Modem';
 export const MODEM3GPP_IFACE = 'org.freedesktop.ModemManager1.Modem.Modem3gpp';
 export const SIMPLE_IFACE = 'org.freedesktop.ModemManager1.Modem.Simple';
+export const SIGNAL_IFACE = 'org.freedesktop.ModemManager1.Modem.Signal';
 export const SIM_IFACE = 'org.freedesktop.ModemManager1.Sim';
 export const BEARER_IFACE = 'org.freedesktop.ModemManager1.Bearer';
+
+/** MMModemLock codes the read-before-submit tests script. */
+export const MM_LOCK_NONE = 1;
+export const MM_LOCK_SIM_PIN = 2;
+export const MM_LOCK_SIM_PUK = 4;
 
 /** Which ModemManager property shape a scenario presents (1.22+ adds `Physdev`). */
 export type MmShape = '1.20' | '1.22' | '1.24';
@@ -59,6 +66,10 @@ export interface SimSpec {
 	readonly operatorCode?: string;
 	/** Slot currently selected as primary (drives the modem's `Sim` path). */
 	readonly active?: boolean;
+	/** MMSimType (1 physical, 2 esim) — surfaced on `Sim.SimType` when set. */
+	readonly simType?: number;
+	/** MMSimEsimStatus (1 no-profiles, 2 with-profiles) — `Sim.EsimStatus` when set. */
+	readonly esimStatus?: number;
 }
 
 /** One modem, with separate `Modem` + `Modem3gpp` interfaces and a bearer tripwire. */
@@ -84,6 +95,12 @@ export interface ModemSpec {
 	readonly primarySimSlot?: number;
 	/** The bearer index → `/org/freedesktop/ModemManager1/Bearer/<index>`. */
 	readonly bearerIndex?: number;
+	/** Whether this modem exposes the `Modem.Signal` interface (default true). */
+	readonly hasSignal?: boolean;
+	/** MMModemLock currently required (`Modem.UnlockRequired`); default NONE. */
+	readonly unlockRequired?: number;
+	/** Remaining attempts per lock (`Modem.UnlockRetries`, `a(uu)`). */
+	readonly unlockRetries?: readonly (readonly [number, number])[];
 }
 
 export const modemPath = (index: number): string => `${ROOT_PATH}/Modem/${index}`;
@@ -116,6 +133,8 @@ export function modemProps(spec: ModemSpec, shape: MmShape): readonly PropEntry[
 		['SupportedCapabilities', ['au', [4, 8]]],
 		['CurrentCapabilities', ['u', 4]],
 		['CurrentModes', ['(uu)', [7, 0]]],
+		['UnlockRequired', ['u', spec.unlockRequired ?? MM_LOCK_NONE]],
+		['UnlockRetries', ['a(uu)', (spec.unlockRetries ?? []).map(([lock, left]) => [lock, left])]],
 	];
 	// `Physdev` (physical path) exists from 1.22+ — present on 1.22 and 1.24, absent on 1.20.
 	if (shape === '1.22' || shape === '1.24') {
@@ -136,15 +155,29 @@ export function modem3gppProps(spec: ModemSpec): readonly PropEntry[] {
 	];
 }
 
-/** A SIM object's `Sim` interface property set. */
+/** A SIM object's `Sim` interface property set. `SimType` / `EsimStatus` (1.20+)
+ *  are surfaced only when the spec sets them. */
 export function simProps(sim: SimSpec): readonly PropEntry[] {
-	return [
+	const props: PropEntry[] = [
 		['SimIdentifier', ['s', sim.iccid]],
 		['Imsi', ['s', sim.imsi]],
 		['OperatorIdentifier', ['s', sim.operatorCode ?? '00101']],
 		['OperatorName', ['s', sim.operatorName ?? 'Fake Network']],
 		['Active', ['b', sim.active ?? true]],
 	];
+	if (sim.simType !== undefined) {
+		props.push(['SimType', ['u', sim.simType]]);
+	}
+	if (sim.esimStatus !== undefined) {
+		props.push(['EsimStatus', ['u', sim.esimStatus]]);
+	}
+	return props;
+}
+
+/** The `Modem.Signal` interface property set — its mere presence is what the
+ *  Signal.Setup manager gates on (absent ⇒ `signalCadence: unsupported`). */
+export function signalProps(): readonly PropEntry[] {
+	return [['Rate', ['u', 0]]];
 }
 
 /** A bearer object's property set — observable, but every connect method throws. */
@@ -156,15 +189,17 @@ export function bearerProps(): readonly PropEntry[] {
 	];
 }
 
-/** The managed object for a modem: two SEPARATE interfaces under one path. */
+/** The managed object for a modem: `Modem` + `Modem3gpp` as SEPARATE interfaces,
+ *  plus `Modem.Signal` unless the spec opts out (`hasSignal: false`). */
 export function modemObject(spec: ModemSpec, shape: MmShape): ManagedObject {
-	return [
-		modemPath(spec.index),
-		[
-			[MODEM_IFACE, modemProps(spec, shape)],
-			[MODEM3GPP_IFACE, modem3gppProps(spec)],
-		],
+	const interfaces: InterfaceEntry[] = [
+		[MODEM_IFACE, modemProps(spec, shape)],
+		[MODEM3GPP_IFACE, modem3gppProps(spec)],
 	];
+	if (spec.hasSignal !== false) {
+		interfaces.push([SIGNAL_IFACE, signalProps()]);
+	}
+	return [modemPath(spec.index), interfaces];
 }
 
 /** The managed object for a SIM — a top-level `/SIM/<n>` object. */
