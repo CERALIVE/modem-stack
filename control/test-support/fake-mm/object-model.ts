@@ -9,7 +9,7 @@
 //   2. SIMs are SEPARATE objects at `/org/freedesktop/ModemManager1/SIM/<n>`,
 //      reachable from the modem's `Sim` property (an object path), never inlined.
 //   3. `Modem.Device` carries the udev slot UID on ALL versions; `Physdev` exists
-//      ONLY from 1.22+ — the 1.20-shape omits it, the 1.24-shape includes it.
+//      ONLY from 1.22+ — the 1.20-shape omits it, the 1.22- and 1.24-shapes include it.
 //
 // Every value below is already in the library's native encode form (a variant is
 // `[signature, value]`, a dict is an array of `[key, value]` entries), so the tree
@@ -25,8 +25,8 @@ export const SIMPLE_IFACE = 'org.freedesktop.ModemManager1.Modem.Simple';
 export const SIM_IFACE = 'org.freedesktop.ModemManager1.Sim';
 export const BEARER_IFACE = 'org.freedesktop.ModemManager1.Bearer';
 
-/** Which ModemManager property shape a scenario presents. */
-export type MmShape = '1.20' | '1.24';
+/** Which ModemManager property shape a scenario presents (1.22+ adds `Physdev`). */
+export type MmShape = '1.20' | '1.22' | '1.24';
 
 /** A variant in encode form: `[signature, value]`. */
 export type EncodeVariant = readonly [string, unknown];
@@ -117,8 +117,8 @@ export function modemProps(spec: ModemSpec, shape: MmShape): readonly PropEntry[
 		['CurrentCapabilities', ['u', 4]],
 		['CurrentModes', ['(uu)', [7, 0]]],
 	];
-	// `Physdev` (physical path) exists from 1.22+ — present on 1.24, absent on 1.20.
-	if (shape === '1.24') {
+	// `Physdev` (physical path) exists from 1.22+ — present on 1.22 and 1.24, absent on 1.20.
+	if (shape === '1.22' || shape === '1.24') {
 		props.push(['Physdev', ['s', spec.physdev ?? `/sys/devices/fake/usb${spec.index}`]]);
 	}
 	return props;
