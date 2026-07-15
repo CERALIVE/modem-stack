@@ -12,3 +12,4 @@ export * from './backend';
 export * from './domain';
 export * from './ports';
 export * from './redact';
+export * from './usb-mode';

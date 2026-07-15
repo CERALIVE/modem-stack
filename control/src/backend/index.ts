@@ -5,6 +5,18 @@
 // Signal.Setup (A3.3) and the recovery ladder (A3.4) here.
 
 export {
+	AT_BASELINE_ALLOWLIST,
+	type AtAuditEntry,
+	type AtAuditSink,
+	AtCommandLease,
+	type AtCommandLeaseDeps,
+	AtCommandNotAllowedError,
+	type AtCommandSender,
+	AtCommandTimeoutError,
+	type AtResponse,
+	computeAtAllowlist,
+} from './at-lease';
+export {
 	type CellInfoProvenance,
 	type CellReading,
 	compareServing,
@@ -20,6 +32,15 @@ export {
 	MODEM3GPP_IFACE,
 	SIM_IFACE,
 } from './constants';
+export {
+	classifyDevice,
+	type DeviceClass,
+	type DeviceClassification,
+	descriptorsMatch,
+	detectUsbMode,
+	type UsbDeviceSnapshot,
+	type UsbInterface,
+} from './device-classifier';
 export {
 	buildEnrichment,
 	type EsimInfo,
@@ -121,6 +142,7 @@ export {
 	type RecoverySteps,
 	type StepOutcome,
 } from './recovery-ladder';
+export { createRouterEthernetProbe, type RouterEthernetProbeDeps } from './router-ethernet';
 export {
 	DEFAULT_SIGNAL_INTERVAL_SECONDS,
 	type SignalCadence,
@@ -128,4 +150,22 @@ export {
 	type SignalSetupManagerOptions,
 } from './signal-setup';
 export { sendSimPin, sendSimPuk } from './sim-unlock';
+export {
+	ALLOW_ALL_TRANSITION_INTERLOCK,
+	checkTransitionPreconditions,
+	type InterlockHold,
+	type PreconditionResult,
+	type TransitionInterlock,
+	type TransitionReadiness,
+	type UsbModeTransitionOutcome,
+	type UsbModeTransitionRequest,
+} from './transition-preconditions';
 export * from './usage';
+export {
+	createUsbEnumerator,
+	enumerateUsbDevices,
+	parseUdevDatabase,
+	type UsbEnumerator,
+	type UsbEnumeratorDeps,
+} from './usb-enumerator';
+export { UsbModeTransition, type UsbModeTransitionDeps } from './usb-mode-transition';
