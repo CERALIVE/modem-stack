@@ -16,5 +16,5 @@
 		"skipLibCheck": true,
 		"resolveJsonModule": true
 	},
-	"include": ["control/src", "control/test-support", "cli/src"]
+	"include": ["control/src", "control/test-support", "cli/src", "cli/smoke"]
 }

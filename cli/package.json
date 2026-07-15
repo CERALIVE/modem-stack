@@ -9,7 +9,8 @@
 		"modem-control": "./src/index.ts"
 	},
 	"dependencies": {
-		"@ceralive/modem-control": "workspace:*"
+		"@ceralive/modem-control": "workspace:*",
+		"zod": "4.4.3"
 	},
 	"scripts": {
 		"test": "bun test",
