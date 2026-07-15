@@ -1,0 +1,9 @@
+Document: libqrtr-glib
+Title: Debian libqrtr-glib Manual
+Author: The libqrtr-glib authors
+Abstract: API documentation of libqrtr-glib.
+Section: Programming/C
+
+Format: HTML
+Index: /usr/share/doc/libqrtr-glib-doc/html/index.html
+Files: /usr/share/doc/libqrtr-glib-doc/html/*.html

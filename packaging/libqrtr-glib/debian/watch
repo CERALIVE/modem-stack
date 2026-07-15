@@ -1,0 +1,3 @@
+version=4
+https://gitlab.freedesktop.org/mobile-broadband/@PACKAGE@/-/tags?sort=updated_desc \
+    .*/archive/\d\S+/@PACKAGE@@ANY_VERSION@@ARCHIVE_EXT@

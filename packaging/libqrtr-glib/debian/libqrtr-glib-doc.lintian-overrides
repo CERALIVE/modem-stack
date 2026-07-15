@@ -1,0 +1,2 @@
+# Documentation is generated using gtk-doc, and therefore is installed to `/usr/share/gtk-doc`
+libqrtr-glib-doc: package-contains-documentation-outside-usr-share-doc usr/share/gtk-doc/html/libqrtr-glib/*
