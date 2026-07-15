@@ -14,7 +14,8 @@
 		"access": "public"
 	},
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./transport": "./src/transport/index.ts"
 	},
 	"files": [
 		"src"

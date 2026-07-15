@@ -19,6 +19,7 @@
       },
       "dependencies": {
         "@ceralive/modem-control": "workspace:*",
+        "zod": "4.4.3",
       },
     },
     "control": {

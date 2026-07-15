@@ -81,6 +81,23 @@ export {
 	type LifecycleInterlock,
 } from './lifecycle-interlock';
 export {
+	asManagedObjects,
+	type DecodedInterfaces,
+	type DecodedManagedObjects,
+	type DecodedObject,
+	type DecodedProps,
+	fetchManagedObjects,
+	findInterface,
+	findObject,
+	followObjectPath,
+	hasInterface,
+	numberProp,
+	objectPaths,
+	pathsWithInterface,
+	propValue,
+	stringProp,
+} from './managed-objects';
+export {
 	createMmDbusBackend,
 	MmDbusBackend,
 	type MmDbusBackendOptions,
