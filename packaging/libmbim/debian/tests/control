@@ -1,0 +1,5 @@
+Test-Command: mbimcli  --help
+Restrictions: superficial
+Depends:
+ libmbim-utils,
+

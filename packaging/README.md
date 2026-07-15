@@ -17,8 +17,29 @@ Each is rebuilt from its pinned, provenance-verified upstream release and its pi
 Debian packaging tag. The authoritative pin manifest is [`upstream-pins.yaml`](upstream-pins.yaml),
 re-verified end-to-end by [`ci/verify-upstream-pins.sh`](ci/verify-upstream-pins.sh).
 
-> **Status:** `[PARTIAL]` — provenance pin manifest + verifier landed. Real `debian/`
-> recipes and the container build order arrive in the packaging wave.
+> **Status:** `[EXISTS]` — provenance pin manifest + verifier, the four `debian/` recipes,
+> and the bootstrap-order container build (`ci/build-bookworm.sh`, amd64 + QEMU arm64) all
+> landed. Both arches build clean with the exact 9-package runtime closure. The package
+> **contract suite** (metadata / upgrade / rollback / daemon smoke) is the next task.
+
+## Recipes & build
+
+Each source's `debian/` dir is checked in at `<Source>/debian/` (`ModemManager`, `libmbim`,
+`libqmi`, `libqrtr-glib`), copied byte-for-byte from its pinned salsa commit
+([`upstream-pins.yaml`](upstream-pins.yaml) `salsa_commit_sha`) with **zero source patches**.
+Only ModemManager carries bookworm adaptations (debhelper relax, `systemd-dev → udev`, and
+systemd/udev install-dir pins) — all documented, with rationale, in
+[`BOOKWORM-ADAPTATIONS.md`](BOOKWORM-ADAPTATIONS.md).
+
+[`ci/build-bookworm.sh`](ci/build-bookworm.sh) `<amd64|arm64>` rebuilds all four in a
+`debian:bookworm` container in the mandatory bootstrap order
+`libqrtr-glib → libmbim → libqmi → modemmanager`. Each source's freshly built `.deb`s feed a
+temporary **local apt repo** so the next source resolves its build-deps against them (not the
+older bookworm-main versions). Arches are **native** — amd64 directly, arm64 via full-system
+QEMU (`--platform linux/arm64`) — never cross-built. The script injects
+`~ceralive0.0.0~dev` (via [`ci/inject-deb-version.sh`](ci/inject-deb-version.sh)), runs real
+`dpkg-buildpackage`, and asserts the **9-package runtime closure** from the `.changes`
+(drift ⇒ non-zero exit). `.deb`s land in the gitignored `build/<arch>/`.
 
 ## Provenance pins
 
@@ -53,4 +74,5 @@ ModemManager 1.24.0, libmbim 1.32.0, libqmi 1.36.0, libqrtr-glib 1.2.2 (salsa
 | [`ci/inject-deb-version.sh`](ci/inject-deb-version.sh) | Writes `<upstream>-<rev>~ceralive<X.Y.Z>` (or `~ceralive0.0.0~dev` for non-tag builds) into each source's `debian/changelog` top entry via `dch --force-bad-version`. Reads upstream versions from each source's changelog — never hardcoded here. |
 | [`ci/verify-upstream-pins.sh`](ci/verify-upstream-pins.sh) | Re-verifies every field of `upstream-pins.yaml` in an isolated `GNUPGHOME`: git-tag lineage (`git ls-remote`), `.dsc` GPG signature vs pinned signer, `.dsc` checksums vs manifest, and the downloaded `.orig.tar` sha256. Exit 0 on success; non-zero with a NAMED failing field on any drift. |
 | [`ci/test-verify-upstream-pins.sh`](ci/test-verify-upstream-pins.sh) | Offline fail-closed proof: runs the three [`ci/fixtures/`](ci/fixtures) tampers (wrong-signer / altered-`.dsc` / altered-`.orig.tar`) and asserts each is rejected on the correct named field. Run standalone; the packaging-wave container lane can adopt it. |
+| [`ci/build-bookworm.sh`](ci/build-bookworm.sh) | Rebuilds all four sources in a `debian:bookworm` container in bootstrap order via a temporary local apt repo. `build-bookworm.sh <amd64\|arm64>` — native amd64 or full-system-QEMU arm64, never cross-built. Fetches + sha256-verifies each pinned `.orig.tar`, overlays the checked-in `debian/`, injects `~ceralive0.0.0~dev`, runs real `dpkg-buildpackage`, and asserts the 9-package runtime closure from the `.changes` (drift ⇒ non-zero). Output to gitignored `build/<arch>/`. |
 | [`ci/contract.sh`](ci/contract.sh) | The packaging **container lane** (bookworm) entry point. Wave-A1 stub: asserts the scaffold is present and the tag-guard + version-injection scripts are wired. Real contract tests (metadata / closure / upgrade / rollback / ordering / daemon smoke) land with the recipes. |

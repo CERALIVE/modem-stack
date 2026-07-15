@@ -67,7 +67,14 @@ bun run typecheck # tsc --noEmit (strict + exactOptionalPropertyTypes)
 ```
 
 `packaging/` runs in a `debian:bookworm` container; its contract/verification scripts live
-under `packaging/ci/`.
+under `packaging/ci/`. The four sources' `debian/` recipes are checked in at
+`packaging/<Source>/debian/` (`ModemManager`, `libmbim`, `libqmi`, `libqrtr-glib` —
+byte-identical to their pinned salsa commits except the bookworm adaptations documented in
+`packaging/BOOKWORM-ADAPTATIONS.md`). `packaging/ci/build-bookworm.sh <amd64|arm64>` rebuilds
+them from source in the mandatory bootstrap order (`libqrtr-glib → libmbim → libqmi →
+modemmanager`) via a temporary local apt repo, on native amd64 or full-system-QEMU arm64
+(never cross-built), and asserts the 9-package runtime closure. `.deb` output lands in the
+gitignored `packaging/build/<arch>/`.
 
 ## CI / CD
 
@@ -78,8 +85,9 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
   `control/**` and `cli/**`: `bun install` → Biome check → `tsc --noEmit` → `bun test`.
   `cancel-in-progress: true`.
 - **`.github/workflows/ci-packaging.yml`** — paths-filtered PR + push(`main`) container lane
-  for `packaging/**`: runs the packaging contract scripts in `debian:bookworm`. At this
-  stage the contract lane is a stub (real recipes land in a later task).
+  for `packaging/**`: runs the packaging contract scripts in `debian:bookworm`. The four
+  `debian/` recipes and `build-bookworm.sh` now exist; the full contract suite (metadata /
+  closure / upgrade / rollback / daemon smoke) lands in a later task.
   `cancel-in-progress: true`.
 - **`.github/workflows/release.yml`** — the **single** release workflow, owns **both**
   artifacts. `workflow_dispatch` with a `tag` input. Job graph:
