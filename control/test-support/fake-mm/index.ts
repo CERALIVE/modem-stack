@@ -25,6 +25,7 @@ export {
 	type SimSpec,
 	simPath,
 } from './object-model';
+export type { PreviousEpoch } from './previous-epoch';
 export { FakeModemManager, type FakeModemManagerOptions, TRIPWIRE_ERROR } from './service';
 export {
 	asManagedObjects,
