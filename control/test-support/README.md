@@ -18,8 +18,9 @@ A real ModemManager object model served on a private session bus (built on the s
 - **Bearers** at `/Bearer/<n>` that are observable in the tree but **throw a tripwire**
   on `Connect` / `Disconnect` — and so do `Modem.Simple.Connect` and `Modem.CreateBearer`
   — proving nothing in the stack ever activates a bearer through MM (NM owns activation).
-- **Two property shapes:** `1.20` (has `Device`, no `Physdev`) vs `1.24` (both), switched
-  per scenario (draft §round-4).
+- **Three property shapes:** `1.20` (has `Device`, no `Physdev`), `1.22` and `1.24`
+  (both `Device` and `Physdev`, since `Physdev` is 1.22+), switched per scenario
+  (draft §round-4). Feature detection (A3.2) reads the shape's real property set.
 - **Signals:** invalidated-only `PropertiesChanged` (`sa{sv}as`, empty changed dict,
   names in the invalidated array), value-carrying `PropertiesChanged`, and real daemon
   `NameOwnerChanged` via name drop / reclaim / restart (new-owner epoch).
