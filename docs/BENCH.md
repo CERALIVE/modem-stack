@@ -199,13 +199,25 @@ container in CI).
 
 ```sh
 mkdir -p A6.3 debs && cd debs
-# Download the release artifact set produced by release.yml for tag v0.1.0:
-gh run download --repo CERALIVE/modem-stack \
-  -n modem-stack-debs-0.1.0 --dir .          # -> release-manifest.txt + <arch>/*.deb
+# Preferred: download the permanent v0.1.0 GitHub Release assets (durable — never expires):
+gh release download v0.1.0 --repo CERALIVE/modem-stack --dir . --clobber
+# -> release-manifest.txt + all 54 .deb files, flat, arch encoded in the filename suffix
+#    (..._amd64.deb / ..._arm64.deb).
+#
+# NOTE: GitHub Release upload sanitizes `~` to `.` in asset filenames (e.g.
+# modemmanager_1.24.0-1~ceralive0.1.0_amd64.deb -> modemmanager_1.24.0-1.ceralive0.1.0_amd64.deb).
+# This is cosmetic only — package content, embedded Debian version, and installability are
+# unaffected (verified byte-identical via sha256 against release-manifest.txt). apt/dpkg read
+# the version from the package's internal control data, not the filename.
+#
+# Fallback (time-limited — CI workflow-run artifact retention expires 2026-10-13, ~90 days
+# from the release run): `gh run download --repo CERALIVE/modem-stack -n modem-stack-debs-0.1.0
+# --dir .` — this variant nests debs under packaging/build/<arch>/*.deb instead of a flat dir;
+# adjust the install glob below accordingly if you use this path instead of the Release.
 
 ARCH=$(dpkg --print-architecture)            # arm64 on the shipping SBC
 sudo apt-get update
-sudo apt-get install -y --allow-downgrades ./"$ARCH"/*.deb | tee ../A6.3/mm-install.txt
+sudo apt-get install -y --allow-downgrades ./*_"$ARCH".deb | tee ../A6.3/mm-install.txt
 cd ..
 
 # Bring the daemon up (or `systemctl restart ModemManager` on a systemd device):
