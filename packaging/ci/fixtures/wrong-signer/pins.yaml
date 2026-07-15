@@ -1,0 +1,29 @@
+# FIXTURE — NOT A REAL PIN. Negative test for verify-upstream-pins.sh.
+#
+# Tamper: the .dsc (packaged here, real & unaltered, signed by Guido Günther
+# 63F6CCDF…C1E3) is pinned to the WRONG signer — Arnaud Ferraris' fingerprint
+# 796DB393…9196. Only that pinned key is imported into the isolated keyring, so
+# gpg cannot verify the signature made by Guido's key and reports NO_PUBKEY for it.
+# Expected: FAIL [modemmanager] signer_fingerprint: signer mismatch …  (exit 1).
+schema_version: 1
+sources:
+  modemmanager:
+    upstream_tag: "1.24.0"
+    upstream_repo: "https://gitlab.freedesktop.org/mobile-broadband/ModemManager.git"
+    upstream_tag_sha: "8e8dbf92f4e3be2aa9ae1b42edbbde275b3426c2"
+    upstream_commit_sha: "dfa41adf391b090720fb1ea56d884f61ea7fba29"
+    signer_fingerprint: "796DB393DC3FF40222B6EA22D3EBB5966BB99196"
+    signer_key_file: "keys/796DB393DC3FF40222B6EA22D3EBB5966BB99196.asc"
+    orig_tar_name: "modemmanager_1.24.0.orig.tar.xz"
+    orig_tar_url: "local:UNREACHED-fails-at-signer-check"
+    orig_tar_sha256: "63ded4c0f3936bb0db5ae35ef1dfd57c5d5b4dd8a5cdaa7fb2182255218c9168"
+    salsa_repo: "https://salsa.debian.org/DebianOnMobile-team/modemmanager.git"
+    salsa_tag: "debian/1.24.0-1"
+    salsa_tag_sha: "92692e6a3f030dded827b74f29e45fa216e2a421"
+    salsa_commit_sha: "260e3c0fe1878929ab3f2d727f9ae47c69f729f1"
+    dsc_url: "local:modemmanager.dsc"
+    dsc_sha256: "f2a0a21fdce6619bf874ab182385225c65b82d217d6b6ed20933ded5c375fa1c"
+    dsc_signer: "Guido Günther <agx@sigxcpu.org>"
+    dsc_checksums_sha256: |
+      63ded4c0f3936bb0db5ae35ef1dfd57c5d5b4dd8a5cdaa7fb2182255218c9168 1361836 modemmanager_1.24.0.orig.tar.xz
+      7585e8cf6fb920e516372ed54d8f5c3d2faf1ffec920ec90fb550b9aaa11de12 36680 modemmanager_1.24.0-1.debian.tar.xz

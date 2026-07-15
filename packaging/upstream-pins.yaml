@@ -1,0 +1,134 @@
+# upstream-pins.yaml — provenance-verified pin manifest for the ModemManager stack.
+#
+# WHAT THIS IS
+#   The four upstream sources CeraLive rebuilds for bookworm, each pinned to an EXACT
+#   upstream release tag and its matching Debian packaging (salsa) tag. Every field is
+#   real, resolved data — never a placeholder. `packaging/ci/verify-upstream-pins.sh`
+#   re-checks every field in an isolated GNUPGHOME and fails closed on any drift.
+#
+# THE PROVENANCE CHAIN (three independent links, all re-verified by the script)
+#   1. LINEAGE — the upstream git tag. `git ls-remote --tags <upstream_repo> <upstream_tag>`
+#      must still resolve to the pinned `upstream_tag_sha` (annotated tag object) and
+#      `upstream_commit_sha` (peeled commit). This authenticates *lineage* — which commit
+#      the release names. Per the plan, the git tag is NEVER byte-compared to a git archive;
+#      the tarball checksum authority is the signed .dsc (link 2), not `git archive`.
+#   2. AUTHORITY — the signed Debian `.dsc`. Its detached GPG clearsign is verified against
+#      the pinned `signer_fingerprint`, whose armored public key is checked into
+#      `packaging/keys/<fingerprint>.asc` (acquisition documented in packaging/keys/README.md).
+#      A verified .dsc is the authority for the tarball checksums it embeds.
+#   3. ARTIFACT — the `.orig.tar`. It is downloaded and its sha256 must equal
+#      `orig_tar_sha256`, which itself equals the corresponding line in the .dsc's
+#      `Checksums-Sha256:` section (copied verbatim into `dsc_checksums_sha256` below).
+#      So: verified .dsc -> embedded checksum -> downloaded tarball hash. Chain closed.
+#
+# WHY signer_fingerprint IS THE .dsc SIGNER (not the upstream tag signer)
+#   The cryptographic authority for the *tarball checksums* is the Debian Developer who
+#   signed the .dsc (Guido Günther / Arnaud Ferraris of the DebianOnMobile team), because
+#   the .dsc is the checksum authority. The upstream git tag's own GPG signature (Aleksander
+#   Morgado, upstream) is NOT re-verified here — the plan sanctions "git ls-remote re-check"
+#   (SHA-pin) for lineage, and re-verifying the tag signature would require fetching tag
+#   objects (a heavier clone the plan tells us to avoid). Lineage = SHA-pin; tarball
+#   authority = .dsc GPG signature. Two orthogonal guarantees, both enforced.
+#
+# EXECUTOR NOTE
+#   These are the tags NAMED by the plan (ModemManager 1.24.0, libmbim 1.32.0, libqmi 1.36.0,
+#   libqrtr-glib 1.2.2; salsa debian/<ver>-1). The executor resolves — never chooses —
+#   versions. All twelve tags (4 upstream annotated + 4 salsa annotated) were confirmed to
+#   exist via `git ls-remote` on 2026-07-14; every checksum below was computed from a real
+#   download and cross-checked against the GPG-verified .dsc.
+#
+# FILE FORMAT
+#   Deliberately flat, 2-space-nested YAML with a single block literal per source
+#   (`dsc_checksums_sha256`). Parsed by a dependency-free awk reader in the verify script,
+#   so the packaging CI container needs no python/yq — only bash+gpg+curl+sha256sum+git.
+
+schema_version: 1
+
+sources:
+  modemmanager:
+    upstream_tag: "1.24.0"
+    upstream_repo: "https://gitlab.freedesktop.org/mobile-broadband/ModemManager.git"
+    upstream_tag_sha: "8e8dbf92f4e3be2aa9ae1b42edbbde275b3426c2"
+    upstream_commit_sha: "dfa41adf391b090720fb1ea56d884f61ea7fba29"
+    signer_fingerprint: "63F6CCDF96229D09286B2AC325BF86524AFCC1E3"
+    signer_key_file: "keys/63F6CCDF96229D09286B2AC325BF86524AFCC1E3.asc"
+    orig_tar_name: "modemmanager_1.24.0.orig.tar.xz"
+    orig_tar_url: "https://deb.debian.org/debian/pool/main/m/modemmanager/modemmanager_1.24.0.orig.tar.xz"
+    orig_tar_sha256: "63ded4c0f3936bb0db5ae35ef1dfd57c5d5b4dd8a5cdaa7fb2182255218c9168"
+    salsa_repo: "https://salsa.debian.org/DebianOnMobile-team/modemmanager.git"
+    salsa_tag: "debian/1.24.0-1"
+    salsa_tag_sha: "92692e6a3f030dded827b74f29e45fa216e2a421"
+    salsa_commit_sha: "260e3c0fe1878929ab3f2d727f9ae47c69f729f1"
+    # 1.24.0-1 is superseded in the live pool (now 1.24.0-1+deb13u1), so the .dsc is pinned
+    # to snapshot.debian.org's permanent content-addressed URL (sha1 39e06def...). The
+    # verify script also derives this same snapshot URL from the .dsc's Checksums-Sha1 as a
+    # fallback for any source whose live-pool .dsc later 404s.
+    dsc_url: "https://snapshot.debian.org/file/39e06def35a111d2e69dc23e62e042fa389bada1"
+    dsc_sha256: "f2a0a21fdce6619bf874ab182385225c65b82d217d6b6ed20933ded5c375fa1c"
+    dsc_signer: "Guido Günther <agx@sigxcpu.org>"
+    dsc_checksums_sha256: |
+      63ded4c0f3936bb0db5ae35ef1dfd57c5d5b4dd8a5cdaa7fb2182255218c9168 1361836 modemmanager_1.24.0.orig.tar.xz
+      7585e8cf6fb920e516372ed54d8f5c3d2faf1ffec920ec90fb550b9aaa11de12 36680 modemmanager_1.24.0-1.debian.tar.xz
+
+  libmbim:
+    upstream_tag: "1.32.0"
+    upstream_repo: "https://gitlab.freedesktop.org/mobile-broadband/libmbim.git"
+    upstream_tag_sha: "4b75d820a8bbc3d1c44f8f6fb5b03720c6a59e0d"
+    upstream_commit_sha: "2bc1080292aae30000e808ec77d7a99b87eb3553"
+    signer_fingerprint: "63F6CCDF96229D09286B2AC325BF86524AFCC1E3"
+    signer_key_file: "keys/63F6CCDF96229D09286B2AC325BF86524AFCC1E3.asc"
+    orig_tar_name: "libmbim_1.32.0.orig.tar.xz"
+    orig_tar_url: "https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0.orig.tar.xz"
+    orig_tar_sha256: "3d516f036f4ca486e2288a397b2c6a9f5d7242b274615f7224137ed37c5e4de7"
+    salsa_repo: "https://salsa.debian.org/DebianOnMobile-team/libmbim.git"
+    salsa_tag: "debian/1.32.0-1"
+    salsa_tag_sha: "db0652b434389552c98391afaa5107554dac012c"
+    salsa_commit_sha: "9a61539c6c5b2b57c4c8e47295080745e9f2b4b1"
+    dsc_url: "https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0-1.dsc"
+    dsc_sha256: "6ea23929777aee45a1a076718281daee6add01bf29b0fd52cd652fc07558d8e9"
+    dsc_signer: "Guido Günther <agx@sigxcpu.org>"
+    dsc_checksums_sha256: |
+      3d516f036f4ca486e2288a397b2c6a9f5d7242b274615f7224137ed37c5e4de7 216108 libmbim_1.32.0.orig.tar.xz
+      6e314011c56e2fc8d6ce8ccb59f8cd9ae6b01909c86e9b24e21c55f7b6f26f74 15436 libmbim_1.32.0-1.debian.tar.xz
+
+  libqmi:
+    upstream_tag: "1.36.0"
+    upstream_repo: "https://gitlab.freedesktop.org/mobile-broadband/libqmi.git"
+    upstream_tag_sha: "70f141dffbe766ff645811520e86506143a3769a"
+    upstream_commit_sha: "defb13dcab0adc7f44f6741807244507a14a30c5"
+    signer_fingerprint: "63F6CCDF96229D09286B2AC325BF86524AFCC1E3"
+    signer_key_file: "keys/63F6CCDF96229D09286B2AC325BF86524AFCC1E3.asc"
+    orig_tar_name: "libqmi_1.36.0.orig.tar.xz"
+    orig_tar_url: "https://deb.debian.org/debian/pool/main/libq/libqmi/libqmi_1.36.0.orig.tar.xz"
+    orig_tar_sha256: "0b4c369f8d2d6ba59f19029a60f2b2449894ffd132297442d6d98791d372b557"
+    salsa_repo: "https://salsa.debian.org/DebianOnMobile-team/libqmi.git"
+    salsa_tag: "debian/1.36.0-1"
+    salsa_tag_sha: "1b3fc7628fb9b00f0d93e73c41d7081fa61ce321"
+    salsa_commit_sha: "b76e958fa882e3d2f8438d222a4bbbcb68c3456b"
+    dsc_url: "https://deb.debian.org/debian/pool/main/libq/libqmi/libqmi_1.36.0-1.dsc"
+    dsc_sha256: "6476feadbb787007e24d1179fe0c280eba8dc0691f4ad1fb0f5dccc801ed0ba5"
+    dsc_signer: "Guido Günther <agx@sigxcpu.org>"
+    dsc_checksums_sha256: |
+      0b4c369f8d2d6ba59f19029a60f2b2449894ffd132297442d6d98791d372b557 1534688 libqmi_1.36.0.orig.tar.xz
+      444e0c21f2cd7b4a7b51029a3cc6c63b42d83fa045778205e68a022e55a172a5 38672 libqmi_1.36.0-1.debian.tar.xz
+
+  libqrtr-glib:
+    upstream_tag: "1.2.2"
+    upstream_repo: "https://gitlab.freedesktop.org/mobile-broadband/libqrtr-glib.git"
+    upstream_tag_sha: "d11055a6a4bb7dd811325ee4531dbeaf1c58abf2"
+    upstream_commit_sha: "8991f0e93713ebf4da48ae4f23940ead42f64c8c"
+    signer_fingerprint: "796DB393DC3FF40222B6EA22D3EBB5966BB99196"
+    signer_key_file: "keys/796DB393DC3FF40222B6EA22D3EBB5966BB99196.asc"
+    orig_tar_name: "libqrtr-glib_1.2.2.orig.tar.bz2"
+    orig_tar_url: "https://deb.debian.org/debian/pool/main/libq/libqrtr-glib/libqrtr-glib_1.2.2.orig.tar.bz2"
+    orig_tar_sha256: "69ec8883d887a426c6402440b200fa53c41e9da8e098333369f2388d3559e856"
+    salsa_repo: "https://salsa.debian.org/DebianOnMobile-team/libqrtr-glib.git"
+    salsa_tag: "debian/1.2.2-1"
+    salsa_tag_sha: "5cc942704905d1152ff8641398a1d8918ebf5d28"
+    salsa_commit_sha: "4933c7a281cd0c6c6ac79464b8a8876da0d93ef2"
+    dsc_url: "https://deb.debian.org/debian/pool/main/libq/libqrtr-glib/libqrtr-glib_1.2.2-1.dsc"
+    dsc_sha256: "4ef2af0a803ad6455bc7fe4b643493a7fca3a8fbc90cbfb22e7a8470b6e0d305"
+    dsc_signer: "Arnaud Ferraris <arnaud.ferraris@gmail.com>"
+    dsc_checksums_sha256: |
+      69ec8883d887a426c6402440b200fa53c41e9da8e098333369f2388d3559e856 26398 libqrtr-glib_1.2.2.orig.tar.bz2
+      d2722191761ce2fa5ddf8ff8c0dd7b2882a2935cdbe189ce4901e60a78670c48 4300 libqrtr-glib_1.2.2-1.debian.tar.xz
