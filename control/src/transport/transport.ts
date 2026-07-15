@@ -52,6 +52,10 @@ interface PendingCall {
 }
 
 const DEFAULT_CALL_TIMEOUT_MS = 30_000;
+// Bound a single connect/auth attempt so a stalled handshake cannot freeze the reconnect
+// loop. A local unix-socket D-Bus connect completes in milliseconds; 2s is ample headroom
+// while keeping reconnect responsive after a bus restart.
+const CONNECT_TIMEOUT_MS = 2_000;
 const DEFAULT_RECONNECT: ResolvedReconnect = {
 	enabled: true,
 	initialDelayMs: 50,
@@ -278,7 +282,12 @@ class DbusTransportImpl implements DbusTransport {
 					cleanup();
 					reject(error instanceof Error ? error : new TransportError(String(error)));
 				};
+				const timer = setTimeout(() => {
+					cleanup();
+					reject(new TransportError(`bus connect timed out after ${CONNECT_TIMEOUT_MS}ms`));
+				}, CONNECT_TIMEOUT_MS);
 				const cleanup = (): void => {
+					clearTimeout(timer);
 					bus.connection.removeListener('connect', onConnect);
 					bus.connection.removeListener('error', onError);
 				};
@@ -300,6 +309,12 @@ class DbusTransportImpl implements DbusTransport {
 		} catch (error) {
 			this.#detachHandlers(bus);
 			bus.connection.removeAllListeners();
+			bus.connection.on('error', () => undefined);
+			try {
+				bus.connection.end();
+			} catch {
+				// The half-open connection is already dead; nothing to close.
+			}
 			throw error;
 		}
 	}
