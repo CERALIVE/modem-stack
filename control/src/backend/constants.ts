@@ -17,6 +17,9 @@ export const OBJECT_MANAGER_IFACE = 'org.freedesktop.DBus.ObjectManager';
 /** `org.freedesktop.DBus.Properties` — `PropertiesChanged`. */
 export const PROPERTIES_IFACE = 'org.freedesktop.DBus.Properties';
 
+/** The root manager interface — `InhibitDevice`, `ScanDevices`, `Version`. */
+export const MM_MANAGER_IFACE = 'org.freedesktop.ModemManager1';
+
 /** The core `Modem` interface. */
 export const MODEM_IFACE = 'org.freedesktop.ModemManager1.Modem';
 

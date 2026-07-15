@@ -31,19 +31,40 @@ import {
 	OBJECT_MANAGER_IFACE,
 	PROPERTIES_IFACE,
 } from './constants';
-import { asManagedObjects } from './managed-objects';
+import { asManagedObjects, type DecodedManagedObjects } from './managed-objects';
 import { ObservationRowStore } from './row-store';
+
+/**
+ * A current-epoch authoritative snapshot, delivered to `onEpochRefresh` AFTER the
+ * epoch guard passes. `epoch` is the owning MM unique bus name; `tree` is the decoded
+ * `GetManagedObjects` payload the snapshot was reconciled from. The Signal.Setup
+ * manager (A3.3) hooks this to (re-)apply cadence per modem per epoch, and the D-Bus
+ * backend uses it to refresh its path→stable-key map.
+ */
+export interface EpochRefreshEvent {
+	readonly epoch: string;
+	readonly tree: DecodedManagedObjects;
+}
 
 export interface MmDbusObserverOptions {
 	/** The transport to talk D-Bus over (A2.4). The observer connects it on `start()`. */
 	readonly transport: DbusTransport;
 	/** MM bus name override (defaults to `org.freedesktop.ModemManager1`). */
 	readonly destination?: string;
+	/**
+	 * Called after EVERY successful current-epoch authoritative snapshot (start,
+	 * hot-plug, epoch change, property change) — never for a superseded epoch. The
+	 * hook fires whether or not any row changed, so a consumer always sees the live
+	 * epoch + tree. It must not throw; a throw is swallowed so it can never break the
+	 * observer's refresh loop.
+	 */
+	readonly onEpochRefresh?: (event: EpochRefreshEvent) => void;
 }
 
 export class MmDbusObserver implements ModemObservationPort {
 	readonly #transport: DbusTransport;
 	readonly #destination: string;
+	readonly #onEpochRefresh: ((event: EpochRefreshEvent) => void) | undefined;
 	readonly #store = new ObservationRowStore();
 	readonly #listeners = new Set<ObservationListener>();
 	readonly #subscriptions: Subscription[] = [];
@@ -64,6 +85,7 @@ export class MmDbusObserver implements ModemObservationPort {
 	constructor(options: MmDbusObserverOptions) {
 		this.#transport = options.transport;
 		this.#destination = options.destination ?? MM_BUS_NAME;
+		this.#onEpochRefresh = options.onEpochRefresh;
 	}
 
 	async start(): Promise<ObservationList> {
@@ -217,8 +239,10 @@ export class MmDbusObserver implements ModemObservationPort {
 			if (this.#currentOwner !== epochOwner || this.#stopped) {
 				return;
 			}
-			const rowsChanged = this.#store.reconcile(asManagedObjects(reply.body[0]));
+			const tree = asManagedObjects(reply.body[0]);
+			const rowsChanged = this.#store.reconcile(tree);
 			const healthChanged = this.#store.markHealthy();
+			this.#notifyEpochRefresh(epochOwner, tree);
 			if (rowsChanged || healthChanged) {
 				this.#emit();
 			}
@@ -245,6 +269,17 @@ export class MmDbusObserver implements ModemObservationPort {
 	#markUnavailable(reason: ObservationFailureReason): void {
 		if (this.#store.markUnavailable(reason)) {
 			this.#emit();
+		}
+	}
+
+	#notifyEpochRefresh(epoch: string, tree: DecodedManagedObjects): void {
+		if (this.#onEpochRefresh === undefined) {
+			return;
+		}
+		try {
+			this.#onEpochRefresh({ epoch, tree });
+		} catch {
+			// A consumer's hook must never break the observer's refresh loop.
 		}
 	}
 
