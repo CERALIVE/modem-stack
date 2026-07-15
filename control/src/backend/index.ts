@@ -54,6 +54,12 @@ export {
 	type IdentityTransition,
 } from './identity-registry';
 export {
+	ALLOW_ALL_INTERLOCK,
+	type InterlockDecision,
+	type InterlockTarget,
+	type LifecycleInterlock,
+} from './lifecycle-interlock';
+export {
 	createMmDbusBackend,
 	MmDbusBackend,
 	type MmDbusBackendOptions,
@@ -72,6 +78,49 @@ export {
 	MmDbusObserver,
 	type MmDbusObserverOptions,
 } from './observer';
+export {
+	NONE_POWER_CAPABILITY,
+	NONE_POWER_HOOK,
+	type PowerCapability,
+	type PowerCapabilityKind,
+	type PowerCycleContext,
+	type PowerCycleResult,
+	type PowerHook,
+	type PreferredUsbMode,
+	unsupportedPowerHook,
+} from './power-contract';
+export {
+	attributeFault,
+	attributeSnapshot,
+	type FaultAttribution,
+	type FaultSymptoms,
+	symptomsFromSnapshot,
+} from './recovery-attribution';
+export {
+	type BudgetDecision,
+	beginAttempt,
+	DEFAULT_RECOVERY_BUDGET,
+	INITIAL_BUDGET_STATE,
+	markRecovered,
+	type RecoveryBudget,
+	type RecoveryBudgetState,
+} from './recovery-budget';
+export {
+	DEFAULT_LADDER_CONFIG,
+	LADDER_ORDER,
+	RecoveryLadder,
+	type RecoveryLadderConfig,
+	type RecoveryLadderDeps,
+	type RecoveryOutcome,
+	type RecoveryOutcomeKind,
+	type RecoveryRequest,
+	type RecoveryRung,
+	type RecoveryStepContext,
+	type RecoveryStepGate,
+	type RecoveryStepReport,
+	type RecoverySteps,
+	type StepOutcome,
+} from './recovery-ladder';
 export {
 	DEFAULT_SIGNAL_INTERVAL_SECONDS,
 	type SignalCadence,
