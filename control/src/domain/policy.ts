@@ -41,6 +41,12 @@ export interface DesiredConnection {
 	readonly apn: 'auto' | string;
 	readonly ipFamily: IpFamily;
 	readonly auth?: DesiredAuth;
+	/**
+	 * Manual operator selection (`gsm.network-id`) — pin registration to a specific
+	 * PLMN. Honored only while roaming (A4.1 amendment): the NM profile writes
+	 * `gsm.network-id = roaming ? networkId : ""`, so it is cleared when roaming is off.
+	 */
+	readonly networkId?: string;
 }
 
 /**

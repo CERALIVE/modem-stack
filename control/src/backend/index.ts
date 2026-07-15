@@ -94,6 +94,39 @@ export {
 	type QuiesceTarget,
 } from './modem-actor';
 export {
+	AUTO_APN_ADVISORY,
+	type AutoApnAdvisory,
+	type AutoApnTransitionResult,
+	autoApnCapableFromVersion,
+	autoApnSupportedByVersion,
+	classifyActivation,
+	type ManualApn,
+	parseNmVersion,
+	probeAutoApnCapability,
+	toAutoArgs,
+	toManualArgs,
+} from './nm-auto-apn';
+export {
+	buildProfile,
+	cliArg,
+	createGsmArgs,
+	flattenPairs,
+	gsmFieldPairs,
+	passwordFlags,
+	patchPairs,
+} from './nm-gsm-fields';
+export {
+	NmcliNmPort,
+	type NmcliNmPortOptions,
+} from './nmcli-nm-port';
+export {
+	type NmcliResult,
+	type NmcliRunner,
+	parseTerse,
+	runNmcli,
+	SpawnNmcliRunner,
+} from './nmcli-runner';
+export {
 	createMmDbusObserver,
 	type EpochRefreshEvent,
 	MmDbusObserver,

@@ -174,11 +174,13 @@ export class StatefulNmcliRunner {
 			}
 			return ok(this.#dumpProfile(profile, terse, fields));
 		}
-		const rows = [...this.#profiles.values()].filter(
-			(profile) => !activeOnly || this.#ifnameFor(profile.uuid) !== undefined,
-		);
 		const cols = fields ?? ['NAME', 'UUID', 'TYPE', 'DEVICE'];
-		const lines = rows.map((profile) =>
+		if (activeOnly) {
+			// One row per ACTIVE (device, connection) instance — a profile up on two
+			// devices yields two rows, matching real `nmcli connection show --active`.
+			return ok(this.#activeRows(cols, terse));
+		}
+		const lines = [...this.#profiles.values()].map((profile) =>
 			cols.map((field) => this.#fieldValue(profile, field)).join(terse ? ':' : '  '),
 		);
 		return ok(lines.join('\n'));
@@ -203,6 +205,21 @@ export class StatefulNmcliRunner {
 			default:
 				return profile.settings.get(field) ?? '';
 		}
+	}
+
+	#activeRows(cols: readonly string[], terse: boolean): string {
+		const lines: string[] = [];
+		for (const [ifname, uuid] of this.#active) {
+			const profile = this.#profiles.get(uuid);
+			if (profile === undefined) {
+				continue;
+			}
+			const row = cols.map((field) =>
+				field === 'DEVICE' ? ifname : this.#fieldValue(profile, field),
+			);
+			lines.push(row.join(terse ? ':' : '  '));
+		}
+		return lines.join('\n');
 	}
 
 	#ifnameFor(uuid: string): string | undefined {
