@@ -22,5 +22,8 @@
 	"scripts": {
 		"test": "bun test",
 		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@httptoolkit/dbus-native": "0.1.5"
 	}
 }
