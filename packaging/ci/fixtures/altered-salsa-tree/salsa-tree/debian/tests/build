@@ -1,0 +1,31 @@
+#!/bin/sh
+# autopkgtest check: Build and run a program against libqrtr-glib, to verify that
+# the headers and pkg-config file are installed correctly
+
+set -e
+
+if [ -n "${DEB_HOST_GNU_TYPE:-}" ]; then
+    CROSS_COMPILE="$DEB_HOST_GNU_TYPE-"
+else
+    CROSS_COMPILE=
+fi
+
+cat <<EOF > libqrtr-glib_test.c
+#include <stdio.h>
+#include <libqrtr-glib/qrtr-version.h>
+
+int main(void)
+{
+  printf("The micro version is %d\n", QRTR_MICRO_VERSION);
+  return 0;
+}
+EOF
+
+# deliberately word-splitting pkg-config output:
+# shellcheck disable=SC2046
+"${CROSS_COMPILE}gcc" -o libqrtr-glib_test libqrtr-glib_test.c \
+$("${CROSS_COMPILE}pkg-config" --cflags --libs qrtr-glib)
+echo "build: OK"
+[ -x libqrtr-glib_test ]
+./libqrtr-glib_test
+echo "run: OK"
