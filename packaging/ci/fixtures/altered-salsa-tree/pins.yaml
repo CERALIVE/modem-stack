@@ -1,0 +1,40 @@
+# FIXTURE — NOT A REAL PIN. Negative test for verify-upstream-pins.sh (4th link).
+#
+# Tamper: every earlier link is intact and passes — the packaged .dsc is real & valid
+# (Guido Günther 63F6CCDF…C1E3), the .orig.tar.gz and .debian.tar.xz both hash exactly to
+# their .dsc Checksums-Sha256 lines, so lineage/signature/checksum/orig-artifact all PASS and
+# the 4th (PACKAGING) link is reached. There, the .debian.tar.xz extracts to a debian/ tree
+# whose `debian/rules` is executable (755), but the fixture's local `salsa-tree/debian/rules`
+# has had its executable bit dropped to 644 — a mode-only divergence a plain `diff -r` would
+# MISS but the canonical tree manifest catches via its executable-bit field.
+# Expected: FAIL [libqrtr-glib] debian_tree: … at 'rules' [executable-bit] …  (exit 1).
+#
+# Real, small (~35 KB) GPG-valid libqrtr-glib 1.4.0-1 artifacts are used so links 1–3 pass
+# offline; the source stanza is honestly keyed `libqrtr-glib` (the test harness passes the
+# source name explicitly). `salsa_repo` uses the `local:` scheme so the salsa comparison tree
+# is read from the packaged `salsa-tree/` dir — no network, matching the other fixtures.
+schema_version: 1
+sources:
+  libqrtr-glib:
+    upstream_tag: "1.4.0"
+    upstream_repo: "https://gitlab.freedesktop.org/mobile-broadband/libqrtr-glib.git"
+    upstream_tag_sha: "459c2042c24b21cb9f05ee0f318b5e6203a2e5c4"
+    upstream_commit_sha: "69791f8f2a092d0ec8eb83cbe51dfc3d157c3079"
+    signer_fingerprint: "63F6CCDF96229D09286B2AC325BF86524AFCC1E3"
+    signer_key_file: "keys/63F6CCDF96229D09286B2AC325BF86524AFCC1E3.asc"
+    orig_tar_name: "libqrtr-glib_1.4.0.orig.tar.gz"
+    orig_tar_url: "local:libqrtr-glib_1.4.0.orig.tar.gz"
+    orig_tar_sha256: "b57068934577b0070c2f180f3dfcd115ce19efec10aeaf877b8a99c9226aaa2c"
+    salsa_repo: "local:salsa-tree"
+    salsa_tag: "debian/1.4.0-1"
+    salsa_tag_sha: "b886af45dfcc1356748f93fd6db0abe1bb2ac581"
+    salsa_commit_sha: "0b45abffcc9fafeb50ecbe9ac6f78b94559112ed"
+    dsc_url: "local:libqrtr-glib.dsc"
+    dsc_sha256: "736ff0cf0aeb5e78f5d8fcf2858733b7ad5a2d06647b83a50dfb6d3b03d01659"
+    dsc_signer: "Guido Günther <agx@sigxcpu.org>"
+    debian_tar_name: "libqrtr-glib_1.4.0-1.debian.tar.xz"
+    debian_tar_url: "local:libqrtr-glib_1.4.0-1.debian.tar.xz"
+    debian_tar_sha256: "3feec39c03c29824a6ce30b3beff6188501e771abca44eff64d9a267f0598241"
+    dsc_checksums_sha256: |
+      b57068934577b0070c2f180f3dfcd115ce19efec10aeaf877b8a99c9226aaa2c 29521 libqrtr-glib_1.4.0.orig.tar.gz
+      3feec39c03c29824a6ce30b3beff6188501e771abca44eff64d9a267f0598241 5084 libqrtr-glib_1.4.0-1.debian.tar.xz

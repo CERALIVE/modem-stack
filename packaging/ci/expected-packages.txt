@@ -1,0 +1,99 @@
+# expected-packages.txt — the frozen two-set package model for the ModemManager stack.
+#
+# WHAT THIS IS
+#   The exact binary packages each source produces, frozen from the NEW pinned salsa
+#   debian/control files (upstream-pins.yaml: MM 1.24.2-2, libmbim 1.34.0-1, libqmi
+#   1.38.0-1, libqrtr-glib 1.4.0-1), for the bookworm rebuild. Two sets per source:
+#
+#   [declared]      — binary package stanzas from debian/control whose Architecture is
+#                     NOT `all`. The build runs `dpkg-buildpackage -B` (arch-only), which
+#                     NEVER emits Architecture: all packages, so the arch-all -doc stanzas
+#                     (modemmanager-doc, libmm-glib-doc, libmbim-glib-doc, libqmi-glib-doc,
+#                     libqrtr-glib-doc) are excluded here. This set is REAL (control-derived)
+#                     and is the reference the pin-derived contract checks assert against.
+#
+#   [all-artifact]  — declared + the auto-generated `<pkg>-dbgsym` package for every declared
+#                     package that ships stripped ELF content. dbgsym packages have NO stanza
+#                     of their own in debian/control (dh_strip/dpkg-dev synthesize them at
+#                     build time), so they are enumerated EXPLICITLY below. This is the
+#                     reference for 1.4's `.changes` equality (both arches) and 2.1's manifest.
+#
+# FINALIZED (todo 1.4)
+#   The [all-artifact] sets below were FINALIZED against the real *.changes from the first
+#   clean bookworm rebuild (todo 1.4, amd64 then arm64) and cross-checked to equal
+#   declared+dbgsym exactly — no other delta. The dbgsym enumeration proved correct as
+#   derived: a -dbgsym is emitted for exactly the 9 ELF-shipping packages (the runtime
+#   closure) and for nothing else (-dev = headers/.so-symlink/pkgconfig/vapi/gir; gir1.2-* =
+#   .typelib, neither ships a stripped ELF). These sets are enforced for EQUALITY per
+#   source+arch by ci/check-package-sets.sh (add/remove/rename fails closed). The [declared]
+#   sets remain frozen from debian/control.
+#
+# DERIVATION (which declared packages get a -dbgsym)
+#   ELF-shipping (=> gets -dbgsym): the 9 runtime packages — modemmanager (daemon+plugins),
+#   libmm-glib0/libmbim-glib4/libqmi-glib5/libqrtr-glib0 (shared libs), libmbim-utils/
+#   libqmi-utils (CLI binaries), libmbim-proxy/libqmi-proxy (proxy binaries).
+#   No ELF (=> NO -dbgsym): every *-dev (headers + unversioned .so symlink + pkgconfig +
+#   vapi + gir XML) and every gir1.2-*-1.0 (binary .typelib, not a stripped ELF).
+#
+# FORMAT — flat, one package per line under a `[<source> <set>]` header; awk/grep-friendly.
+
+[modemmanager declared]
+modemmanager
+modemmanager-dev
+libmm-glib0
+libmm-glib-dev
+gir1.2-modemmanager-1.0
+
+[modemmanager all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
+modemmanager
+modemmanager-dev
+libmm-glib0
+libmm-glib-dev
+gir1.2-modemmanager-1.0
+modemmanager-dbgsym
+libmm-glib0-dbgsym
+
+[libmbim declared]
+libmbim-glib4
+libmbim-glib-dev
+libmbim-utils
+libmbim-proxy
+gir1.2-mbim-1.0
+
+[libmbim all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
+libmbim-glib4
+libmbim-glib-dev
+libmbim-utils
+libmbim-proxy
+gir1.2-mbim-1.0
+libmbim-glib4-dbgsym
+libmbim-utils-dbgsym
+libmbim-proxy-dbgsym
+
+[libqmi declared]
+libqmi-glib-dev
+libqmi-glib5
+libqmi-utils
+libqmi-proxy
+gir1.2-qmi-1.0
+
+[libqmi all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
+libqmi-glib-dev
+libqmi-glib5
+libqmi-utils
+libqmi-proxy
+gir1.2-qmi-1.0
+libqmi-glib5-dbgsym
+libqmi-utils-dbgsym
+libqmi-proxy-dbgsym
+
+[libqrtr-glib declared]
+libqrtr-glib0
+libqrtr-glib-dev
+gir1.2-qrtr-1.0
+
+[libqrtr-glib all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
+libqrtr-glib0
+libqrtr-glib-dev
+gir1.2-qrtr-1.0
+libqrtr-glib0-dbgsym

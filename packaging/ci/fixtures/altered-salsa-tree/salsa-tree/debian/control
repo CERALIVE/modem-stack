@@ -1,0 +1,69 @@
+Source: libqrtr-glib
+Priority: optional
+Maintainer: DebianOnMobile Maintainers <debian-on-mobile-maintainers@alioth-lists.debian.net>
+Uploaders: Arnaud Ferraris <aferraris@debian.org>,
+           Guido Günther <agx@sigxcpu.org>,
+           Henry-Nicolas Tourneur <debian@nilux.be>,
+           Martin <debacle@debian.org>
+Build-Depends: debhelper-compat (= 13),
+               dh-sequence-gir,
+               gir1.2-gio-2.0-dev,
+               gir1.2-gobject-2.0-dev,
+               gobject-introspection (>= 1.80),
+               libglib2.0-dev (>= 2.56),
+               meson,
+               pkgconf,
+               python3:any,
+Build-Depends-Indep: gi-docgen <!nodoc>,
+                     libglib2.0-doc <!nodoc>
+Standards-Version: 4.7.2
+Section: libs
+Homepage: https://gitlab.freedesktop.org/mobile-broadband/libqrtr-glib/
+Vcs-Git: https://salsa.debian.org/DebianOnMobile-team/libqrtr-glib.git
+Vcs-Browser: https://salsa.debian.org/DebianOnMobile-team/libqrtr-glib/
+
+Package: libqrtr-glib0
+Architecture: linux-any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+Description: Support library to use the QRTR protocol
+ glib-based library to use and manage the QRTR (Qualcomm IPC Router) bus.
+ .
+ This package contains the shared library.
+
+Package: libqrtr-glib-dev
+Section: libdevel
+Architecture: linux-any
+Multi-Arch: same
+Depends: libglib2.0-dev,
+         libqrtr-glib0 (= ${binary:Version}),
+         ${gir:Depends},
+         ${misc:Depends},
+Provides: ${gir:Provides}
+Suggests: libqrtr-glib-doc,
+Description: Development files for libqrtr-glib
+ glib-based library to use and manage the QRTR (Qualcomm IPC Router) bus.
+ .
+ This package contains the library headers and development files.
+
+Package: libqrtr-glib-doc
+Section: doc
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends},
+Build-Profiles: <!nodoc>
+Description: API documentation for libqrtr-glib
+ glib-based library to use and manage the QRTR (Qualcomm IPC Router) bus.
+ .
+ This package contains the API documentation.
+
+Package: gir1.2-qrtr-1.0
+Section: introspection
+Architecture: linux-any
+Multi-Arch: same
+Depends: ${gir:Depends}, ${misc:Depends}
+Description: GObject introspection data for libqrtr-glib
+ glib-based library to use and manage the QRTR (Qualcomm IPC Router) bus.
+ .
+ This package contains the GObject-introspection data in binary typelib format.

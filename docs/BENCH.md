@@ -186,7 +186,7 @@ b=$(sed 's/.*: *//' A6.3/slot-uid-before.txt); a=$(sed 's/.*: *//' A6.3/slot-uid
 ## RB-3 — MM-1.24-from-artifacts install `[PARTIAL]`
 
 Install the packaged ModemManager 1.24 stack on a clean bench device **from the release CI
-artifacts** (Phase A does no apt publication) and prove the daemon comes up at 1.24.0. This
+artifacts** (Phase A does no apt publication) and prove the daemon comes up at 1.24.2. This
 is the on-hardware counterpart of A5.2's daemon smoke (which runs in a `debian:bookworm`
 container in CI).
 
@@ -199,25 +199,28 @@ container in CI).
 
 ```sh
 mkdir -p A6.3 debs && cd debs
-# Preferred: download the permanent v0.1.0 GitHub Release assets (durable — never expires):
-gh release download v0.1.0 --repo CERALIVE/modem-stack --dir . --clobber
+# Preferred: download the permanent latest-release GitHub Release assets (durable — never
+# expires); v0.2.0 is the latest release at time of writing:
+gh release download v0.2.0 --repo CERALIVE/modem-stack --dir . --clobber
 # -> release-manifest.txt + all 54 .deb files, flat, arch encoded in the filename suffix
 #    (..._amd64.deb / ..._arm64.deb).
 #
 # NOTE: GitHub Release upload sanitizes `~` to `.` in asset filenames (e.g.
-# modemmanager_1.24.0-1~ceralive0.1.0_amd64.deb -> modemmanager_1.24.0-1.ceralive0.1.0_amd64.deb).
+# modemmanager_1.24.2-2~ceralive0.2.0_amd64.deb -> modemmanager_1.24.2-2.ceralive0.2.0_amd64.deb).
 # This is cosmetic only — package content, embedded Debian version, and installability are
 # unaffected (verified byte-identical via sha256 against release-manifest.txt). apt/dpkg read
 # the version from the package's internal control data, not the filename.
 #
-# Fallback (time-limited — CI workflow-run artifact retention expires 2026-10-13, ~90 days
-# from the release run): `gh run download --repo CERALIVE/modem-stack -n modem-stack-debs-0.1.0
+# Fallback (time-limited — CI workflow-run artifact retention expires ~90 days after the
+# release run): `gh run download --repo CERALIVE/modem-stack -n modem-stack-debs-0.2.0
 # --dir .` — this variant nests debs under packaging/build/<arch>/*.deb instead of a flat dir;
 # adjust the install glob below accordingly if you use this path instead of the Release.
 
 ARCH=$(dpkg --print-architecture)            # arm64 on the shipping SBC
 sudo apt-get update
-sudo apt-get install -y --allow-downgrades ./*_"$ARCH".deb | tee ../A6.3/mm-install.txt
+# Post-bump every source outranks bookworm stock (see the note below), so installing the
+# CeraLive set over stock is a pure upgrade — no `--allow-downgrades` needed:
+sudo apt-get install -y ./*_"$ARCH".deb | tee ../A6.3/mm-install.txt
 cd ..
 
 # Bring the daemon up (or `systemctl restart ModemManager` on a systemd device):
@@ -230,23 +233,28 @@ busctl introspect org.freedesktop.ModemManager1 /org/freedesktop/ModemManager1 \
 **Expected output**
 
 ```
-mmcli 1.24.0
+mmcli 1.24.2
 ```
 
-and the coherence check: every installed stack package carries the same `~ceralive0.1.0`
+and the coherence check: every installed stack package carries the same `~ceralive0.2.0`
 suffix (per the release manifest).
 
 **Machine check**
 
 ```sh
-grep -q 'mmcli 1\.24\.0' A6.3/mm-version.txt \
-  && awk -F'[ \t]+' 'NR>0 && /~ceralive0\.1\.0/{n++} END{exit !(n>=9)}' debs/release-manifest.txt \
+grep -q 'mmcli 1\.24\.2' A6.3/mm-version.txt \
+  && awk -F'[ \t]+' 'NR>0 && /~ceralive0\.2\.0/{n++} END{exit !(n>=9)}' debs/release-manifest.txt \
   && echo "RB-3 PASS" || echo "RB-3 FAIL"
 ```
 
-> `libqrtr-glib0` is the one package whose `~ceralive0.1.0` sorts **below** bookworm stock
-> `1.2.2-1` — hence `--allow-downgrades` on install. Phase-B image integration replaces this
-> with apt pin 990. All other three sources sort above stock.
+> **Direction (post-bump):** all four sources now sort **above** bookworm stock —
+> ModemManager `1.24.2-2` > `1.20.4-1`, libmbim `1.34.0-1` > `1.28.2-1`, libqmi `1.38.0-1` >
+> `1.32.2-1`, and — newly — libqrtr-glib `1.4.0-1` > `1.2.2-1`. libqrtr-glib **flipped** from
+> below to above at this bump: pre-bump its `1.2.2-1~ceralive…` was tilde-lower than stock
+> `1.2.2-1` and needed `--allow-downgrades`; the new `1.4.0-1` outranks stock outright. So the
+> install above is a pure **upgrade** and needs **no** `--allow-downgrades` — only the reverse
+> (rollback to stock) is a downgrade. Phase-B image integration replaces the artifact install
+> with apt pin 990. (Empirically confirmed in `test-results/upstream-currency/1.3/`.)
 
 **Evidence:** `test-results/modem-control/A6.3/{mm-install,mm-version}.txt`
 
@@ -460,7 +468,7 @@ mmcli --version | tee -a A6.3/arm64-probe.txt
 ```
 aarch64
 PROBE OK: external-auth, objects=<n>
-mmcli 1.24.0
+mmcli 1.24.2
 ```
 
 **Machine check**
@@ -468,7 +476,7 @@ mmcli 1.24.0
 ```sh
 grep -q aarch64 A6.3/arm64-uname.txt \
   && grep -Eq '^PROBE OK: external-auth, objects=[1-9]' A6.3/arm64-probe.txt \
-  && grep -q 'mmcli 1\.24\.0' A6.3/arm64-probe.txt \
+  && grep -q 'mmcli 1\.24\.2' A6.3/arm64-probe.txt \
   && echo "RB-7 PASS" || echo "RB-7 FAIL"
 ```
 
@@ -498,22 +506,22 @@ mkdir -p A6.3
 } | tee A6.3/daemon-smoke.txt
 ```
 
-**Expected output** — MM owns the bus name, reports version `1.24.0`, and the udev rules are
+**Expected output** — MM owns the bus name, reports version `1.24.2`, and the udev rules are
 present:
 
 ```
 org.freedesktop.ModemManager1 …
-.Version property s "1.24.0" …
+.Version property s "1.24.2" …
 /usr/lib/udev/rules.d/77-mm-…rules
-mmcli 1.24.0
+mmcli 1.24.2
 ```
 
 **Machine check**
 
 ```sh
 grep -q 'ModemManager1' A6.3/daemon-smoke.txt \
-  && grep -q '"1\.24\.0"' A6.3/daemon-smoke.txt \
-  && grep -q 'mmcli 1\.24\.0' A6.3/daemon-smoke.txt \
+  && grep -q '"1\.24\.2"' A6.3/daemon-smoke.txt \
+  && grep -q 'mmcli 1\.24\.2' A6.3/daemon-smoke.txt \
   && echo "RB-8 PASS" || echo "RB-8 FAIL"
 ```
 

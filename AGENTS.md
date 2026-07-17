@@ -44,11 +44,43 @@ npm and the `.deb` set. `.deb` versions encode the tag as `<upstream>-<rev>~cera
 (upstream-ordered, apt-safe; injected with `dch --force-bad-version`). Non-tag CI builds use
 `~ceralive0.0.0~dev`. Full contract: `docs/VERSIONING.md`.
 
+## PROVENANCE PINS (packaging)
+
+The four rebuilt sources are pinned in `packaging/upstream-pins.yaml`, re-verified end-to-end
+by `packaging/ci/verify-upstream-pins.sh` in an isolated `GNUPGHOME`. Current pins:
+
+| Source | Upstream | Salsa packaging tag |
+|--------|----------|---------------------|
+| ModemManager | 1.24.2 | `debian/1.24.2-2` |
+| libmbim | 1.34.0 | `debian/1.34.0-1` |
+| libqmi | 1.38.0 | `debian/1.38.0-1` |
+| libqrtr-glib | 1.4.0 | `debian/1.4.0-1` |
+
+Each pin carries a **four-link provenance chain**, all re-checked and failing closed with a
+named field on any drift:
+
+1. **Lineage** — the upstream git tag object + peeled commit SHA (`git ls-remote`; the tag is
+   never byte-compared to a git archive).
+2. **Authority** — the signed Debian `.dsc`, GPG-verified against a pinned signer fingerprint
+   whose armored key lives in `packaging/keys/` (mapping in `packaging/keys/README.md`).
+3. **Artifact** — the `.orig.tar`, whose sha256 equals the verified `.dsc`'s
+   `Checksums-Sha256` entry.
+4. **Packaging** — the `.debian.tar.xz`, whose sha256 equals the `.dsc`, and whose extracted
+   `debian/` tree is proven byte-identical to the pinned salsa tag via a canonical metadata
+   manifest (path, file type, exec-bit, symlink target, content sha256 per entry).
+
+The container build additionally enforces the finalized **two-set package model** (declared
+arch-dependent stanzas + enumerated `-dbgsym`) for exact per-source set **equality** via
+`packaging/ci/check-package-sets.sh` (add/remove/rename fails closed). Full detail:
+`packaging/README.md`.
+
 ## POLICY
 
 `packaging/` is a **no-fork** effort: the first release carries zero quilt patches; adding a
 patch later is an architecture gate (rationale + filed upstream MR + review);
 udev/plugin/device-support improvements go **upstream first**. Full terms: `POLICY.md`.
+The Fibocom **FM350** modem (PCIe / `mtk_t7xx`) is documented-**deferred**, not supported —
+rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION.md`.
 
 ## WORKSPACE / TOOLCHAIN
 
@@ -90,18 +122,33 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
   closure / upgrade / rollback / daemon smoke) lands in a later task.
   `cancel-in-progress: true`.
 - **`.github/workflows/release.yml`** — the **single** release workflow, owns **both**
-  artifacts. `workflow_dispatch` with a `tag` input. Job graph:
-  1. **tag-guard** (`packaging/ci/tag-guard.sh`) — input must match `^v\d+\.\d+\.\d+$`;
-     anything else (pre-release, build metadata, missing `v`) **fails closed** before any
-     other job runs.
+  artifacts. `workflow_dispatch` with a `tag` input. **Strictly sequential** job graph
+  `tag-guard → test → build-deb → publish-npm → create-release` (build-before-publish; npm
+  never publishes before the `.deb` set builds green). Every downstream job checks out
+  `ref: needs.tag-guard.outputs.sha` and re-asserts `git rev-parse HEAD` equals that peeled
+  SHA; every dynamic input is routed through `env:` (no `${{ }}` in any `run:` body):
+  1. **tag-guard** — resolves the tag to its **peeled commit SHA**
+     (`packaging/ci/resolve-tag.sh`, `git ls-remote`, prefers `refs/tags/<tag>^{}`),
+     re-checks out that SHA, asserts HEAD, then runs `packaging/ci/tag-guard.sh` (input must
+     match `^v\d+\.\d+\.\d+$`; pre-release / build-metadata / missing-`v` **fails closed**
+     before any other job). Exports `version` + `sha`.
   2. **test** (needs tag-guard) — full bun lane + packaging contract lane
      (test-before-publish).
-  3. **publish-npm** (needs test) — OIDC trusted publishing (`id-token: write`), verifies
-     `control/package.json` version === tag, `npm publish --access public`.
-  4. **build-deb** (needs test) — strips `v`, injects `<upstream>-<rev>~ceralive<X.Y.Z>`
-     into each source's `debian/changelog` via `dch --force-bad-version`
-     (`packaging/ci/inject-deb-version.sh`), uploads `.deb` artifacts + a release manifest.
-     Non-tag runs use `~ceralive0.0.0~dev`.
+  3. **build-deb** (needs [tag-guard, test]) — injects `<upstream>-<rev>~ceralive<X.Y.Z>`
+     (non-tag runs `~ceralive0.0.0~dev`) via `packaging/ci/inject-deb-version.sh`, builds both
+     arches, runs the package contract suite + daemon smoke, generates the manifest-complete
+     release manifest (`packaging/ci/generate-release-manifest.sh`), and uploads the `.deb`
+     artifacts + manifest.
+  4. **publish-npm** (needs [tag-guard, build-deb]) — OIDC trusted publishing
+     (`id-token: write`), verifies `control/package.json` version === tag, then an
+     **integrity-idempotent** publish: `npm pack` → classify registry state (404 → publish;
+     present+matching integrity → idempotent skip; present+differing → fail closed), with a
+     last-instant `resolve-tag.sh` re-verification immediately before `npm publish`.
+  5. **create-release** (needs [tag-guard, build-deb, publish-npm], `contents: write`) —
+     pre-create moved-tag re-check, downloads the `.deb` + manifest artifact, assembles a flat
+     asset dir, and reconciles it immutably via `packaging/ci/reconcile-release-assets.sh`
+     (manifest-complete, staged sanitized `~`→`.` names, collision-rejected, existing assets
+     integrity-compared and never overwritten).
   `cancel-in-progress: false` (never cancel a release/publish mid-run).
 
 Action pins track the latest stable **major** (resolved via the `gh api` releases/latest

@@ -194,6 +194,21 @@ build_one() {
 	log "apt-get build-dep (resolves against local repo for stack deps)"
 	apt-get build-dep -y --no-install-recommends "$tree" >/dev/null
 
+	# dh_girepository (bookworm GI 1.74) resolves cross-namespace typelib deps (Qmi-1.0 imports
+	# Qrtr-1.0; ModemManager-1.0 imports Qmi/Mbim/Qrtr) via the *installed* dependency .typelib,
+	# which ships only in the stack's own gir1.2-*-1.0 packages. On bookworm the rebuilt -dev
+	# build-deps do NOT pull them (GI 1.74 regenerates an empty ${gir:Depends} for -dev), so
+	# libqmi dies with "Could not find Qrtr-1.0.typelib dependency". Install every gir typelib
+	# already in the local repo first — mirrors an archive build (all gir1.2-* co-installable);
+	# affects only the build env, never a produced package's contents or the emitted set.
+	local gir_names
+	gir_names="$(find "$REPO" -maxdepth 1 -name 'gir1.2-*.deb' -printf '%f\n' 2>/dev/null \
+		| sed 's/_.*//' | sort -u | tr '\n' ' ')"
+	if [ -n "${gir_names// /}" ]; then
+		log "install freshly-built gir typelibs so dh_girepository resolves them: $gir_names"
+		apt-get install -y --no-install-recommends $gir_names >/dev/null
+	fi
+
 	# Real binary build, arch-only (-B): all 9 runtime pkgs are arch-specific; -B skips the
 	# arch:all -doc pkgs and the -indep DEP-8 patch target.
 	log "dpkg-buildpackage -B (DEB_BUILD_OPTIONS='$DEB_BUILD_OPTIONS')"
@@ -249,5 +264,12 @@ else
 	exit 3
 fi
 
+# ---- exact per-source package-set EQUALITY (finalized two-set model) ----------------------
+# Stronger than the runtime closure above: asserts EVERY source's *.changes binary set equals
+# its frozen [<source> all-artifact] set in expected-packages.txt, exactly (add/remove/rename
+# all fail). check-package-sets.sh fails closed and names the discrepancy.
+step "package-set equality verification (per source+arch, from *.changes)"
+bash "$PKGW/ci/check-package-sets.sh" /out "$PKGW/ci/expected-packages.txt"
+
 echo
-echo "PASS [$ARCH]: 4 sources built in bootstrap order; runtime closure == the 9."
+echo "PASS [$ARCH]: 4 sources built in bootstrap order; runtime closure == the 9; per-source .changes sets EQUAL the finalized all-artifact expectation."

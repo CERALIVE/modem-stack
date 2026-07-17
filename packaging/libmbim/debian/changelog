@@ -1,3 +1,33 @@
+libmbim (1.34.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * debian/libmbim-glib4.symbols: update for new upstream release
+  * d/control: drop now-unneeded Priority field
+    `Priority: optional` is the default since Debian policy 4.7.3, let's
+    drop it and bump Standards-Version accordingly.
+
+ -- Arnaud Ferraris <aferraris@debian.org>  Mon, 19 Jan 2026 23:01:48 +0100
+
+libmbim (1.32.0-2) unstable; urgency=medium
+
+  [ Guido Günther ]
+  * d/gbp.conf: Switch to debian/latest.
+    And sync options with libqmi packaging
+
+  [ Arnaud Ferraris ]
+  * d/watch: convert to version 5.
+    Use the new Gitlab template for easier management, but override the
+    matching pattern so we only get stable (pre)releases, which have an even
+    minor version number.
+  * d/control: drop libgirepository1.0-dev build dependency.
+    This one shouldn't be used anymore as it isn't multiarch-friendly.
+    Instead, use a recent `gobject-introspection` and explicitly (build)
+    depend on the needed `gir1.2-*-dev` packages.
+    While at it, drop the now-obsolete `Rules-Requires-Root` and bump
+    `Standards-Version` as no other change is needed. (Closes: #1118875)
+
+ -- Arnaud Ferraris <aferraris@debian.org>  Tue, 28 Oct 2025 13:03:18 +0100
+
 libmbim (1.32.0-1) unstable; urgency=medium
 
   * New upstream version. This is the release for the RC currently in Trixie.

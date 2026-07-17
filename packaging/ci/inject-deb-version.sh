@@ -61,7 +61,7 @@ for src in "${SOURCES[@]}"; do
 	else
 		# No recipe yet (packaging wave). Document the exact invocation this WILL run.
 		echo "  ${src}: no debian/changelog yet — will run:"
-		echo "      dch --force-bad-version --newversion \"<upstream>-1${SUFFIX}\" \"CeraLive rebuild\""
+		echo "      dch --force-bad-version --newversion \"<upstream>-<rev>${SUFFIX}\" \"CeraLive rebuild\""
 		pending=$((pending + 1))
 	fi
 done

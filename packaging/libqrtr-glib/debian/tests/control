@@ -1,0 +1,3 @@
+Tests: build
+Depends: build-essential, pkg-config, libqrtr-glib-dev
+Restrictions: allow-stderr superficial

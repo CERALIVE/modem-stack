@@ -41,40 +41,40 @@ encoding is:
 <upstream>-<rev>~ceralive<X.Y.Z>
 ```
 
-For the first packaging rev (`-1`) of each source at repo tag `v0.1.0`:
+For the current pins at repo tag `v0.2.0` (the latest release — the ModemManager revision
+is `-2`, the other three `-1`):
 
 | Source | Upstream | Encoded `.deb` version |
 |--------|----------|------------------------|
-| ModemManager  | 1.24.0 | `1.24.0-1~ceralive0.1.0` |
-| libmbim       | 1.32.0 | `1.32.0-1~ceralive0.1.0` |
-| libqmi        | 1.36.0 | `1.36.0-1~ceralive0.1.0` |
-| libqrtr-glib  | 1.2.2  | `1.2.2-1~ceralive0.1.0`  |
+| ModemManager  | 1.24.2 | `1.24.2-2~ceralive0.2.0` |
+| libmbim       | 1.34.0 | `1.34.0-1~ceralive0.2.0` |
+| libqmi        | 1.38.0 | `1.38.0-1~ceralive0.2.0` |
+| libqrtr-glib  | 1.4.0  | `1.4.0-1~ceralive0.2.0`  |
 
-> The upstream versions above are illustrative of the encoding shape. The authoritative,
-> provenance-verified upstream pins live in `packaging/upstream-pins.yaml` (added in a
-> later task); the release workflow derives `<upstream>-<rev>` from each source's
-> `debian/changelog`, never from a value hardcoded in the version script.
+> The upstream versions above are the current provenance-verified pins. The authoritative
+> manifest is `packaging/upstream-pins.yaml`; the release workflow derives `<upstream>-<rev>`
+> from each source's `debian/changelog`, never from a value hardcoded in the version script.
 
 ### Why the tilde (`~`)
 
 `dpkg` orders a `~` suffix **lower** than the un-suffixed version:
 
 ```
-1.24.0-1~ceralive0.1.0  <  1.24.0-1~ceralive0.2.0  <  1.24.0-1
+1.24.2-2~ceralive0.1.0  <  1.24.2-2~ceralive0.2.0  <  1.24.2-2
 ```
 
-So every CeraLive rebuild sorts **below** a hypothetical stock Debian `1.24.0-1`, and a
+So every CeraLive rebuild sorts **below** a hypothetical stock Debian `1.24.2-2`, and a
 newer repo tag (`0.2.0`) sorts **above** an older one (`0.1.0`) — exactly the ordering
 `apt` needs. This is why the release workflow injects the version with
 `dch --force-bad-version`: the tilde-encoded version is numerically **lower** than the
-pinned `<upstream>-1` changelog top, and plain `dch --newversion` refuses a
+pinned `<upstream>-<rev>` changelog top, and plain `dch --newversion` refuses a
 lower-than-current version (per `dch(1)`). `--force-bad-version` is **required**, not
 optional.
 
 The exact injection command, run once per source, is:
 
 ```sh
-dch --force-bad-version --newversion "<upstream>-1~ceralive<X.Y.Z>" "CeraLive rebuild"
+dch --force-bad-version --newversion "<upstream>-<rev>~ceralive<X.Y.Z>" "CeraLive rebuild"
 ```
 
 All four sources take the **same** `~ceralive<X.Y.Z>` suffix for a given release.

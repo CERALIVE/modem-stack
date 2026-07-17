@@ -11,8 +11,9 @@ Build-Depends: debhelper-compat (= 13),
                dh-sequence-gir,
                bash-completion,
                gettext,
-               libdbus-1-dev,
+               gobject-introspection,
                libgirepository1.0-dev,
+               libdbus-1-dev,
                libglib2.0-dev,
                libgudev-1.0-dev,
                libmbim-glib-dev (>= 1.32~),
@@ -21,18 +22,17 @@ Build-Depends: debhelper-compat (= 13),
                libsystemd-dev (>= 209),
                meson,
                polkitd,
-               python3-dbus,
-               python3-gi,
                udev,
                valac (>= 0.22),
                xsltproc,
-# Needed for building documentation
-               gtk-doc-tools <!nodoc>,
-               libglib2.0-doc <!nodoc>,
 # Needed for automated tests
                dbus <!nocheck>,
+               python3-dbus <!nocheck>,
+               python3-gi <!nocheck>,
+# Needed for building documentation
+Build-Depends-Indep: gtk-doc-tools <!nodoc>,
+                     libglib2.0-doc <!nodoc>,
 Standards-Version: 4.7.2
-Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/DebianOnMobile-team/modemmanager.git
 Vcs-Browser: https://salsa.debian.org/DebianOnMobile-team/modemmanager
 Homepage: https://www.freedesktop.org/wiki/Software/ModemManager/
@@ -108,13 +108,14 @@ Package: libmm-glib-dev
 Architecture: linux-any
 Multi-Arch: same
 Section: libdevel
-Depends: libmm-glib0 (= ${binary:Version}),
+Depends: ${gir:Depends},
+         ${misc:Depends},
+         libmm-glib0 (= ${binary:Version}),
          gir1.2-modemmanager-1.0 (= ${binary:Version}),
          libglib2.0-dev,
          modemmanager-dev,
-         ${shlibs:Depends},
-         ${misc:Depends},
 Suggests: libmm-glib-doc
+Provides: ${gir:Provides}
 Description: D-Bus service for managing modems - library development files
  ModemManager is a DBus-activated daemon which controls mobile broadband
  (2G/3G/4G/5G) devices and connections. Whether built-in devices, USB dongles,
@@ -147,7 +148,6 @@ Section: introspection
 Architecture: linux-any
 Multi-Arch: same
 Depends: ${gir:Depends},
-         ${shlibs:Depends},
          ${misc:Depends}
 Description: GObject introspection data for modemmanager
  ModemManager is a DBus-activated daemon which controls mobile broadband

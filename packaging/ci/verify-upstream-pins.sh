@@ -12,7 +12,14 @@
 #                  `.dsc` is the authority for the tarball checksums it embeds.
 #   3. ARTIFACT  — the `.orig.tar` downloads and its sha256 equals `orig_tar_sha256`, which
 #                  equals the matching line in the `.dsc`'s Checksums-Sha256 (copied verbatim
-#                  into the manifest's `dsc_checksums_sha256`). Chain closed.
+#                  into the manifest's `dsc_checksums_sha256`).
+#   4. PACKAGING — the `.debian.tar.xz` downloads (from `debian_tar_url`), its sha256 equals
+#                  `debian_tar_sha256` (which equals its line in the verified `.dsc`, so the
+#                  .dsc stays the checksum authority), and its extracted `debian/` tree is
+#                  proven byte-identical to the pinned salsa tag's `debian/` tree via a
+#                  CANONICAL TREE MANIFEST (per entry: relative path, file type, executable
+#                  bit, symlink target, content sha256). Stronger than `diff -r` — it also
+#                  catches exec-bit and symlink-target drift. Chain closed.
 #
 # ALL GPG work happens in a throwaway isolated GNUPGHOME (mktemp -d, 0700, rm -rf on exit).
 # The caller's ~/.gnupg is never touched or read.
@@ -62,7 +69,7 @@ MANIFEST="$(cd "$(dirname "$MANIFEST")" && pwd)/$(basename "$MANIFEST")"
 MANIFEST_DIR="$(dirname "$MANIFEST")"
 [ -n "$KEYS_BASE" ] || KEYS_BASE="$MANIFEST_DIR"
 
-for tool in gpg curl sha256sum awk git; do
+for tool in gpg curl sha256sum awk git tar; do
 	command -v "$tool" >/dev/null 2>&1 || { echo "verify-upstream-pins: missing required tool '$tool'" >&2; exit 2; }
 done
 
@@ -218,7 +225,29 @@ verify_source() {
 			salsa
 	fi
 
-	echo "ok   [$src] lineage + .dsc signature + checksums + .orig.tar verified"
+	# --- (4th link authority) pinned debian_tar_sha256 == the verified .dsc's own line ---
+	local deb_name deb_url deb_sha256 dsc_deb_sha
+	deb_name="$(yaml_scalar "$src" debian_tar_name)"
+	deb_url="$(yaml_scalar "$src" debian_tar_url)"
+	deb_sha256="$(yaml_scalar "$src" debian_tar_sha256)"
+	[ -n "$deb_name" ] || fail "$src" debian_tar_name "missing debian_tar_name in manifest"
+	dsc_deb_sha="$(printf '%s\n' "$dsc_ck" | awk -v f="$deb_name" '$3==f {print tolower($1); exit}')"
+	[ -n "$dsc_deb_sha" ] \
+		|| fail "$src" debian_tar_name "$deb_name not listed in the .dsc's Checksums-Sha256"
+	[ "$dsc_deb_sha" = "${deb_sha256,,}" ] \
+		|| fail "$src" debian_tar_sha256 "pin ($deb_sha256) != .dsc checksum ($dsc_deb_sha) for $deb_name"
+
+	# --- (PACKAGING) download the .debian.tar.xz, hash it, then prove its debian/ tree is
+	#     byte-identical to the pinned salsa tag's debian/ tree (canonical manifest) ---
+	local deb="$WORKDIR/$deb_name"
+	fetch "$deb_url" "$deb" || fail "$src" debian_tar_url "could not fetch $deb_url"
+	local got_deb; got_deb="$(sha256sum "$deb" | awk '{print $1}')"
+	[ "$got_deb" = "$deb_sha256" ] \
+		|| fail "$src" debian_tar_sha256 "checksum mismatch — expected $deb_sha256, got $got_deb"
+	verify_packaging_tree "$src" "$deb" \
+		"$(yaml_scalar "$src" salsa_repo)" "$(yaml_scalar "$src" salsa_tag)"
+
+	echo "ok   [$src] lineage + .dsc signature + checksums + .orig.tar + debian/ tree verified"
 }
 
 # git ls-remote a tag and confirm both the tag-object SHA and the peeled commit SHA.
@@ -234,6 +263,84 @@ verify_lineage() {
 		|| fail "$src" "${which}_tag_sha" "$tag object is $got_tag, pin expects $want_tag"
 	[ "$got_commit" = "$want_commit" ] \
 		|| fail "$src" "${which}_commit_sha" "$tag commit is $got_commit, pin expects $want_commit"
+}
+
+# Canonical metadata manifest of a debian/ tree, one line per entry, tab-separated:
+#   <relative-path> <type(file|dir|symlink)> <exec-bit(0|1|-)> <symlink-target|-> <sha256|->
+# Symlinks are tested before -d/-f (those follow links); exec bit + content hash let the
+# compare catch mode/content drift that a filename-only listing would miss.
+canon_tree_manifest() {
+	( cd "$1" && find . -mindepth 1 \( -type f -o -type d -o -type l \) | LC_ALL=C sort | while IFS= read -r p; do
+		rel="${p#./}"
+		if [ -L "$p" ]; then
+			printf '%s\tsymlink\t-\t%s\t-\n' "$rel" "$(readlink "$p")"
+		elif [ -d "$p" ]; then
+			printf '%s\tdir\t-\t-\t-\n' "$rel"
+		elif [ -f "$p" ]; then
+			if [ -x "$p" ]; then x=1; else x=0; fi
+			printf '%s\tfile\t%s\t-\t%s\n' "$rel" "$x" "$(sha256sum "$p" | awk '{print $1}')"
+		fi
+	done )
+}
+
+# 4th link: prove the .debian.tar.xz's debian/ tree equals the pinned salsa tag's debian/
+# tree. The salsa tree comes from a shallow clone of salsa_tag (real run) or a `local:` dir
+# (offline fixtures). Fails closed naming the first differing path AND which field diverged.
+verify_packaging_tree() {
+	local src="$1" deb="$2" salsa_repo="$3" salsa_tag="$4"
+
+	local deb_extract="$WORKDIR/debtree-$src"
+	rm -rf "$deb_extract"; mkdir -p "$deb_extract"
+	tar -C "$deb_extract" -xf "$deb" >/dev/null 2>&1 \
+		|| fail "$src" debian_tar_name "could not extract $(basename "$deb")"
+	[ -d "$deb_extract/debian" ] \
+		|| fail "$src" debian_tar_name "$(basename "$deb") has no top-level debian/ directory"
+
+	local salsa_debian
+	case "$salsa_repo" in
+		local:*)
+			salsa_debian="$MANIFEST_DIR/${salsa_repo#local:}/debian"
+			[ -d "$salsa_debian" ] \
+				|| fail "$src" salsa_repo "local salsa tree has no debian/ at $salsa_debian"
+			;;
+		*)
+			local salsa_clone="$WORKDIR/salsatree-$src"
+			rm -rf "$salsa_clone"
+			git clone --depth 1 --branch "$salsa_tag" --quiet "$salsa_repo" "$salsa_clone" >/dev/null 2>&1 \
+				|| fail "$src" salsa_tag "could not shallow-clone $salsa_tag from $salsa_repo"
+			salsa_debian="$salsa_clone/debian"
+			[ -d "$salsa_debian" ] \
+				|| fail "$src" salsa_tag "$salsa_tag checkout has no debian/ directory"
+			;;
+	esac
+
+	local salsa_man="$WORKDIR/man-salsa-$src.txt" deb_man="$WORKDIR/man-deb-$src.txt"
+	canon_tree_manifest "$salsa_debian"      > "$salsa_man"
+	canon_tree_manifest "$deb_extract/debian" > "$deb_man"
+
+	local diffout first
+	diffout="$(awk -F'\t' '
+		FNR==NR { s[$1]=$0; next }
+		{
+			seen[$1]=1
+			if (!($1 in s)) { print $1 "\textra-entry\tin .debian.tar.xz tree but not in salsa tree"; next }
+			split(s[$1], sf, "\t")
+			if (sf[2]!=$2) { print $1 "\tfile-type\tsalsa=" sf[2] " debtar=" $2; next }
+			if (sf[3]!=$3) { print $1 "\texecutable-bit\tsalsa=" sf[3] " debtar=" $3; next }
+			if (sf[4]!=$4) { print $1 "\tsymlink-target\tsalsa=" sf[4] " debtar=" $4; next }
+			if (sf[5]!=$5) { print $1 "\tcontent-sha256\tsalsa=" sf[5] " debtar=" $5; next }
+		}
+		END { for (p in s) if (!(p in seen)) print p "\tmissing-entry\tin salsa tree but not in .debian.tar.xz tree" }
+	' "$salsa_man" "$deb_man" | LC_ALL=C sort)"
+
+	first="${diffout%%$'\n'*}"
+	if [ -n "$first" ]; then
+		local dpath dfield ddetail
+		dpath="$(printf '%s' "$first" | cut -f1)"
+		dfield="$(printf '%s' "$first" | cut -f2)"
+		ddetail="$(printf '%s' "$first" | cut -f3-)"
+		fail "$src" debian_tree "salsa vs .debian.tar.xz differ at '$dpath' [$dfield]: $ddetail"
+	fi
 }
 
 # ---- main ----------------------------------------------------------------------------------
