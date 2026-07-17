@@ -106,16 +106,40 @@ export async function startFakeService(options: FakeServiceOptions): Promise<Fak
 	// surface an unhandled EventEmitter 'error' from this helper's dead connection.
 	bus.connection.on('error', () => undefined);
 
+	// A reconnect/drop test kills the bus and ABANDONS this fake (stopping it would itself
+	// write to the closed stream). Any reply the library still owes — e.g. a SlowPing whose
+	// delay has not elapsed — would then be written to that dead stream when its timer
+	// fires, throwing "Can't write a message to a closed stream" ASYNCHRONOUSLY, seconds
+	// later, inside whatever unrelated test happens to be running. Track the reply timers
+	// and cancel them the instant the connection stream ends, so a dead fake never writes.
+	const pendingReplyTimers = new Set<ReturnType<typeof setTimeout>>();
+	const clearPendingReplies = (): void => {
+		for (const timer of pendingReplyTimers) {
+			clearTimeout(timer);
+		}
+		pendingReplyTimers.clear();
+	};
+	bus.connection.on('end', clearPendingReplies);
+
 	const define = (member: string, impl: MethodImpl, resultSignature: string): void => {
 		bus.setMethodCallHandler(FAKE_PATH, FAKE_IFACE, member, [impl, resultSignature]);
 	};
 
 	define('Ping', () => 'pong', 's');
 	// The library awaits a Promise returned by a handler, so this replies after a delay —
-	// used to prove a late reply still resolves the caller's method call.
+	// used to prove a late reply still resolves the caller's method call. The timer is
+	// tracked so a bus drop before it fires cancels the owed reply instead of writing it
+	// to a closed stream.
 	define(
 		'SlowPing',
-		(delayMs) => new Promise((resolve) => setTimeout(() => resolve('pong'), Number(delayMs))),
+		(delayMs) =>
+			new Promise((resolve) => {
+				const timer = setTimeout(() => {
+					pendingReplyTimers.delete(timer);
+					resolve('pong');
+				}, Number(delayMs));
+				pendingReplyTimers.add(timer);
+			}),
 		's',
 	);
 	define('GetManagedObjects', () => managedObjectsValue(), 'a{oa{sa{sv}}}');
@@ -137,6 +161,7 @@ export async function startFakeService(options: FakeServiceOptions): Promise<Fak
 			bus.sendSignal(FAKE_PATH, FAKE_IFACE, TICK_MEMBER, 't', [seq.toString()]);
 		},
 		async stop(): Promise<void> {
+			clearPendingReplies();
 			await bus.disconnect().catch(() => undefined);
 		},
 	};
