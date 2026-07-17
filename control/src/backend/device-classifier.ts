@@ -9,6 +9,14 @@
 // `mm-managed`; a bare vendor-specific interface with no recognized driver is NOT a
 // modem. `pending-modeswitch` is a DISTINCT state (a modem installer awaiting
 // `usb_modeswitch`), never conflated with `unmanaged`.
+//
+// SCOPE — USB ONLY: the whole input here is a `UsbDeviceSnapshot`, a udev/sysfs view of a
+// USB device. PCIe modems are out of scope by construction and get NO entry in this model —
+// a PCI `vendor:device` pair is never smuggled in as a pseudo-USB identity. The Fibocom
+// FM350 is the canonical example: it is a PCIe module (PCI `14c3:4d75`, bound by the
+// `mtk_t7xx` driver on the `wwan`/`net` subsystems, with no USB VID:PID), so it is
+// documented-deferred rather than classified here. See `docs/FM350-DECISION.md` for the
+// evidence and the three-gate ledger behind that decision.
 
 import type { CanonicalUsbMode, ExpectedDescriptors } from '../usb-mode';
 
