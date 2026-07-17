@@ -17,3 +17,7 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    # TypeScript 7 is explicitly out of scope; never propose a semver-major TS bump.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
