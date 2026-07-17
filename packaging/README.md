@@ -29,8 +29,12 @@ re-verified end-to-end by [`ci/verify-upstream-pins.sh`](ci/verify-upstream-pins
 Each source's `debian/` dir is checked in at `<Source>/debian/` (`ModemManager`, `libmbim`,
 `libqmi`, `libqrtr-glib`), copied byte-for-byte from its pinned salsa commit
 ([`upstream-pins.yaml`](upstream-pins.yaml) `salsa_commit_sha`) with **zero source patches**.
-Only ModemManager carries bookworm adaptations (debhelper relax, `systemd-dev → udev`, and
-systemd/udev install-dir pins) — all documented, with rationale, in
+All four sources carry one shared bookworm adaptation — the GObject-introspection build-deps
+are swapped from the sid GI-1.80 set (`gir1.2-*-2.0-dev` + `gobject-introspection (>= 1.80)`)
+to bookworm's GI-1.74 equivalent (`gobject-introspection` + `libgirepository1.0-dev`), mirroring
+stock bookworm's own packaging of each source. ModemManager additionally carries three
+adaptations (debhelper relax, `systemd-dev → udev`, and systemd/udev install-dir pins) — all
+documented, with rationale, stock-bookworm citation, and diff shape, in
 [`BOOKWORM-ADAPTATIONS.md`](BOOKWORM-ADAPTATIONS.md).
 
 [`ci/build-bookworm.sh`](ci/build-bookworm.sh) `<amd64|arm64>` rebuilds all four in a

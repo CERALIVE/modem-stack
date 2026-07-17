@@ -50,6 +50,8 @@ libmbim-glib.so.4 libmbim-glib4 #MINVER#, libmbim-proxy
  mbim_cid_get_printable@Base 1.10.0
  mbim_cid_google_get_string@Base 1.30.0
  mbim_cid_google_get_type@Base 1.30.0
+ mbim_cid_intel_at_tunnel_get_string@Base 1.34.0
+ mbim_cid_intel_at_tunnel_get_type@Base 1.34.0
  mbim_cid_intel_firmware_update_get_string@Base 1.16.0
  mbim_cid_intel_firmware_update_get_type@Base 1.16.0
  mbim_cid_intel_mutual_authentication_get_string@Base 1.30.0
@@ -259,6 +261,8 @@ libmbim-glib.so.4 libmbim-glib4 #MINVER#, libmbim-proxy
  mbim_message_indicate_status_get_raw_information_buffer@Base 1.10.0
  mbim_message_indicate_status_get_service@Base 1.10.0
  mbim_message_indicate_status_get_service_id@Base 1.10.0
+ mbim_message_intel_at_tunnel_at_command_response_parse@Base 1.34.0
+ mbim_message_intel_at_tunnel_at_command_set_new@Base 1.34.0
  mbim_message_intel_firmware_update_modem_reboot_set_new@Base 1.16.0
  mbim_message_intel_firmware_update_v2_modem_reboot_set_new@Base 1.28.0
  mbim_message_intel_mutual_authentication_fcc_lock_query_new@Base 1.30.0
@@ -459,6 +463,7 @@ libmbim-glib.so.4 libmbim-glib4 #MINVER#, libmbim-proxy
  mbim_message_signal_state_query_new@Base 1.10.0
  mbim_message_signal_state_response_parse@Base 1.10.0
  mbim_message_signal_state_set_new@Base 1.10.0
+ mbim_message_sms_configuration_notification_parse@Base 1.34.0
  mbim_message_sms_configuration_query_new@Base 1.10.0
  mbim_message_sms_configuration_response_parse@Base 1.10.0
  mbim_message_sms_configuration_set_new@Base 1.10.0

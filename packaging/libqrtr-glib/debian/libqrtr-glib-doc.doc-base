@@ -5,5 +5,5 @@ Abstract: API documentation of libqrtr-glib.
 Section: Programming/C
 
 Format: HTML
-Index: /usr/share/doc/libqrtr-glib-doc/html/index.html
-Files: /usr/share/doc/libqrtr-glib-doc/html/*.html
+Index: /usr/share/doc/libqrtr-glib-doc/libqrtr-glib-1.0/index.html
+Files: /usr/share/doc/libqrtr-glib-doc/libqrtr-glib-1.0/*.html

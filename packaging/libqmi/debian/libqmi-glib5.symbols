@@ -169,6 +169,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_fox_get_firmware_version@Base 1.32.0
  qmi_client_fox_get_firmware_version_finish@Base 1.32.0
  qmi_client_fox_get_type@Base 1.32.0
+ qmi_client_fox_set_fcc_authentication@Base 1.37.1
+ qmi_client_fox_set_fcc_authentication_finish@Base 1.37.1
  qmi_client_gas_dms_get_ethernet_pdu_mac_address@Base 1.35.6
  qmi_client_gas_dms_get_ethernet_pdu_mac_address_finish@Base 1.35.6
  qmi_client_gas_dms_get_firmware_auto_sim@Base 1.35.95
@@ -200,6 +202,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_ims_get_ims_services_enabled_setting@Base 1.34.0
  qmi_client_ims_get_ims_services_enabled_setting_finish@Base 1.34.0
  qmi_client_ims_get_type@Base 1.34.0
+ qmi_client_ims_set_ims_services_enabled_setting@Base 1.37.95
+ qmi_client_ims_set_ims_services_enabled_setting_finish@Base 1.37.95
  qmi_client_imsa_bind@Base 1.35.6
  qmi_client_imsa_bind_finish@Base 1.35.6
  qmi_client_imsa_get_ims_registration_status@Base 1.34.0
@@ -209,6 +213,11 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_imsa_get_type@Base 1.34.0
  qmi_client_imsa_register_indications@Base 1.35.6
  qmi_client_imsa_register_indications_finish@Base 1.35.6
+ qmi_client_imsdcm_get_type@Base 1.37.95
+ qmi_client_imsdcm_pdp_activate_request@Base 1.37.95
+ qmi_client_imsdcm_pdp_activate_request_finish@Base 1.37.95
+ qmi_client_imsdcm_pdp_deactivate_request@Base 1.37.95
+ qmi_client_imsdcm_pdp_deactivate_request_finish@Base 1.37.95
  qmi_client_imsp_get_enabler_state@Base 1.34.0
  qmi_client_imsp_get_enabler_state_finish@Base 1.34.0
  qmi_client_imsp_get_type@Base 1.34.0
@@ -223,11 +232,17 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_loc_get_operation_mode_finish@Base 1.22.0
  qmi_client_loc_get_predicted_orbits_data_source@Base 1.22.0
  qmi_client_loc_get_predicted_orbits_data_source_finish@Base 1.22.0
+ qmi_client_loc_get_predicted_orbits_data_validity@Base 1.38.0
+ qmi_client_loc_get_predicted_orbits_data_validity_finish@Base 1.38.0
  qmi_client_loc_get_server@Base 1.22.0
  qmi_client_loc_get_server_finish@Base 1.22.0
  qmi_client_loc_get_type@Base 1.20.0
+ qmi_client_loc_inject_position@Base 1.37.95
+ qmi_client_loc_inject_position_finish@Base 1.37.95
  qmi_client_loc_inject_predicted_orbits_data@Base 1.22.0
  qmi_client_loc_inject_predicted_orbits_data_finish@Base 1.22.0
+ qmi_client_loc_inject_utc_time@Base 1.37.95
+ qmi_client_loc_inject_utc_time_finish@Base 1.37.95
  qmi_client_loc_inject_xtra_data@Base 1.22.0
  qmi_client_loc_inject_xtra_data_finish@Base 1.22.0
  qmi_client_loc_register_events@Base 1.22.0
@@ -258,6 +273,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_nas_get_cell_location_info_finish@Base 1.10.0
  qmi_client_nas_get_drx@Base 1.28.6
  qmi_client_nas_get_drx_finish@Base 1.28.6
+ qmi_client_nas_get_endc_config@Base 1.37.95
+ qmi_client_nas_get_endc_config_finish@Base 1.37.95
  qmi_client_nas_get_home_network@Base 1.6.0
  qmi_client_nas_get_home_network_finish@Base 1.6.0
  qmi_client_nas_get_lte_cphy_ca_info@Base 1.16.0
@@ -289,6 +306,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_nas_get_tx_rx_info@Base 1.6.0
  qmi_client_nas_get_tx_rx_info_finish@Base 1.6.0
  qmi_client_nas_get_type@Base 1.6.0
+ qmi_client_nas_incremental_network_scan@Base 1.37.95
+ qmi_client_nas_incremental_network_scan_finish@Base 1.37.95
  qmi_client_nas_initiate_network_register@Base 1.6.0
  qmi_client_nas_initiate_network_register_finish@Base 1.6.0
  qmi_client_nas_network_scan@Base 1.6.0
@@ -328,6 +347,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_pbm_get_all_capabilities_finish@Base 1.6.0
  qmi_client_pbm_get_capabilities@Base 1.6.0
  qmi_client_pbm_get_capabilities_finish@Base 1.6.0
+ qmi_client_pbm_get_emergency_list@Base 1.37.95
+ qmi_client_pbm_get_emergency_list_finish@Base 1.37.95
  qmi_client_pbm_get_type@Base 1.6.0
  qmi_client_pbm_indication_register@Base 1.6.0
  qmi_client_pbm_indication_register_finish@Base 1.6.0
@@ -380,6 +401,12 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_pds_set_gps_service_state@Base 1.6.0
  qmi_client_pds_set_gps_service_state_finish@Base 1.6.0
  qmi_client_peek_device@Base 1.6.0
+ qmi_client_qos_bind_mux_data_port@Base 1.37.95
+ qmi_client_qos_bind_mux_data_port_finish@Base 1.37.95
+ qmi_client_qos_bind_subscription@Base 1.37.95
+ qmi_client_qos_bind_subscription_finish@Base 1.37.95
+ qmi_client_qos_get_bind_subscription@Base 1.37.95
+ qmi_client_qos_get_bind_subscription_finish@Base 1.37.95
  qmi_client_qos_get_flow_status@Base 1.22.0
  qmi_client_qos_get_flow_status_finish@Base 1.22.0
  qmi_client_qos_get_network_status@Base 1.22.0
@@ -448,6 +475,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_uim_unblock_pin_finish@Base 1.14.0
  qmi_client_uim_verify_pin@Base 1.14.0
  qmi_client_uim_verify_pin_finish@Base 1.14.0
+ qmi_client_uim_write_record@Base 1.37.95
+ qmi_client_uim_write_record_finish@Base 1.37.95
  qmi_client_voice_answer_call@Base 1.14.0
  qmi_client_voice_answer_call_finish@Base 1.14.0
  qmi_client_voice_answer_ussd@Base 1.25.900
@@ -496,6 +525,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_wds_bind_data_port_finish@Base 1.28.6
  qmi_client_wds_bind_mux_data_port@Base 1.18.0
  qmi_client_wds_bind_mux_data_port_finish@Base 1.18.0
+ qmi_client_wds_bind_subscription@Base 1.37.95
+ qmi_client_wds_bind_subscription_finish@Base 1.37.95
  qmi_client_wds_configure_profile_event_list@Base 1.34.0
  qmi_client_wds_configure_profile_event_list_finish@Base 1.34.0
  qmi_client_wds_create_profile@Base 1.18.0
@@ -504,6 +535,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_wds_delete_profile_finish@Base 1.18.0
  qmi_client_wds_get_autoconnect_settings@Base 1.14.0
  qmi_client_wds_get_autoconnect_settings_finish@Base 1.14.0
+ qmi_client_wds_get_bind_subscription@Base 1.37.95
+ qmi_client_wds_get_bind_subscription_finish@Base 1.37.95
  qmi_client_wds_get_channel_rates@Base 1.20.0
  qmi_client_wds_get_channel_rates_finish@Base 1.20.0
  qmi_client_wds_get_current_data_bearer_technology@Base 1.6.0
@@ -569,13 +602,19 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_wds_swi_create_profile_indexed_finish@Base 1.22.0
  qmi_client_wms_delete@Base 1.6.0
  qmi_client_wms_delete_finish@Base 1.6.0
+ qmi_client_wms_get_broadcast_config@Base 1.37.1
+ qmi_client_wms_get_broadcast_config_finish@Base 1.37.1
  qmi_client_wms_get_message_protocol@Base 1.6.0
  qmi_client_wms_get_message_protocol_finish@Base 1.6.0
  qmi_client_wms_get_routes@Base 1.6.0
  qmi_client_wms_get_routes_finish@Base 1.6.0
  qmi_client_wms_get_supported_messages@Base 1.14.0
  qmi_client_wms_get_supported_messages_finish@Base 1.14.0
+ qmi_client_wms_get_transport_network_registration_status@Base 1.37.95
+ qmi_client_wms_get_transport_network_registration_status_finish@Base 1.37.95
  qmi_client_wms_get_type@Base 1.6.0
+ qmi_client_wms_indication_register@Base 1.37.95
+ qmi_client_wms_indication_register_finish@Base 1.37.95
  qmi_client_wms_list_messages@Base 1.6.0
  qmi_client_wms_list_messages_finish@Base 1.6.0
  qmi_client_wms_modify_tag@Base 1.6.0
@@ -592,6 +631,10 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_client_wms_send_ack_finish@Base 1.28.6
  qmi_client_wms_send_from_memory_storage@Base 1.6.0
  qmi_client_wms_send_from_memory_storage_finish@Base 1.6.0
+ qmi_client_wms_set_broadcast_activation@Base 1.37.1
+ qmi_client_wms_set_broadcast_activation_finish@Base 1.37.1
+ qmi_client_wms_set_broadcast_config@Base 1.37.1
+ qmi_client_wms_set_broadcast_config_finish@Base 1.37.1
  qmi_client_wms_set_event_report@Base 1.6.0
  qmi_client_wms_set_event_report_finish@Base 1.6.0
  qmi_client_wms_set_routes@Base 1.6.0
@@ -613,6 +656,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_device_add_link_flags_build_string_from_mask@Base 1.30.2
  qmi_device_add_link_flags_get_type@Base 1.30.2
  qmi_device_add_link_with_flags@Base 1.30.2
+ qmi_device_add_link_with_flags_and_initial_mux_id@Base 1.37.95
+ qmi_device_add_link_with_flags_and_initial_mux_id_finish@Base 1.37.95
  qmi_device_add_link_with_flags_finish@Base 1.30.2
  qmi_device_allocate_client@Base 1.6.0
  qmi_device_allocate_client_finish@Base 1.6.0
@@ -755,6 +800,16 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_gas_firmware_listing_mode_get_type@Base 1.24.6
  qmi_gas_usb_composition_endpoint_type_get_string@Base 1.32.0
  qmi_gas_usb_composition_endpoint_type_get_type@Base 1.32.0
+ qmi_ims_call_mode_preference_get_string@Base 1.37.95
+ qmi_ims_call_mode_preference_get_type@Base 1.37.95
+ qmi_ims_dcm_apn_type_get_string@Base 1.37.95
+ qmi_ims_dcm_apn_type_get_type@Base 1.37.95
+ qmi_ims_dcm_instance_id_get_string@Base 1.37.95
+ qmi_ims_dcm_instance_id_get_type@Base 1.37.95
+ qmi_ims_dcm_ip_familiy_get_string@Base 1.37.95
+ qmi_ims_dcm_ip_familiy_get_type@Base 1.37.95
+ qmi_ims_dcm_rat_type_get_string@Base 1.37.95
+ qmi_ims_dcm_rat_type_get_type@Base 1.37.95
  qmi_imsa_ims_registration_status_get_string@Base 1.34.0
  qmi_imsa_ims_registration_status_get_type@Base 1.34.0
  qmi_imsa_registration_technology_get_string@Base 1.34.0
@@ -787,6 +842,22 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_indication_dsd_system_status_output_get_type@Base 1.32.0
  qmi_indication_dsd_system_status_output_ref@Base 1.32.0
  qmi_indication_dsd_system_status_output_unref@Base 1.32.0
+ qmi_indication_ims_ims_services_enabled_setting_indication_parse@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_autoconfig_enabled@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_carrier_config@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_presence_enabled@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_rcs_enabled@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_service_enabled@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_sms_service_enable@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_ussd_service_enabled@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_ut_service_enable@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_video_telephony_service_enable@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_voice_over_lte_enable@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_voice_wifi_service_enable@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_ims_xdm_client_enabled@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_get_type@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_ref@Base 1.37.95
+ qmi_indication_ims_ims_services_enabled_setting_output_unref@Base 1.37.95
  qmi_indication_imsa_ims_registration_status_changed_indication_parse@Base 1.35.6
  qmi_indication_imsa_ims_registration_status_changed_output_get_ims_registration_error_code@Base 1.35.6
  qmi_indication_imsa_ims_registration_status_changed_output_get_ims_registration_error_message@Base 1.35.6
@@ -809,6 +880,15 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_indication_imsa_ims_services_status_changed_output_get_type@Base 1.35.6
  qmi_indication_imsa_ims_services_status_changed_output_ref@Base 1.35.6
  qmi_indication_imsa_ims_services_status_changed_output_unref@Base 1.35.6
+ qmi_indication_imsdcm_pdp_activate_indication_parse@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_get_address_info@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_get_instance_id@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_get_pdp_id@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_get_pdp_request_sequence_number@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_get_result@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_get_type@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_ref@Base 1.37.95
+ qmi_indication_imsdcm_pdp_activate_output_unref@Base 1.37.95
  qmi_indication_loc_delete_assistance_data_indication_parse@Base 1.34.0
  qmi_indication_loc_delete_assistance_data_output_get_indication_status@Base 1.22.0
  qmi_indication_loc_delete_assistance_data_output_get_type@Base 1.22.0
@@ -849,6 +929,12 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_indication_loc_get_predicted_orbits_data_source_output_get_type@Base 1.22.0
  qmi_indication_loc_get_predicted_orbits_data_source_output_ref@Base 1.22.0
  qmi_indication_loc_get_predicted_orbits_data_source_output_unref@Base 1.22.0
+ qmi_indication_loc_get_predicted_orbits_data_validity_indication_parse@Base 1.38.0
+ qmi_indication_loc_get_predicted_orbits_data_validity_output_get_indication_status@Base 1.38.0
+ qmi_indication_loc_get_predicted_orbits_data_validity_output_get_type@Base 1.38.0
+ qmi_indication_loc_get_predicted_orbits_data_validity_output_get_validity_info@Base 1.38.0
+ qmi_indication_loc_get_predicted_orbits_data_validity_output_ref@Base 1.38.0
+ qmi_indication_loc_get_predicted_orbits_data_validity_output_unref@Base 1.38.0
  qmi_indication_loc_get_server_indication_parse@Base 1.34.0
  qmi_indication_loc_get_server_output_get_indication_status@Base 1.22.0
  qmi_indication_loc_get_server_output_get_ipv4@Base 1.22.0
@@ -866,12 +952,45 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_indication_loc_gnss_sv_info_output_list_element_get_type@Base 1.32.0
  qmi_indication_loc_gnss_sv_info_output_ref@Base 1.22.0
  qmi_indication_loc_gnss_sv_info_output_unref@Base 1.22.0
+ qmi_indication_loc_inject_position_indication_parse@Base 1.37.95
+ qmi_indication_loc_inject_position_output_get_indication_status@Base 1.37.95
+ qmi_indication_loc_inject_position_output_get_type@Base 1.37.95
+ qmi_indication_loc_inject_position_output_ref@Base 1.37.95
+ qmi_indication_loc_inject_position_output_unref@Base 1.37.95
+ qmi_indication_loc_inject_position_request_indication_parse@Base 1.37.95
+ qmi_indication_loc_inject_position_request_output_get_horizontal_uncertainty_circular@Base 1.37.95
+ qmi_indication_loc_inject_position_request_output_get_latitude@Base 1.37.95
+ qmi_indication_loc_inject_position_request_output_get_longitude@Base 1.37.95
+ qmi_indication_loc_inject_position_request_output_get_type@Base 1.37.95
+ qmi_indication_loc_inject_position_request_output_get_utc_timestamp@Base 1.37.95
+ qmi_indication_loc_inject_position_request_output_ref@Base 1.37.95
+ qmi_indication_loc_inject_position_request_output_unref@Base 1.37.95
  qmi_indication_loc_inject_predicted_orbits_data_indication_parse@Base 1.34.0
  qmi_indication_loc_inject_predicted_orbits_data_output_get_indication_status@Base 1.22.0
  qmi_indication_loc_inject_predicted_orbits_data_output_get_part_number@Base 1.22.0
  qmi_indication_loc_inject_predicted_orbits_data_output_get_type@Base 1.22.0
  qmi_indication_loc_inject_predicted_orbits_data_output_ref@Base 1.22.0
  qmi_indication_loc_inject_predicted_orbits_data_output_unref@Base 1.22.0
+ qmi_indication_loc_inject_predicted_orbits_request_indication_parse@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_get_allowed_sizes@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_get_file_info@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_get_server_list@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_get_server_update_mask@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_get_type@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_get_update_period_seconds@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_get_update_type@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_ref@Base 1.37.95
+ qmi_indication_loc_inject_predicted_orbits_request_output_unref@Base 1.37.95
+ qmi_indication_loc_inject_time_request_indication_parse@Base 1.37.95
+ qmi_indication_loc_inject_time_request_output_get_time_server_info@Base 1.37.95
+ qmi_indication_loc_inject_time_request_output_get_type@Base 1.37.95
+ qmi_indication_loc_inject_time_request_output_ref@Base 1.37.95
+ qmi_indication_loc_inject_time_request_output_unref@Base 1.37.95
+ qmi_indication_loc_inject_utc_time_indication_parse@Base 1.37.95
+ qmi_indication_loc_inject_utc_time_output_get_indication_status@Base 1.37.95
+ qmi_indication_loc_inject_utc_time_output_get_type@Base 1.37.95
+ qmi_indication_loc_inject_utc_time_output_ref@Base 1.37.95
+ qmi_indication_loc_inject_utc_time_output_unref@Base 1.37.95
  qmi_indication_loc_inject_xtra_data_indication_parse@Base 1.34.0
  qmi_indication_loc_inject_xtra_data_output_get_indication_status@Base 1.22.0
  qmi_indication_loc_inject_xtra_data_output_get_part_number@Base 1.22.0
@@ -958,6 +1077,14 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_indication_nas_event_report_output_ref@Base 1.6.0
  qmi_indication_nas_event_report_output_rf_band_information_element_get_type@Base 1.32.0
  qmi_indication_nas_event_report_output_unref@Base 1.6.0
+ qmi_indication_nas_incremental_network_scan_indication_parse@Base 1.37.95
+ qmi_indication_nas_incremental_network_scan_output_get_network_information@Base 1.37.95
+ qmi_indication_nas_incremental_network_scan_output_get_network_information_gir@Base 1.37.95
+ qmi_indication_nas_incremental_network_scan_output_get_status@Base 1.37.95
+ qmi_indication_nas_incremental_network_scan_output_get_type@Base 1.37.95
+ qmi_indication_nas_incremental_network_scan_output_network_information_element_get_type@Base 1.37.95
+ qmi_indication_nas_incremental_network_scan_output_ref@Base 1.37.95
+ qmi_indication_nas_incremental_network_scan_output_unref@Base 1.37.95
  qmi_indication_nas_network_reject_indication_parse@Base 1.34.0
  qmi_indication_nas_network_reject_output_get_closed_subscriber_group@Base 1.30.2
  qmi_indication_nas_network_reject_output_get_plmn@Base 1.30.2
@@ -1307,6 +1434,17 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_indication_wms_smsc_address_output_get_type@Base 1.14.0
  qmi_indication_wms_smsc_address_output_ref@Base 1.14.0
  qmi_indication_wms_smsc_address_output_unref@Base 1.14.0
+ qmi_indication_wms_transport_network_registration_status_indication_parse@Base 1.37.95
+ qmi_indication_wms_transport_network_registration_status_output_get_registration_status@Base 1.37.95
+ qmi_indication_wms_transport_network_registration_status_output_get_type@Base 1.37.95
+ qmi_indication_wms_transport_network_registration_status_output_ref@Base 1.37.95
+ qmi_indication_wms_transport_network_registration_status_output_unref@Base 1.37.95
+ qmi_loc_altitude_dependency_get_string@Base 1.37.95
+ qmi_loc_altitude_dependency_get_type@Base 1.37.95
+ qmi_loc_altitude_source_get_string@Base 1.37.95
+ qmi_loc_altitude_source_get_type@Base 1.37.95
+ qmi_loc_altitude_uncertainty_get_string@Base 1.37.95
+ qmi_loc_altitude_uncertainty_get_type@Base 1.37.95
  qmi_loc_delete_cell_database_build_string_from_mask@Base 1.22.0
  qmi_loc_delete_cell_database_get_type@Base 1.22.0
  qmi_loc_delete_clock_info_build_string_from_mask@Base 1.22.0
@@ -1323,6 +1461,14 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_loc_health_status_get_type@Base 1.22.0
  qmi_loc_indication_status_get_string@Base 1.22.0
  qmi_loc_indication_status_get_type@Base 1.22.0
+ qmi_loc_injected_orbit_file_type_get_string@Base 1.37.95
+ qmi_loc_injected_orbit_file_type_get_type@Base 1.37.95
+ qmi_loc_injected_orbit_server_param_update_build_string_from_mask@Base 1.37.95
+ qmi_loc_injected_orbit_server_param_update_get_type@Base 1.37.95
+ qmi_loc_injected_orbit_update_type_get_string@Base 1.37.95
+ qmi_loc_injected_orbit_update_type_get_type@Base 1.37.95
+ qmi_loc_injected_time_source_get_string@Base 1.37.95
+ qmi_loc_injected_time_source_get_type@Base 1.37.95
  qmi_loc_intermediate_report_state_get_string@Base 1.20.0
  qmi_loc_intermediate_report_state_get_type@Base 1.20.0
  qmi_loc_lock_type_get_string@Base 1.28.6
@@ -1333,6 +1479,10 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_loc_nmea_type_get_type@Base 1.25.900
  qmi_loc_operation_mode_get_string@Base 1.22.0
  qmi_loc_operation_mode_get_type@Base 1.22.0
+ qmi_loc_position_source_get_string@Base 1.37.95
+ qmi_loc_position_source_get_type@Base 1.37.95
+ qmi_loc_position_source_provider_get_string@Base 1.37.95
+ qmi_loc_position_source_provider_get_type@Base 1.37.95
  qmi_loc_predicted_orbits_data_format_get_string@Base 1.22.0
  qmi_loc_predicted_orbits_data_format_get_type@Base 1.22.0
  qmi_loc_reliability_get_string@Base 1.22.0
@@ -2175,6 +2325,19 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_fox_get_firmware_version_output_ref@Base 1.32.0
  qmi_message_fox_get_firmware_version_output_unref@Base 1.32.0
  qmi_message_fox_get_firmware_version_response_parse@Base 1.34.0
+ qmi_message_fox_set_fcc_authentication_input_get_magic_number@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_input_get_magic_string@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_input_get_type@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_input_new@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_input_ref@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_input_set_magic_number@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_input_set_magic_string@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_input_unref@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_output_get_result@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_output_get_type@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_output_ref@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_output_unref@Base 1.37.1
+ qmi_message_fox_set_fcc_authentication_response_parse@Base 1.37.1
  qmi_message_gas_dms_get_ethernet_pdu_mac_address_output_get_mac_address_0@Base 1.35.6
  qmi_message_gas_dms_get_ethernet_pdu_mac_address_output_get_mac_address_1@Base 1.35.6
  qmi_message_gas_dms_get_ethernet_pdu_mac_address_output_get_result@Base 1.35.6
@@ -2325,6 +2488,41 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_ims_get_ims_services_enabled_setting_output_ref@Base 1.34.0
  qmi_message_ims_get_ims_services_enabled_setting_output_unref@Base 1.34.0
  qmi_message_ims_get_ims_services_enabled_setting_response_parse@Base 1.34.0
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_autoconfig_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_call_mode_preference@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_carrier_config@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_presence_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_rcs_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_service_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_sms_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_ussd_service_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_ut_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_video_telephony_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_voice_over_lte_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_voice_wifi_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_ims_xdm_client_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_get_type@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_new@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_ref@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_autoconfig_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_call_mode_preference@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_carrier_config@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_presence_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_rcs_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_service_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_sms_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_ussd_service_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_ut_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_video_telephony_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_voice_over_lte_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_voice_wifi_service_enable@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_set_ims_xdm_client_enabled@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_input_unref@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_output_get_result@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_output_get_type@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_output_ref@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_output_unref@Base 1.37.95
+ qmi_message_ims_set_ims_services_enabled_setting_response_parse@Base 1.37.95
  qmi_message_imsa_bind_input_get_binding@Base 1.35.6
  qmi_message_imsa_bind_input_get_type@Base 1.35.6
  qmi_message_imsa_bind_input_new@Base 1.35.6
@@ -2373,6 +2571,43 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_imsa_register_indications_output_ref@Base 1.35.6
  qmi_message_imsa_register_indications_output_unref@Base 1.35.6
  qmi_message_imsa_register_indications_response_parse@Base 1.35.6
+ qmi_message_imsdcm_pdp_activate_request_input_get_connection_parameters@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_get_instance_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_get_pdp_request_sequence_number@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_get_pdp_slot_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_get_pdp_subscription_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_get_type@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_new@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_ref@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_set_connection_parameters@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_set_instance_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_set_pdp_request_sequence_number@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_set_pdp_slot_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_set_pdp_subscription_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_input_unref@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_output_get_instance_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_output_get_pdp_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_output_get_pdp_request_sequence_number@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_output_get_result@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_output_get_type@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_output_ref@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_output_unref@Base 1.37.95
+ qmi_message_imsdcm_pdp_activate_request_response_parse@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_get_instance_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_get_pdp_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_get_type@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_new@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_ref@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_set_instance_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_set_pdp_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_input_unref@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_output_get_instance_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_output_get_pdp_id@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_output_get_result@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_output_get_type@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_output_ref@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_output_unref@Base 1.37.95
+ qmi_message_imsdcm_pdp_deactivate_request_response_parse@Base 1.37.95
  qmi_message_imsp_get_enabler_state_output_get_enabler_state@Base 1.34.0
  qmi_message_imsp_get_enabler_state_output_get_result@Base 1.34.0
  qmi_message_imsp_get_enabler_state_output_get_type@Base 1.34.0
@@ -2424,6 +2659,11 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_loc_get_predicted_orbits_data_source_output_ref@Base 1.22.0
  qmi_message_loc_get_predicted_orbits_data_source_output_unref@Base 1.22.0
  qmi_message_loc_get_predicted_orbits_data_source_response_parse@Base 1.34.0
+ qmi_message_loc_get_predicted_orbits_data_validity_output_get_result@Base 1.38.0
+ qmi_message_loc_get_predicted_orbits_data_validity_output_get_type@Base 1.38.0
+ qmi_message_loc_get_predicted_orbits_data_validity_output_ref@Base 1.38.0
+ qmi_message_loc_get_predicted_orbits_data_validity_output_unref@Base 1.38.0
+ qmi_message_loc_get_predicted_orbits_data_validity_response_parse@Base 1.38.0
  qmi_message_loc_get_server_input_get_server_address_type@Base 1.22.0
  qmi_message_loc_get_server_input_get_server_type@Base 1.22.0
  qmi_message_loc_get_server_input_get_type@Base 1.22.0
@@ -2437,6 +2677,63 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_loc_get_server_output_ref@Base 1.22.0
  qmi_message_loc_get_server_output_unref@Base 1.22.0
  qmi_message_loc_get_server_response_parse@Base 1.34.0
+ qmi_message_loc_inject_position_input_get_altitude_from_ellipsoid@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_altitude_from_sealevel@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_altitude_source@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_gps_date_time@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_horizontal_confidence@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_horizontal_reliability@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_horizontal_uncertainty_circular@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_latitude@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_longitude@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_number_satellites_in_fix@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_position_source@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_position_source_provider@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_raw_horizontal_confidence@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_raw_horizontal_uncertainty_circular@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_requested_position_injection@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_satellites_used@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_speed_east_north_up@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_speed_uncertainty_east_north_up@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_time_uncertainty@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_timestamp_age@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_type@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_utc_timestamp@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_vertical_confidence@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_vertical_reliability@Base 1.37.95
+ qmi_message_loc_inject_position_input_get_vertical_uncertainty@Base 1.37.95
+ qmi_message_loc_inject_position_input_new@Base 1.37.95
+ qmi_message_loc_inject_position_input_ref@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_altitude_from_ellipsoid@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_altitude_from_sealevel@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_altitude_source@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_gps_date_time@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_horizontal_confidence@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_horizontal_reliability@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_horizontal_uncertainty_circular@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_latitude@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_longitude@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_number_satellites_in_fix@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_position_source@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_position_source_provider@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_raw_horizontal_confidence@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_raw_horizontal_uncertainty_circular@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_requested_position_injection@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_satellites_used@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_speed_east_north_up@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_speed_uncertainty_east_north_up@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_time_uncertainty@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_timestamp_age@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_utc_timestamp@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_vertical_confidence@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_vertical_reliability@Base 1.37.95
+ qmi_message_loc_inject_position_input_set_vertical_uncertainty@Base 1.37.95
+ qmi_message_loc_inject_position_input_unref@Base 1.37.95
+ qmi_message_loc_inject_position_output_get_result@Base 1.37.95
+ qmi_message_loc_inject_position_output_get_type@Base 1.37.95
+ qmi_message_loc_inject_position_output_ref@Base 1.37.95
+ qmi_message_loc_inject_position_output_unref@Base 1.37.95
+ qmi_message_loc_inject_position_response_parse@Base 1.37.95
  qmi_message_loc_inject_predicted_orbits_data_input_get_format_type@Base 1.22.0
  qmi_message_loc_inject_predicted_orbits_data_input_get_part_data@Base 1.22.0
  qmi_message_loc_inject_predicted_orbits_data_input_get_part_number@Base 1.22.0
@@ -2456,6 +2753,21 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_loc_inject_predicted_orbits_data_output_ref@Base 1.22.0
  qmi_message_loc_inject_predicted_orbits_data_output_unref@Base 1.22.0
  qmi_message_loc_inject_predicted_orbits_data_response_parse@Base 1.34.0
+ qmi_message_loc_inject_utc_time_input_get_time_source@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_get_time_uncertainty@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_get_type@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_get_utc_time@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_new@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_ref@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_set_time_source@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_set_time_uncertainty@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_set_utc_time@Base 1.37.95
+ qmi_message_loc_inject_utc_time_input_unref@Base 1.37.95
+ qmi_message_loc_inject_utc_time_output_get_result@Base 1.37.95
+ qmi_message_loc_inject_utc_time_output_get_type@Base 1.37.95
+ qmi_message_loc_inject_utc_time_output_ref@Base 1.37.95
+ qmi_message_loc_inject_utc_time_output_unref@Base 1.37.95
+ qmi_message_loc_inject_utc_time_response_parse@Base 1.37.95
  qmi_message_loc_inject_xtra_data_input_get_part_data@Base 1.22.0
  qmi_message_loc_inject_xtra_data_input_get_part_number@Base 1.22.0
  qmi_message_loc_inject_xtra_data_input_get_total_parts@Base 1.22.0
@@ -2739,6 +3051,13 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_nas_get_drx_output_ref@Base 1.28.6
  qmi_message_nas_get_drx_output_unref@Base 1.28.6
  qmi_message_nas_get_drx_response_parse@Base 1.34.0
+ qmi_message_nas_get_endc_config_output_get_enabled@Base 1.37.95
+ qmi_message_nas_get_endc_config_output_get_immediate_scg_release@Base 1.37.95
+ qmi_message_nas_get_endc_config_output_get_result@Base 1.37.95
+ qmi_message_nas_get_endc_config_output_get_type@Base 1.37.95
+ qmi_message_nas_get_endc_config_output_ref@Base 1.37.95
+ qmi_message_nas_get_endc_config_output_unref@Base 1.37.95
+ qmi_message_nas_get_endc_config_response_parse@Base 1.37.95
  qmi_message_nas_get_home_network_output_get_home_network@Base 1.6.0
  qmi_message_nas_get_home_network_output_get_home_network_3gpp2@Base 1.6.0
  qmi_message_nas_get_home_network_output_get_home_network_3gpp2_ext@Base 1.24.6
@@ -3025,6 +3344,17 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_nas_get_tx_rx_info_output_ref@Base 1.6.0
  qmi_message_nas_get_tx_rx_info_output_unref@Base 1.6.0
  qmi_message_nas_get_tx_rx_info_response_parse@Base 1.34.0
+ qmi_message_nas_incremental_network_scan_input_get_network_type@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_input_get_type@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_input_new@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_input_ref@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_input_set_network_type@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_input_unref@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_output_get_result@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_output_get_type@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_output_ref@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_output_unref@Base 1.37.95
+ qmi_message_nas_incremental_network_scan_response_parse@Base 1.37.95
  qmi_message_nas_initiate_network_register_input_get_action@Base 1.6.0
  qmi_message_nas_initiate_network_register_input_get_change_duration@Base 1.6.0
  qmi_message_nas_initiate_network_register_input_get_manual_registration_info_3gpp@Base 1.6.0
@@ -3360,6 +3690,21 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_pbm_get_capabilities_output_ref@Base 1.6.0
  qmi_message_pbm_get_capabilities_output_unref@Base 1.6.0
  qmi_message_pbm_get_capabilities_response_parse@Base 1.34.0
+ qmi_message_pbm_get_emergency_list_output_card_numbers_element_emergency_numbers_element_get_type@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_card_numbers_element_gir_get_type@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_card_numbers@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_card_numbers_gir@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_hardcoded_numbers@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_network_numbers@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_network_numbers_gir@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_nv_numbers@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_result@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_get_type@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_network_numbers_element_emergency_numbers_element_get_type@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_network_numbers_element_gir_get_type@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_ref@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_output_unref@Base 1.37.95
+ qmi_message_pbm_get_emergency_list_response_parse@Base 1.37.95
  qmi_message_pbm_indication_register_input_get_event_registration_mask@Base 1.6.0
  qmi_message_pbm_indication_register_input_get_type@Base 1.6.0
  qmi_message_pbm_indication_register_input_new@Base 1.6.0
@@ -3687,6 +4032,38 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_pds_set_gps_service_state_output_ref@Base 1.6.0
  qmi_message_pds_set_gps_service_state_output_unref@Base 1.6.0
  qmi_message_pds_set_gps_service_state_response_parse@Base 1.34.0
+ qmi_message_qos_bind_mux_data_port_input_get_direction@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_get_endpoint@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_get_mux_id@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_get_type@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_new@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_ref@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_set_direction@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_set_endpoint@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_set_mux_id@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_input_unref@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_output_get_result@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_output_get_type@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_output_ref@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_output_unref@Base 1.37.95
+ qmi_message_qos_bind_mux_data_port_response_parse@Base 1.37.95
+ qmi_message_qos_bind_subscription_input_get_subscription_id@Base 1.37.95
+ qmi_message_qos_bind_subscription_input_get_type@Base 1.37.95
+ qmi_message_qos_bind_subscription_input_new@Base 1.37.95
+ qmi_message_qos_bind_subscription_input_ref@Base 1.37.95
+ qmi_message_qos_bind_subscription_input_set_subscription_id@Base 1.37.95
+ qmi_message_qos_bind_subscription_input_unref@Base 1.37.95
+ qmi_message_qos_bind_subscription_output_get_result@Base 1.37.95
+ qmi_message_qos_bind_subscription_output_get_type@Base 1.37.95
+ qmi_message_qos_bind_subscription_output_ref@Base 1.37.95
+ qmi_message_qos_bind_subscription_output_unref@Base 1.37.95
+ qmi_message_qos_bind_subscription_response_parse@Base 1.37.95
+ qmi_message_qos_get_bind_subscription_output_get_result@Base 1.37.95
+ qmi_message_qos_get_bind_subscription_output_get_subscription_id@Base 1.37.95
+ qmi_message_qos_get_bind_subscription_output_get_type@Base 1.37.95
+ qmi_message_qos_get_bind_subscription_output_ref@Base 1.37.95
+ qmi_message_qos_get_bind_subscription_output_unref@Base 1.37.95
+ qmi_message_qos_get_bind_subscription_response_parse@Base 1.37.95
  qmi_message_qos_get_flow_status_input_get_qos_id@Base 1.22.0
  qmi_message_qos_get_flow_status_input_get_type@Base 1.22.0
  qmi_message_qos_get_flow_status_input_new@Base 1.22.0
@@ -3776,6 +4153,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_tlv_read_sized_guint@Base 1.12.0
  qmi_message_tlv_read_string@Base 1.12.0
  qmi_message_tlv_write_complete@Base 1.12.0
+ qmi_message_tlv_write_gdouble@Base 1.37.95
+ qmi_message_tlv_write_gfloat@Base 1.37.95
  qmi_message_tlv_write_gint16@Base 1.12.0
  qmi_message_tlv_write_gint32@Base 1.12.0
  qmi_message_tlv_write_gint64@Base 1.12.0
@@ -4178,6 +4557,25 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_uim_verify_pin_output_ref@Base 1.14.0
  qmi_message_uim_verify_pin_output_unref@Base 1.14.0
  qmi_message_uim_verify_pin_response_parse@Base 1.34.0
+ qmi_message_uim_write_record_input_get_file@Base 1.37.95
+ qmi_message_uim_write_record_input_get_response_in_indication_token@Base 1.37.95
+ qmi_message_uim_write_record_input_get_session@Base 1.37.95
+ qmi_message_uim_write_record_input_get_type@Base 1.37.95
+ qmi_message_uim_write_record_input_get_write_record@Base 1.37.95
+ qmi_message_uim_write_record_input_new@Base 1.37.95
+ qmi_message_uim_write_record_input_ref@Base 1.37.95
+ qmi_message_uim_write_record_input_set_file@Base 1.37.95
+ qmi_message_uim_write_record_input_set_response_in_indication_token@Base 1.37.95
+ qmi_message_uim_write_record_input_set_session@Base 1.37.95
+ qmi_message_uim_write_record_input_set_write_record@Base 1.37.95
+ qmi_message_uim_write_record_input_unref@Base 1.37.95
+ qmi_message_uim_write_record_output_get_card_result@Base 1.37.95
+ qmi_message_uim_write_record_output_get_response_in_indication_token@Base 1.37.95
+ qmi_message_uim_write_record_output_get_result@Base 1.37.95
+ qmi_message_uim_write_record_output_get_type@Base 1.37.95
+ qmi_message_uim_write_record_output_ref@Base 1.37.95
+ qmi_message_uim_write_record_output_unref@Base 1.37.95
+ qmi_message_uim_write_record_response_parse@Base 1.37.95
  qmi_message_unref@Base 1.6.0
  qmi_message_voice_answer_call_input_get_call_id@Base 1.14.0
  qmi_message_voice_answer_call_input_get_type@Base 1.14.0
@@ -4528,6 +4926,17 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_wds_bind_mux_data_port_output_ref@Base 1.18.0
  qmi_message_wds_bind_mux_data_port_output_unref@Base 1.18.0
  qmi_message_wds_bind_mux_data_port_response_parse@Base 1.34.0
+ qmi_message_wds_bind_subscription_input_get_subscription_id@Base 1.37.95
+ qmi_message_wds_bind_subscription_input_get_type@Base 1.37.95
+ qmi_message_wds_bind_subscription_input_new@Base 1.37.95
+ qmi_message_wds_bind_subscription_input_ref@Base 1.37.95
+ qmi_message_wds_bind_subscription_input_set_subscription_id@Base 1.37.95
+ qmi_message_wds_bind_subscription_input_unref@Base 1.37.95
+ qmi_message_wds_bind_subscription_output_get_result@Base 1.37.95
+ qmi_message_wds_bind_subscription_output_get_type@Base 1.37.95
+ qmi_message_wds_bind_subscription_output_ref@Base 1.37.95
+ qmi_message_wds_bind_subscription_output_unref@Base 1.37.95
+ qmi_message_wds_bind_subscription_response_parse@Base 1.37.95
  qmi_message_wds_configure_profile_event_list_input_get_register@Base 1.34.0
  qmi_message_wds_configure_profile_event_list_input_get_register_gir@Base 1.34.0
  qmi_message_wds_configure_profile_event_list_input_get_type@Base 1.34.0
@@ -4638,6 +5047,12 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_wds_get_autoconnect_settings_output_ref@Base 1.14.0
  qmi_message_wds_get_autoconnect_settings_output_unref@Base 1.14.0
  qmi_message_wds_get_autoconnect_settings_response_parse@Base 1.34.0
+ qmi_message_wds_get_bind_subscription_output_get_result@Base 1.37.95
+ qmi_message_wds_get_bind_subscription_output_get_subscription_id@Base 1.37.95
+ qmi_message_wds_get_bind_subscription_output_get_type@Base 1.37.95
+ qmi_message_wds_get_bind_subscription_output_ref@Base 1.37.95
+ qmi_message_wds_get_bind_subscription_output_unref@Base 1.37.95
+ qmi_message_wds_get_bind_subscription_response_parse@Base 1.37.95
  qmi_message_wds_get_channel_rates_output_get_channel_rates@Base 1.20.0
  qmi_message_wds_get_channel_rates_output_get_result@Base 1.20.0
  qmi_message_wds_get_channel_rates_output_get_type@Base 1.20.0
@@ -5214,6 +5629,20 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_wms_delete_output_ref@Base 1.6.0
  qmi_message_wms_delete_output_unref@Base 1.6.0
  qmi_message_wms_delete_response_parse@Base 1.34.0
+ qmi_message_wms_get_broadcast_config_input_get_message_mode@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_input_get_type@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_input_new@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_input_ref@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_input_set_message_mode@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_input_unref@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_output_config_channels_element_get_type@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_output_get_config@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_output_get_config_gir@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_output_get_result@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_output_get_type@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_output_ref@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_output_unref@Base 1.37.1
+ qmi_message_wms_get_broadcast_config_response_parse@Base 1.37.1
  qmi_message_wms_get_message_protocol_output_get_message_protocol@Base 1.6.0
  qmi_message_wms_get_message_protocol_output_get_result@Base 1.6.0
  qmi_message_wms_get_message_protocol_output_get_type@Base 1.6.0
@@ -5235,6 +5664,27 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_wms_get_supported_messages_output_ref@Base 1.14.0
  qmi_message_wms_get_supported_messages_output_unref@Base 1.14.0
  qmi_message_wms_get_supported_messages_response_parse@Base 1.34.0
+ qmi_message_wms_get_transport_network_registration_status_input_get_type@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_input_new@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_input_ref@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_input_unref@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_output_get_registration_status@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_output_get_result@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_output_get_type@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_output_ref@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_output_unref@Base 1.37.95
+ qmi_message_wms_get_transport_network_registration_status_response_parse@Base 1.37.95
+ qmi_message_wms_indication_register_input_get_report_transport_network_registration_status@Base 1.37.95
+ qmi_message_wms_indication_register_input_get_type@Base 1.37.95
+ qmi_message_wms_indication_register_input_new@Base 1.37.95
+ qmi_message_wms_indication_register_input_ref@Base 1.37.95
+ qmi_message_wms_indication_register_input_set_report_transport_network_registration_status@Base 1.37.95
+ qmi_message_wms_indication_register_input_unref@Base 1.37.95
+ qmi_message_wms_indication_register_output_get_result@Base 1.37.95
+ qmi_message_wms_indication_register_output_get_type@Base 1.37.95
+ qmi_message_wms_indication_register_output_ref@Base 1.37.95
+ qmi_message_wms_indication_register_output_unref@Base 1.37.95
+ qmi_message_wms_indication_register_response_parse@Base 1.37.95
  qmi_message_wms_list_messages_input_get_message_mode@Base 1.6.0
  qmi_message_wms_list_messages_input_get_message_tag@Base 1.6.0
  qmi_message_wms_list_messages_input_get_storage_type@Base 1.6.0
@@ -5359,6 +5809,33 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_message_wms_send_from_memory_storage_output_ref@Base 1.6.0
  qmi_message_wms_send_from_memory_storage_output_unref@Base 1.6.0
  qmi_message_wms_send_from_memory_storage_response_parse@Base 1.34.0
+ qmi_message_wms_set_broadcast_activation_input_get_activation@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_input_get_type@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_input_new@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_input_ref@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_input_set_activation@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_input_unref@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_output_get_result@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_output_get_type@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_output_ref@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_output_unref@Base 1.37.1
+ qmi_message_wms_set_broadcast_activation_response_parse@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_channels_element_get_type@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_get_channels@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_get_channels_gir@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_get_message_mode@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_get_type@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_new@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_ref@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_set_channels@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_set_channels_gir@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_set_message_mode@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_input_unref@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_output_get_result@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_output_get_type@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_output_ref@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_output_unref@Base 1.37.1
+ qmi_message_wms_set_broadcast_config_response_parse@Base 1.37.1
  qmi_message_wms_set_event_report_input_get_new_mt_message_indicator@Base 1.6.0
  qmi_message_wms_set_event_report_input_get_type@Base 1.6.0
  qmi_message_wms_set_event_report_input_new@Base 1.6.0
@@ -5421,6 +5898,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_nas_hdr_personality_get_type@Base 1.6.0
  qmi_nas_hdr_protocol_revision_get_string@Base 1.6.0
  qmi_nas_hdr_protocol_revision_get_type@Base 1.6.0
+ qmi_nas_incremental_network_scan_status_get_string@Base 1.37.95
+ qmi_nas_incremental_network_scan_status_get_type@Base 1.37.95
  qmi_nas_lte_band_preference_build_string_from_mask@Base 1.6.0
  qmi_nas_lte_cell_access_status_get_string@Base 1.24.6
  qmi_nas_lte_cell_access_status_get_type@Base 1.24.6
@@ -5536,6 +6015,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_oma_session_state_get_type@Base 1.6.0
  qmi_oma_session_type_get_string@Base 1.6.0
  qmi_oma_session_type_get_type@Base 1.6.0
+ qmi_pbm_emergency_number_flags_build_string_from_mask@Base 1.37.95
+ qmi_pbm_emergency_number_flags_get_type@Base 1.37.95
  qmi_pbm_event_registration_flag_build_string_from_mask@Base 1.6.0
  qmi_pbm_event_registration_flag_get_type@Base 1.6.0
  qmi_pbm_phonebook_type_build_string_from_mask@Base 1.6.0
@@ -5581,6 +6062,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_slot_eid_element_get_type@Base 1.32.0
  qmi_ssc_report_type_get_string@Base 1.34.0
  qmi_ssc_report_type_get_type@Base 1.34.0
+ qmi_subscription_type_get_string@Base 1.37.95
+ qmi_subscription_type_get_type@Base 1.37.95
  qmi_uim_card_application_personalization_feature_get_string@Base 1.10.0
  qmi_uim_card_application_personalization_feature_get_type@Base 1.10.0
  qmi_uim_card_application_personalization_feature_status_get_string@Base 1.34.0
@@ -5844,6 +6327,8 @@ libqmi-glib.so.5 libqmi-glib5 #MINVER#, libqmi-proxy
  qmi_wms_message_type_get_type@Base 1.6.0
  qmi_wms_notification_type_get_string@Base 1.6.0
  qmi_wms_notification_type_get_type@Base 1.6.0
+ qmi_wms_nw_registration_get_string@Base 1.37.95
+ qmi_wms_nw_registration_get_type@Base 1.37.95
  qmi_wms_receipt_action_get_string@Base 1.6.0
  qmi_wms_receipt_action_get_type@Base 1.6.0
  qmi_wms_storage_type_get_string@Base 1.6.0

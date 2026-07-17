@@ -1,3 +1,54 @@
+libqmi (1.38.0-1) unstable; urgency=medium
+
+  * Upload to unstable
+  * New upstream stable release
+  * Link docs to devhelp.
+  * Update symbols
+
+ -- Guido Günther <agx@sigxcpu.org>  Thu, 08 Jan 2026 19:23:18 +0100
+
+libqmi (1.37.95-1) experimental; urgency=medium
+
+  * New upstream release
+  * Update upstream signing from
+    https://lists.freedesktop.org/archives/networkmanager/2024-December/000366.html
+  * Update symbols
+
+ -- Guido Günther <agx@sigxcpu.org>  Wed, 26 Nov 2025 10:13:58 +0100
+
+libqmi (1.37.1-1) experimental; urgency=medium
+
+  * New upstream development snapshot
+  * Upload to experimental
+  * signing-key: Add key used for dev snapshots
+  * d/watch: Allow for development snapshots
+  * d/gbp.conf: Switch to debian/experimental
+  * Use gi-docgen. Upstream switched away from gtk-doc
+  * Add new symbols
+
+ -- Guido Günther <agx@sigxcpu.org>  Tue, 03 Jun 2025 20:37:05 +0200
+
+libqmi (1.36.0-2) unstable; urgency=medium
+
+  [ Guido Günther ]
+  * d/gbp.conf: Switch to debian/latest.
+
+  [ Arnaud Ferraris ]
+  * d/watch: convert to version 5.
+    Use the new Gitlab template for easier management, but override the
+    matching pattern so we only get stable (pre)releases, which have an even
+    minor version number.
+  * d/control: drop libgirepository1.0-dev build dependency.
+    This one shouldn't be used anymore as it isn't multiarch-friendly.
+    Instead, use a recent `gobject-introspection` and explicitly (build)
+    depend on the needed `gir1.2-*-dev` packages.
+    While at it, drop the now-obsolete `Rules-Requires-Root` and bump
+    `Standards-Version` as no other change is needed. (Closes: #1118881)
+  * d/copyright: drop reference to old FSF address.
+    Replace it with the usual link to http://www.gnu.org/licenses/.
+
+ -- Arnaud Ferraris <aferraris@debian.org>  Tue, 28 Oct 2025 13:03:13 +0100
+
 libqmi (1.36.0-1) unstable; urgency=medium
 
   * New upstream release

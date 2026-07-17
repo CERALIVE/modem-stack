@@ -1,6 +1,5 @@
 Source: libmbim
 Section: libs
-Priority: optional
 Maintainer: DebianOnMobile Maintainers <debian-on-mobile-maintainers@alioth-lists.debian.net>
 Uploaders: Arnaud Ferraris <aferraris@debian.org>,
            Guido Günther <agx@sigxcpu.org>,
@@ -9,15 +8,14 @@ Uploaders: Arnaud Ferraris <aferraris@debian.org>,
 Build-Depends: debhelper-compat (= 13),
                bash-completion,
                gobject-introspection,
+               libgirepository1.0-dev,
                gtk-doc-tools <!nodoc>,
                help2man,
-               libgirepository1.0-dev,
                libglib2.0-dev (>= 2.56),
                meson,
                pkgconf,
 Build-Depends-Indep: libglib2.0-doc <!nodoc>
-Standards-Version: 4.7.0
-Rules-Requires-Root: no
+Standards-Version: 4.7.3
 Vcs-Git: https://salsa.debian.org/DebianOnMobile-team/libmbim.git
 Vcs-Browser: https://salsa.debian.org/DebianOnMobile-team/libmbim
 Homepage: https://www.freedesktop.org/wiki/Software/libmbim/
@@ -36,9 +34,10 @@ Section: libdevel
 Architecture: any
 Multi-Arch: same
 Depends: libmbim-glib4 (= ${binary:Version}),
-         ${misc:Depends},
          libglib2.0-dev,
-         gir1.2-mbim-1.0 (= ${binary:Version}),
+         ${gir:Depends},
+         ${misc:Depends},
+Provides: ${gir:Provides}
 Suggests: libmbim-glib-doc
 Description: Header files for adding MBIM support to applications that use glib
  libmbim is a glib-based library for talking to WWAN modems and devices
@@ -88,9 +87,7 @@ Package: gir1.2-mbim-1.0
 Section: introspection
 Architecture: linux-any
 Multi-Arch: same
-Depends: ${gir:Depends},
-         ${shlibs:Depends},
-         ${misc:Depends}
+Depends: ${gir:Depends}, ${misc:Depends}
 Description: GObject introspection data for libmbim-glib
  libmbim is a glib-based library for talking to WWAN modems and devices
  which speak the Mobile Interface Broadband Model (MBIM) protocol.

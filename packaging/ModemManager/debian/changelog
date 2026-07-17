@@ -1,3 +1,36 @@
+modemmanager (1.24.2-2) unstable; urgency=medium
+
+  [ Helmut Grohne ]
+  * Improve cross building: (Closes: #1087277)
+    + Move documentation dependencies to B-D-I.
+    + Mark python3-dbus and python3-gi with the nocheck build profile.
+
+  [ Arnaud Ferraris ]
+  * d/control: fix gobject-introspection dependencies
+    `libgirepository1.0-dev shouldn't be used anymore as it isn't
+    multiarch-friendly. Instead, use a recent `gobject-introspection` and
+    explicitly (build) depend on the needed `gir1.2-*-dev` packages.
+    (Closes: #1118899)
+  * d/gbp.conf: add default commit messages.
+    This makes it more consistent with other packages for which I'm the
+    primary maintainer.
+  * d/watch: convert to version 5.
+    Use the new Gitlab template for easier management, but override the
+    matching pattern so we only get stable (pre)releases, which have an even
+    minor version number.
+  * d/copyright: fix copyright notice for mmcli.
+    This is actually GPL-2+, not GPL-3. (Closes: #1116309)
+
+ -- Arnaud Ferraris <aferraris@debian.org>  Wed, 29 Oct 2025 17:27:49 +0100
+
+modemmanager (1.24.2-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #1110197)
+  * d/control: drop Rules-Requires-Root.
+    This is no longer needed.
+
+ -- Arnaud Ferraris <aferraris@debian.org>  Mon, 11 Aug 2025 12:00:42 +0200
+
 modemmanager (1.24.0-1) unstable; urgency=medium
 
   * New upstream release. Final release of RC already in Trixie.

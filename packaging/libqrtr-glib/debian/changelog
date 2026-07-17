@@ -1,3 +1,43 @@
+libqrtr-glib (1.4.0-1) unstable; urgency=medium
+
+  [ Sebastien Bacher ]
+  * debian/tests: include a basic autopkgtest for the library
+
+  [ Guido Günther ]
+  * New upstream release
+  * Switch to gi-docgen
+
+  [ Arnaud Ferraris ]
+  * d/watch: drop custom matching pattern.
+    This was supposed to be clever (avoiding reporting dev versions), but it
+    actually reports a wrong version number, so let's just drop it and
+    revert back to default behaviour.
+
+ -- Guido Günther <agx@sigxcpu.org>  Thu, 08 Jan 2026 18:55:34 +0100
+
+libqrtr-glib (1.2.2-2) unstable; urgency=medium
+
+  * d/gbp.conf: switch Debian branch to debian/latest.
+    Also add a few more defaults (copied from libqmi) for consistency.
+  * d/watch: convert to version 5.
+    Use the new Gitlab template for easier management, but override the
+    matching pattern so we only get stable (pre)releases, which have an even
+    minor version number. (Closes: #1081060)
+  * d/control: modernize build dependencies
+    `libgirepository1.0-dev` shouldn't be used anymore as it isn't
+    multiarch-friendly. Instead, use a recent `gobject-introspection` and
+    explicitly (build) depend on the needed `gir1.2-*-dev` packages.
+    Similarly, `pkg-config` has been deprecated in favor of `pkgconf`.
+    While at it, drop the now-obsolete `Rules-Requires-Root` and bump
+    `Standards-Version` as no other change is needed. (Closes: #1118881)
+  * debian: drop now-unneeded lintian overrides
+  * d/copyright: fix small issues.
+    One of the `meson.build` files is mentioned with a wrong path. Moreover,
+    the GPL-2+ text still mentions the (old) FSF street address, replace it
+    with the usual reference to http://www.gnu.org/licenses/.
+
+ -- Arnaud Ferraris <aferraris@debian.org>  Tue, 28 Oct 2025 13:03:28 +0100
+
 libqrtr-glib (1.2.2-1) unstable; urgency=medium
 
   * New upstream version 1.2.2
