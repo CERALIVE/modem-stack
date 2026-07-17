@@ -18,13 +18,15 @@
 #                     build time), so they are enumerated EXPLICITLY below. This is the
 #                     reference for 1.4's `.changes` equality (both arches) and 2.1's manifest.
 #
-# PROVISIONAL NOTICE (all-artifact only)
-#   The [all-artifact] sets below are PROVISIONAL — a best-effort enumeration derived from
-#   which declared packages ship ELF (shared libs, the daemon, CLI utils, proxies) vs which
-#   ship no ELF (-dev = headers/.so-symlink/pkgconfig/vapi/gir; gir1.2-* = .typelib, not a
-#   stripped ELF object). They are FINALIZED in todo 1.4 against the first clean amd64
-#   `.changes`, cross-checked to equal declared+dbgsym. Any other delta at that point is a
-#   HARD STOP. The [declared] sets are NOT provisional — they are frozen from debian/control.
+# FINALIZED (todo 1.4)
+#   The [all-artifact] sets below were FINALIZED against the real *.changes from the first
+#   clean bookworm rebuild (todo 1.4, amd64 then arm64) and cross-checked to equal
+#   declared+dbgsym exactly — no other delta. The dbgsym enumeration proved correct as
+#   derived: a -dbgsym is emitted for exactly the 9 ELF-shipping packages (the runtime
+#   closure) and for nothing else (-dev = headers/.so-symlink/pkgconfig/vapi/gir; gir1.2-* =
+#   .typelib, neither ships a stripped ELF). These sets are enforced for EQUALITY per
+#   source+arch by ci/check-package-sets.sh (add/remove/rename fails closed). The [declared]
+#   sets remain frozen from debian/control.
 #
 # DERIVATION (which declared packages get a -dbgsym)
 #   ELF-shipping (=> gets -dbgsym): the 9 runtime packages — modemmanager (daemon+plugins),
@@ -42,7 +44,7 @@ libmm-glib0
 libmm-glib-dev
 gir1.2-modemmanager-1.0
 
-[modemmanager all-artifact]   # PROVISIONAL (finalized in 1.4 vs first clean amd64 .changes)
+[modemmanager all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
 modemmanager
 modemmanager-dev
 libmm-glib0
@@ -58,7 +60,7 @@ libmbim-utils
 libmbim-proxy
 gir1.2-mbim-1.0
 
-[libmbim all-artifact]   # PROVISIONAL (finalized in 1.4 vs first clean amd64 .changes)
+[libmbim all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
 libmbim-glib4
 libmbim-glib-dev
 libmbim-utils
@@ -75,7 +77,7 @@ libqmi-utils
 libqmi-proxy
 gir1.2-qmi-1.0
 
-[libqmi all-artifact]   # PROVISIONAL (finalized in 1.4 vs first clean amd64 .changes)
+[libqmi all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
 libqmi-glib-dev
 libqmi-glib5
 libqmi-utils
@@ -90,7 +92,7 @@ libqrtr-glib0
 libqrtr-glib-dev
 gir1.2-qrtr-1.0
 
-[libqrtr-glib all-artifact]   # PROVISIONAL (finalized in 1.4 vs first clean amd64 .changes)
+[libqrtr-glib all-artifact]   # FINALIZED (todo 1.4, vs the real amd64 + arm64 .changes)
 libqrtr-glib0
 libqrtr-glib-dev
 gir1.2-qrtr-1.0
