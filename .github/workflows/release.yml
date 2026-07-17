@@ -4,11 +4,22 @@ name: Release
 # @ceralive/modem-control AND the ModemManager-stack .debs. There is deliberately NO
 # separate release-packaging workflow. Manually dispatched with the unified SemVer tag.
 #
-# Job graph (each gates the next):
-#   tag-guard   — input MUST be exactly vX.Y.Z, else FAIL CLOSED before anything else runs
-#   test        — full bun lane + packaging contract lane (test-before-publish)
-#   publish-npm — OIDC trusted publishing of @ceralive/modem-control@X.Y.Z (version verified)
-#   build-deb   — inject <upstream>-<rev>~ceraliveX.Y.Z into each source changelog, upload
+# Job graph (STRICTLY sequential — each gates the next):
+#   tag-guard    — resolve the input tag to its immutable PEELED commit SHA, then validate the
+#                  tag shape (vX.Y.Z). Fails closed before anything else runs. Exports version+sha.
+#   test         — full bun lane + packaging contract lane (test-before-publish).
+#   build-deb    — build the .deb set (both arches), contract + smoke, per-release manifest.
+#   publish-npm  — integrity-idempotent OIDC trusted publish of @ceralive/modem-control@X.Y.Z.
+#   create-release — stage sanitized assets, immutably reconcile the GitHub release.
+#
+# SECURITY MODEL:
+#   * Every job checks out the RESOLVED peeled commit SHA (never the mutable tag ref) and
+#     asserts `git rev-parse HEAD` matches it. The resolution lives in ONE shared helper,
+#     packaging/ci/resolve-tag.sh, used by tag-guard, publish-npm's pre-publish TOCTOU re-check,
+#     and create-release's pre-create re-check.
+#   * NO `${{ … }}` expression is ever interpolated directly into a `run:` shell body. Every
+#     dynamic value (esp. github.event.inputs.tag) enters `run:` ONLY via `env:` and is used as
+#     a quoted "$VAR".
 on:
   workflow_dispatch:
     inputs:
@@ -27,29 +38,82 @@ concurrency:
 
 jobs:
   tag-guard:
-    name: Tag guard (fail closed on non-vX.Y.Z)
+    name: Tag guard + resolve peeled SHA (fail closed)
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.guard.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
+      # STEP 0 — bootstrap checkout pinned to the IMMUTABLE workflow commit. Its sole purpose is
+      # to obtain packaging/ci/resolve-tag.sh: tag-guard cannot consume its own `needs` output,
+      # and a fresh runner has no repo files before any checkout runs.
+      - name: Bootstrap checkout (immutable workflow commit)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
-      # tag-guard.sh accepts ONLY ^v[0-9]+\.[0-9]+\.[0-9]+$ and echoes the stripped X.Y.Z.
-      # A pre-release (-rc.1), build metadata (+build5), or missing-v tag exits non-zero,
-      # failing this job — and therefore the whole release — before any publish runs.
-      - name: Validate release tag
-        id: guard
+      # STEP 1 — resolve the input tag to its PEELED commit SHA via the shared helper (an
+      # explicit repository URL; prefers refs/tags/<tag>^{}; fails closed if absent/ambiguous).
+      - name: Resolve tag -> peeled commit SHA
+        id: resolve
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
         run: |
-          version="$(bash packaging/ci/tag-guard.sh "${{ github.event.inputs.tag }}")"
+          sha="$(bash packaging/ci/resolve-tag.sh "$REPO_URL" "$RELEASE_TAG")"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${RELEASE_TAG} -> peeled commit ${sha}"
+
+      # STEP 2 — re-checkout PINNED to the resolved commit (the immutable target, not the tag ref).
+      - name: Checkout the resolved commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.resolve.outputs.sha }}
+
+      # STEP 3 — assert the working tree is exactly the resolved SHA.
+      - name: Assert checkout is pinned to the resolved SHA
+        env:
+          EXPECTED_SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$EXPECTED_SHA" ]; then
+            echo "::error::HEAD ${head} != resolved ${EXPECTED_SHA}"
+            exit 1
+          fi
+          echo "HEAD pinned to ${head}"
+
+      # STEP 4 — the tag-shape contract from the pinned checkout. tag-guard.sh accepts ONLY
+      # ^v[0-9]+\.[0-9]+\.[0-9]+$ and echoes the stripped X.Y.Z. A pre-release (-rc.1), build
+      # metadata (+build5), or missing-v tag exits non-zero, failing the whole release.
+      - name: Validate release tag (vX.Y.Z)
+        id: guard
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          version="$(bash packaging/ci/tag-guard.sh "$RELEASE_TAG")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Release tag OK: ${{ github.event.inputs.tag }} -> ${version}"
+          echo "Release tag OK: ${RELEASE_TAG} -> ${version}"
 
   test:
     name: Test before publish (bun + packaging)
     needs: tag-guard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout the resolved commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag-guard.outputs.sha }}
+
+      - name: Assert checkout is pinned to the resolved SHA
+        env:
+          EXPECTED_SHA: ${{ needs.tag-guard.outputs.sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$EXPECTED_SHA" ]; then
+            echo "::error::HEAD ${head} != resolved ${EXPECTED_SHA}"
+            exit 1
+          fi
+          echo "HEAD pinned to ${head}"
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -82,51 +146,6 @@ jobs:
       - name: Packaging contract lane
         run: bash packaging/ci/contract.sh
 
-  publish-npm:
-    name: Publish @ceralive/modem-control (OIDC trusted publishing)
-    needs: [tag-guard, test]
-    permissions:
-      contents: read
-      id-token: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org/
-
-      # OIDC trusted publishing needs npm >= 11.5.1 (house pattern pins 11.18.0).
-      - name: Install pinned trusted-publishing npm
-        run: npm install -g npm@11.18.0
-
-      # npm side is VERIFIED (not injected): control/package.json version must equal the
-      # release tag's X.Y.Z, else fail closed before publish.
-      - name: Verify package version matches the release tag
-        working-directory: control
-        run: |
-          PKG="$(node -p "require('./package.json').version")"
-          if [ "$PKG" != "${{ needs.tag-guard.outputs.version }}" ]; then
-            echo "::error::control/package.json version ($PKG) != release tag (${{ needs.tag-guard.outputs.version }})"
-            exit 1
-          fi
-          echo "npm version provenance OK: $PKG"
-
-      - name: Install workspace (frozen lockfile)
-        run: bun install --frozen-lockfile
-
-      - name: Publish via OIDC trusted publishing
-        working-directory: control
-        env:
-          # Provenance attestations only when the source repo is public.
-          NPM_CONFIG_PROVENANCE: ${{ !github.event.repository.private }}
-        run: npm publish --access public
-
   build-deb:
     name: Build .deb set + contract + daemon smoke (real artifacts)
     needs: [tag-guard, test]
@@ -135,7 +154,21 @@ jobs:
     # host docker daemon, not to be a container itself.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout the resolved commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag-guard.outputs.sha }}
+
+      - name: Assert checkout is pinned to the resolved SHA
+        env:
+          EXPECTED_SHA: ${{ needs.tag-guard.outputs.sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$EXPECTED_SHA" ]; then
+            echo "::error::HEAD ${head} != resolved ${EXPECTED_SHA}"
+            exit 1
+          fi
+          echo "HEAD pinned to ${head}"
 
       # arm64 .debs are built under full-system QEMU (never cross-compiled); register binfmt.
       - name: Set up QEMU (arm64 emulation)
@@ -144,7 +177,7 @@ jobs:
       # Real rebuilds. RELEASE_VERSION injects <upstream>-<rev>~ceraliveX.Y.Z into a COPY of
       # each source's debian/changelog inside the container (the committed tree is never
       # mutated), builds in bootstrap order on native amd64 + QEMU arm64, and asserts the
-      # 9-package runtime closure per arch. --force-bad-version is applied by inject-deb-version.
+      # per-source package sets. --force-bad-version is applied by inject-deb-version.
       - name: Build the MM 1.24 stack (.deb) — amd64 + arm64
         env:
           RELEASE_VERSION: ${{ github.event.inputs.tag }}
@@ -161,17 +194,19 @@ jobs:
           packaging/ci/test-package-contract.sh arm64
 
       # Daemon smoke: system D-Bus + polkit + NetworkManager 1.42, start MM, busctl
-      # introspect the root ObjectManager, mmcli --version == 1.24.0, udev/FCC/GIR/Vala paths.
+      # introspect the root ObjectManager, mmcli --version == pinned tag, udev/FCC/GIR/Vala paths.
       - name: Daemon smoke (amd64)
         run: packaging/ci/daemon-smoke.sh amd64
 
-      # Per-release manifest: the release tag -> the 9 runtime deb versions per arch
-      # (Phase-B apt publication consumes this as its package -> source -> version matrix).
+      # Manifest-complete per-release manifest: a checksum row for EVERY built deb (both arches),
+      # runtime closure marked; fails closed if the produced set != the frozen all-artifact sets.
       - name: Generate release manifest
-        run: packaging/ci/generate-release-manifest.sh "${{ github.event.inputs.tag }}"
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+        run: bash packaging/ci/generate-release-manifest.sh "$RELEASE_TAG"
 
-      # Upload the REAL built .debs (both arches: 9 runtime + dev/gir/dbgsym) + the manifest as
-      # CI release artifacts. Bench devices download this set and `apt install ./*.deb`.
+      # Upload the REAL built .debs (both arches: runtime + dev/gir/dbgsym) + the manifest as a
+      # CI artifact, consumed by create-release for GitHub Release asset reconciliation.
       - name: Upload .deb artifacts + release manifest
         uses: actions/upload-artifact@v7
         with:
@@ -181,3 +216,229 @@ jobs:
             packaging/build/amd64/*.deb
             packaging/build/arm64/*.deb
           if-no-files-found: error
+
+  publish-npm:
+    name: Publish @ceralive/modem-control (integrity-idempotent OIDC)
+    needs: [tag-guard, build-deb]
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the resolved commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag-guard.outputs.sha }}
+
+      - name: Assert checkout is pinned to the resolved SHA
+        env:
+          EXPECTED_SHA: ${{ needs.tag-guard.outputs.sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$EXPECTED_SHA" ]; then
+            echo "::error::HEAD ${head} != resolved ${EXPECTED_SHA}"
+            exit 1
+          fi
+          echo "HEAD pinned to ${head}"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+
+      # OIDC trusted publishing needs npm >= 11.5.1 (house pattern pins 11.18.0).
+      - name: Install pinned trusted-publishing npm
+        run: npm install -g npm@11.18.0
+
+      # npm side is VERIFIED (not injected): control/package.json version must equal the release
+      # tag's X.Y.Z, else fail closed before publish.
+      - name: Verify package version matches the release tag
+        working-directory: control
+        env:
+          EXPECTED_VERSION: ${{ needs.tag-guard.outputs.version }}
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$EXPECTED_VERSION" ]; then
+            echo "::error::control/package.json version ($pkg) != release tag ($EXPECTED_VERSION)"
+            exit 1
+          fi
+          echo "npm version provenance OK: $pkg"
+
+      - name: Install workspace (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      # Integrity-idempotent publish. ORDER (all in one step so nothing runs between the TOCTOU
+      # re-check and `npm publish`):
+      #   1. `npm pack` ONCE; capture the tarball's integrity.
+      #   2. Classify the registry FIRST via `npm view`: a confirmed 404 authorizes publish; the
+      #      version already present with a MATCHING integrity is an idempotent skip-success; a
+      #      DIFFERENT integrity is a hard fail (an immutable version must never differ); any other
+      #      error (401/403/429/5xx/network) fails TRANSIENTLY (safe to re-dispatch the same tag).
+      #   3. On the publish path only, re-run the SHARED resolve-tag.sh IMMEDIATELY before publish
+      #      and fail closed if the tag no longer peels to the pinned SHA (last-instant TOCTOU).
+      #   4. `npm publish <tarball>`, then a bounded >=5-min read-back (v0.1.0: ~3-min propagation).
+      - name: Integrity-idempotent OIDC publish
+        env:
+          PKG: "@ceralive/modem-control"
+          VERSION: ${{ needs.tag-guard.outputs.version }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+          EXPECTED_SHA: ${{ needs.tag-guard.outputs.sha }}
+          # Provenance attestations only when the source repo is public.
+          NPM_CONFIG_PROVENANCE: ${{ !github.event.repository.private }}
+        run: |
+          set -euo pipefail
+
+          # (1) pack exactly once; the integrity of THIS tarball is what the registry must carry.
+          npm pack ./control --json > pack.json
+          TARBALL="$(node -p "require('./pack.json')[0].filename")"
+          LOCAL_INTEGRITY="$(node -p "require('./pack.json')[0].integrity")"
+          [ -n "$LOCAL_INTEGRITY" ] || { echo "::error::could not read local pack integrity"; exit 1; }
+          echo "packed ${TARBALL} (integrity ${LOCAL_INTEGRITY})"
+
+          # Registry probe -> MISSING | PRESENT:<integrity> | TRANSIENT:<reason>.
+          registry_state() {
+            local err out rc
+            err="$(mktemp)"
+            if out="$(npm view "${PKG}@${VERSION}" dist.integrity 2>"$err")"; then rc=0; else rc=$?; fi
+            if [ "$rc" -eq 0 ] && [ -n "$out" ]; then
+              printf 'PRESENT:%s' "$out"
+            elif grep -qiE 'E404|404 Not Found' "$err"; then
+              printf 'MISSING'
+            else
+              printf 'TRANSIENT:%s' "$(tr '\n' ' ' < "$err" | cut -c1-160)"
+            fi
+            rm -f "$err"
+          }
+
+          # (2) classify FIRST. Only a confirmed MISSING (404) authorizes the publish branch.
+          decision=""
+          for attempt in 1 2 3; do
+            state="$(registry_state)"
+            case "$state" in
+              PRESENT:*)
+                reg="${state#PRESENT:}"
+                if [ "$reg" = "$LOCAL_INTEGRITY" ]; then
+                  echo "idempotent skip: ${PKG}@${VERSION} already published, integrity matches"
+                  decision="skip"
+                else
+                  echo "::error::${PKG}@${VERSION} exists with DIFFERENT integrity (registry ${reg} != local ${LOCAL_INTEGRITY}); refusing"
+                  exit 1
+                fi
+                break
+                ;;
+              MISSING)
+                decision="publish"; break ;;
+              TRANSIENT:*)
+                echo "transient registry error (attempt ${attempt}/3): ${state#TRANSIENT:}"
+                sleep 15 ;;
+            esac
+          done
+          if [ -z "$decision" ]; then
+            echo "::error::registry classification unresolved (transient); re-dispatch the same tag is safe"
+            exit 1
+          fi
+          if [ "$decision" = "skip" ]; then
+            echo "publish-npm: nothing to do (idempotent skip-success)"
+            exit 0
+          fi
+
+          # (3) last-instant TOCTOU guard — nothing runs between this and `npm publish`.
+          sha_now="$(bash packaging/ci/resolve-tag.sh "$REPO_URL" "$RELEASE_TAG")"
+          if [ "$sha_now" != "$EXPECTED_SHA" ]; then
+            echo "::error::tag ${RELEASE_TAG} moved before publish: now ${sha_now}, expected ${EXPECTED_SHA}"
+            exit 1
+          fi
+          npm publish "$TARBALL" --access public
+
+          # (4) bounded >=5-min read-back until the registry reports the matching integrity.
+          deadline=$(( $(date +%s) + 300 ))
+          while :; do
+            state="$(registry_state)"
+            case "$state" in
+              PRESENT:*)
+                reg="${state#PRESENT:}"
+                if [ "$reg" = "$LOCAL_INTEGRITY" ]; then
+                  echo "read-back OK: ${PKG}@${VERSION} integrity confirmed on the registry"
+                  break
+                fi
+                echo "::error::read-back integrity mismatch (registry ${reg} != local ${LOCAL_INTEGRITY})"
+                exit 1
+                ;;
+              *)
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  echo "::error::publish did not propagate within 5 min (${state}); re-dispatch is safe (it will skip)"
+                  exit 1
+                fi
+                echo "waiting for registry propagation: ${state}"
+                sleep 20 ;;
+            esac
+          done
+
+  create-release:
+    name: Create GitHub release (staged sanitized assets, immutable reconcile)
+    needs: [tag-guard, build-deb, publish-npm]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the resolved commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag-guard.outputs.sha }}
+
+      - name: Assert checkout is pinned to the resolved SHA
+        env:
+          EXPECTED_SHA: ${{ needs.tag-guard.outputs.sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$EXPECTED_SHA" ]; then
+            echo "::error::HEAD ${head} != resolved ${EXPECTED_SHA}"
+            exit 1
+          fi
+          echo "HEAD pinned to ${head}"
+
+      # A moved tag between dispatch and here means someone force-moved it — HARD FAIL.
+      - name: Pre-create tag re-verification (moved tag = HARD FAIL)
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+          EXPECTED_SHA: ${{ needs.tag-guard.outputs.sha }}
+        run: |
+          sha_now="$(bash packaging/ci/resolve-tag.sh "$REPO_URL" "$RELEASE_TAG")"
+          if [ "$sha_now" != "$EXPECTED_SHA" ]; then
+            echo "::error::tag ${RELEASE_TAG} moved: now ${sha_now}, expected ${EXPECTED_SHA}"
+            exit 1
+          fi
+          echo "Tag still peels to ${sha_now}"
+
+      - name: Download built .deb + manifest artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: modem-stack-debs-${{ needs.tag-guard.outputs.version }}
+          path: artifact
+
+      # Assemble a FLAT dir of the raw assets (every deb + the manifest). Sanitization,
+      # collision detection, immutable reconciliation, and the final manifest-complete verify
+      # all live in the shared reconcile-release-assets.sh (never inlined here).
+      - name: Assemble flat assets dir (all debs + manifest)
+        run: |
+          mkdir -p staged-assets
+          find artifact -name '*.deb' -type f -exec cp {} staged-assets/ \;
+          manifest="$(find artifact -name release-manifest.txt -type f | head -n1)"
+          if [ -z "$manifest" ]; then
+            echo "::error::release-manifest.txt not present in the downloaded artifact"
+            exit 1
+          fi
+          cp "$manifest" staged-assets/
+          echo "assembled $(find staged-assets -type f | wc -l) asset(s)"
+
+      - name: Reconcile release assets (immutable, manifest-complete)
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash packaging/ci/reconcile-release-assets.sh "$RELEASE_TAG" staged-assets
