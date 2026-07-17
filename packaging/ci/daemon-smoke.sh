@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# daemon-smoke.sh <amd64|arm64> — start the rebuilt ModemManager 1.24 on a real system bus
+# daemon-smoke.sh <amd64|arm64> — start the rebuilt ModemManager on a real system bus
 # and prove it is a working daemon, not just an installable file set.
 #
 # Inside a throwaway `debian:bookworm` container it installs system D-Bus + polkit +
@@ -7,7 +7,8 @@
 # then:
 #   * starts a system dbus-daemon and the ModemManager daemon on it;
 #   * `busctl introspect` the MM service at its root path -> the ObjectManager interface;
-#   * `mmcli --version` reports 1.24.0;
+#   * `mmcli --version` reports the PINNED ModemManager upstream version (read-pin.sh, never
+#     hardcoded — it tracks upstream-pins.yaml automatically across bumps);
 #   * the udev-rules + FCC-unlock dispatcher directories exist at their install paths;
 #   * the GIR typelib (gir1.2-modemmanager-1.0) and the Vala .vapi (libmm-glib-dev) are present.
 #
@@ -130,12 +131,15 @@ INTRO="$(busctl --system introspect org.freedesktop.ModemManager1 /org/freedeskt
 echo "$INTRO" | sed 's/^/    /'
 if echo "$INTRO" | grep -q 'org.freedesktop.DBus.ObjectManager'; then ok "root path exposes org.freedesktop.DBus.ObjectManager"; else sed 's/^/    /' /tmp/introspect.err; bad "ObjectManager interface not found at root"; fi
 
-# ---- ASSERTION 2: mmcli --version reports 1.24.0 -----------------------------------------
+# ---- ASSERTION 2: mmcli --version reports the PINNED upstream version --------------------
 echo
 echo "==== mmcli --version ===="
+# Derived from upstream-pins.yaml (never hardcoded): the mounted /pkg tree carries read-pin.sh.
+MM_TAG="$(bash "$(dirname "${BASH_SOURCE[0]}")/read-pin.sh" modemmanager upstream_tag)"
+MM_TAG_RE="${MM_TAG//./\\.}"
 MMCLI_V="$(mmcli --version 2>&1 | head -1)"
-echo "    $MMCLI_V"
-echo "$MMCLI_V" | grep -q '1\.24\.0' && ok "mmcli reports 1.24.0" || bad "mmcli version is not 1.24.0"
+echo "    $MMCLI_V  (expecting pinned upstream $MM_TAG)"
+echo "$MMCLI_V" | grep -qE "(^|[^0-9.])${MM_TAG_RE}([^0-9]|\$)" && ok "mmcli reports $MM_TAG" || bad "mmcli version is not $MM_TAG"
 
 # ---- ASSERTION 3: udev-rules + FCC-unlock dispatcher directories at install paths --------
 echo

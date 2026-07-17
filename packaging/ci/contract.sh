@@ -33,6 +33,7 @@ require "README.md"
 require "BOOKWORM-ADAPTATIONS.md"
 require "ci/tag-guard.sh"
 require "ci/test-tag-guard.sh"
+require "ci/read-pin.sh"
 require "ci/inject-deb-version.sh"
 require "ci/build-bookworm.sh"
 require "ci/test-package-contract.sh"
@@ -42,6 +43,11 @@ require "ci/generate-release-manifest.sh"
 # The tag-guard contract must hold.
 echo "  running tag-guard contract..."
 bash "$HERE/test-tag-guard.sh" >/dev/null
+
+# Reading the base here also runs read-pin.sh's changelog-top vs salsa_tag cross-check on every
+# PR-lane run, so a `-1`-vs-`-2` revision drift fails closed before any ordering proof.
+MM_BASE="$(bash "$HERE/read-pin.sh" modemmanager --base-version)"
+echo "  ok: pin reader resolves ModemManager base $MM_BASE (changelog top == salsa_tag suffix)"
 
 # Version injection must run WITHOUT mutating the committed debian/changelog files. Now that
 # the recipes carry real changelogs (A5.1), `inject-deb-version.sh --dev` would dch-rewrite
@@ -78,12 +84,12 @@ fi
 # the encoded ~ceralive<X.Y.Z> version depends on; a broken comparator would silently invert
 # release ordering.
 if command -v dpkg >/dev/null 2>&1; then
-	echo "  running dpkg --compare-versions ordering proofs..."
+	echo "  running dpkg --compare-versions ordering proofs (base $MM_BASE, pin-derived)..."
 	ord_ok() { dpkg --compare-versions "$1" lt "$2" || { echo "  FAIL: '$1' !lt '$2'"; fail=1; }; }
-	ord_ok "1.24.0-1~ceralive0.1.0" "1.24.0-1~ceralive0.2.0"
-	ord_ok "1.24.0-1~ceralive0.9.0" "1.24.0-1~ceralive0.10.0"
-	ord_ok "1.24.0-1~ceralive0.1.0" "1.24.0-1"
-	if dpkg --compare-versions "1.24.0-1~ceralive0.2.0" lt "1.24.0-1~ceralive0.1.0"; then
+	ord_ok "${MM_BASE}~ceralive0.1.0" "${MM_BASE}~ceralive0.2.0"
+	ord_ok "${MM_BASE}~ceralive0.9.0" "${MM_BASE}~ceralive0.10.0"
+	ord_ok "${MM_BASE}~ceralive0.1.0" "${MM_BASE}"
+	if dpkg --compare-versions "${MM_BASE}~ceralive0.2.0" lt "${MM_BASE}~ceralive0.1.0"; then
 		echo "  FAIL: comparator is always-true (0.2.0 lt 0.1.0)"; fail=1
 	fi
 	echo "  ok: tilde ordering holds"

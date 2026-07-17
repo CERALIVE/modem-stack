@@ -136,6 +136,41 @@ resolve_debs() {
 }
 resolve_debs
 
+# ---- pin-derived versions (single source of truth: upstream-pins.yaml + changelogs) -------
+# Every version literal the checks below assert against comes from read-pin.sh, so a pin bump
+# (MM 1.24.0-1 -> 1.24.2-2, libmbim 1.32.0 -> 1.34.0, libqmi 1.36.0 -> 1.38.0, libqrtr-glib
+# 1.2.2 -> 1.4.0) needs no edits here, and a wrong revision (`-1` vs the real `-2`) fails closed.
+CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readpin() { bash "$CI_DIR/read-pin.sh" "$@"; }
+MM_TAG="$(readpin modemmanager upstream_tag)"       # upstream tag, matches mmcli --version
+MM_BASE="$(readpin modemmanager --base-version)"    # full Debian base <upstream>-<rev>, revision-exact
+MBIM_BASE="$(readpin libmbim --base-version)"
+QMI_BASE="$(readpin libqmi --base-version)"
+QRTR_BASE="$(readpin libqrtr-glib --base-version)"
+
+# Expected per-package upgrade direction vs bookworm stock, EMPIRICALLY resolved for this bump
+# (real `dpkg --compare-versions` in a bookworm container, todo 1.3): every source now sorts
+# ABOVE stock. libqrtr-glib flipped from BELOW -> ABOVE (1.2.2-1~ceralive was tilde-lower than
+# stock 1.2.2-1; the new 1.4.0 outranks stock 1.2.2-1 outright), so the upgrade no longer needs
+# --allow-downgrades. compute_direction_table asserts this holds against the real built debs.
+declare -A EXPECT_DIR=(
+	[modemmanager]=above  [libmm-glib0]=above
+	[libmbim-glib4]=above [libmbim-proxy]=above [libmbim-utils]=above
+	[libqmi-glib5]=above  [libqmi-proxy]=above  [libqmi-utils]=above
+	[libqrtr-glib0]=above
+)
+NEED_DOWNGRADE=0
+
+# Each runtime package -> its source's revision-exact Debian base, so CHECK 1 asserts every
+# built deb carries the correct <upstream>-<rev> (not just any ~ceralive suffix); a stray `-1`
+# on any of the nine fails closed.
+declare -A PKG_BASE=(
+	[modemmanager]="$MM_BASE"    [libmm-glib0]="$MM_BASE"
+	[libmbim-glib4]="$MBIM_BASE" [libmbim-proxy]="$MBIM_BASE" [libmbim-utils]="$MBIM_BASE"
+	[libqmi-glib5]="$QMI_BASE"   [libqmi-proxy]="$QMI_BASE"   [libqmi-utils]="$QMI_BASE"
+	[libqrtr-glib0]="$QRTR_BASE"
+)
+
 # ------------------------------------------------------------------------------------------
 # CHECK 1 — metadata / architecture over the 9-package runtime closure.
 # ------------------------------------------------------------------------------------------
@@ -150,9 +185,11 @@ check_metadata() {
 		printf '  %-20s %-32s %s\n' "$pkg" "$ver" "$arch"
 		[ "$arch" = "$ARCH" ]        || { echo "    FAIL: arch $arch != $ARCH"; fail=1; }
 		[ "${ver#*~ceralive}" != "$ver" ] || { echo "    FAIL: version has no ~ceralive suffix"; fail=1; }
+		# Revision-exact: the base before ~ceralive must equal the pinned <upstream>-<rev>.
+		[ "${ver%%~ceralive*}" = "${PKG_BASE[$pkg]}" ] || { echo "    FAIL: $pkg base '${ver%%~ceralive*}' != pinned '${PKG_BASE[$pkg]}'"; fail=1; }
 	done
 	[ "$fail" -eq 0 ] || { echo "  CHECK 1 FAIL"; return 1; }
-	echo "  CHECK 1 PASS: 9 runtime packages, all Architecture=$ARCH, all ~ceralive-suffixed."
+	echo "  CHECK 1 PASS: 9 runtime packages, all Architecture=$ARCH, all pin-exact <upstream>-<rev>~ceralive."
 }
 
 # ------------------------------------------------------------------------------------------
@@ -182,8 +219,10 @@ check_coherence() {
 	echo "  ok: all 9 runtime debs share suffix '${suffix}'"
 
 	# Negative fixture: a mismatched libqmi suffix MUST fail closed (QA-failure evidence).
+	# Real pin-derived bases; libqmi carries the odd ~ceralive0.2.0 suffix (MM + libmbim share
+	# 0.1.0), so the set is genuinely incoherent and must be rejected.
 	echo "  negative fixture (mismatched libqmi suffix expected to fail):"
-	local tampered=("1.24.0-1~ceralive0.1.0" "1.32.0-1~ceralive0.1.0" "1.36.0-1~ceralive0.2.0")
+	local tampered=("${MM_BASE}~ceralive0.1.0" "${MBIM_BASE}~ceralive0.1.0" "${QMI_BASE}~ceralive0.2.0")
 	if assert_coherent "${tampered[@]}" >/dev/null 2>&1; then
 		echo "  CHECK 5 FAIL: coherence accepted a mismatched-libqmi set"; return 1
 	fi
@@ -205,12 +244,12 @@ check_ordering() {
 		if dpkg --compare-versions "$1" lt "$2"; then echo "  FAIL: '$1' lt '$2' (expected NOT)"; fail=1
 		else echo "  ok: '$1' not lt '$2'"; fi
 	}
-	prove_lt "1.24.0-1~ceralive0.1.0"  "1.24.0-1~ceralive0.2.0"
-	prove_lt "1.24.0-1~ceralive0.9.0"  "1.24.0-1~ceralive0.10.0"
-	prove_lt "1.24.0-1~ceralive0.1.0"  "1.24.0-1"
-	prove_lt "1.24.0-1~ceralive0.0.0~dev" "1.24.0-1~ceralive0.1.0"
+	prove_lt "${MM_BASE}~ceralive0.1.0"  "${MM_BASE}~ceralive0.2.0"
+	prove_lt "${MM_BASE}~ceralive0.9.0"  "${MM_BASE}~ceralive0.10.0"
+	prove_lt "${MM_BASE}~ceralive0.1.0"  "${MM_BASE}"
+	prove_lt "${MM_BASE}~ceralive0.0.0~dev" "${MM_BASE}~ceralive0.1.0"
 	# comparator must be real, not always-true:
-	prove_not_lt "1.24.0-1~ceralive0.2.0" "1.24.0-1~ceralive0.1.0"
+	prove_not_lt "${MM_BASE}~ceralive0.2.0" "${MM_BASE}~ceralive0.1.0"
 	[ "$fail" -eq 0 ] || { echo "  CHECK 6 FAIL"; return 1; }
 	echo "  CHECK 6 PASS: tilde ordering holds (pre-suffix < release; N.9 < N.10; dev < first)."
 }
@@ -222,8 +261,10 @@ setup_local_repo() {
 	cp /debs/*.deb "$REPO/"
 	( cd "$REPO" && dpkg-scanpackages -m . /dev/null > Packages 2>/dev/null )
 	echo "deb [trusted=yes] file:$REPO ./" > /etc/apt/sources.list.d/local-mm.list
-	# Pin the local (freshly built) stack above bookworm-main so the coherent ceralive set
-	# wins even where its upstream matches (libqrtr-glib 1.2.2 == bookworm's, tilde-lower).
+	# Pin the local (freshly built) stack at 1001 (> 1000) so the coherent ceralive set always
+	# wins regardless of direction. Every source now outranks bookworm-main on upstream version
+	# (incl. libqrtr-glib 1.4.0 > stock 1.2.2-1), so this is belt-and-suspenders, not a downgrade
+	# force — but the pin keeps the set coherent if a future stock point-release ever catches up.
 	cat > /etc/apt/preferences.d/local-mm.pref <<'EOF'
 Package: *
 Pin: origin ""
@@ -240,6 +281,34 @@ purge_stack() {
 	apt-get autoremove -y -qq >/dev/null 2>&1 || true
 }
 dpkg_ver() { dpkg-query -W -f='${Version}' "$1" 2>/dev/null || echo "(absent)"; }
+
+# Real per-package upgrade direction: each built ceralive deb vs bookworm-main stock, via actual
+# `dpkg --compare-versions`. Asserts every package lands on its EXPECT_DIR side and sets
+# NEED_DOWNGRADE=1 iff any source sorts below stock (so the upgrade passes --allow-downgrades
+# only where genuinely required). Call with the local repo DISABLED so madison yields stock.
+compute_direction_table() {
+	echo "  ---- upgrade direction table (built ceralive deb vs bookworm stock, real dpkg) ----"
+	printf '    %-16s %-30s %-12s %-7s %s\n' PACKAGE CERALIVE STOCK DIR EXPECT
+	local pkg built stock dir exp fail=0
+	NEED_DOWNGRADE=0
+	for pkg in "${RUNTIME_PKGS[@]}"; do
+		built="$(dpkg-deb -f "${DEB_OF[$pkg]}" Version)"
+		stock="$(apt-cache madison "$pkg" 2>/dev/null | awk -F'|' 'NR==1{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}')"
+		if   [ -z "$stock" ];                                    then dir="no-stock"
+		elif dpkg --compare-versions "$built" gt "$stock";       then dir="above"
+		elif dpkg --compare-versions "$built" lt "$stock";       then dir="below"; NEED_DOWNGRADE=1
+		else                                                          dir="equal"; fi
+		exp="${EXPECT_DIR[$pkg]:-above}"
+		printf '    %-16s %-30s %-12s %-7s %s\n' "$pkg" "$built" "${stock:-<none>}" "$dir" "$exp"
+		[ "$dir" = "$exp" ] || { echo "      FAIL: $pkg sorts '$dir' vs stock, expected '$exp'"; fail=1; }
+	done
+	[ "$fail" -eq 0 ] || { echo "  DIRECTION TABLE FAIL: a package is on the wrong side of stock"; return 1; }
+	if [ "$NEED_DOWNGRADE" -eq 1 ]; then
+		echo "  => a source sorts BELOW stock; the upgrade requires --allow-downgrades."
+	else
+		echo "  => every source sorts ABOVE stock; the upgrade needs NO --allow-downgrades."
+	fi
+}
 
 # ------------------------------------------------------------------------------------------
 # CHECK 2 — clean-bookworm dependency-closure install via `apt-get install ./*.deb`.
@@ -277,20 +346,27 @@ check_upgrade() {
 	echo "  stock modemmanager installed: $before"
 	case "$before" in ${STOCK_MM_UPSTREAM}*) echo "  ok: stock is ${STOCK_MM_UPSTREAM}-series" ;; *) echo "  note: bookworm stock modemmanager is $before" ;; esac
 
+	# Compute the real upgrade direction now, while the local repo is still disabled so madison
+	# reports the true bookworm-main stock version for each package.
+	compute_direction_table || { echo "  CHECK 3 FAIL: direction table"; return 1; }
+
 	echo "  enabling local ceralive repo and upgrading the coherent set..."
 	setup_local_repo
-	# --allow-downgrades: libqrtr-glib 1.2.2-1~ceralive is tilde-LOWER than bookworm's 1.2.2-1
-	# (same upstream), so landing the FULL coherent ceralive set is a downgrade for that one
-	# package even though modemmanager itself genuinely upgrades 1.20.4 -> 1.24.0.
-	apt-get install -y -qq --allow-downgrades "${RUNTIME_PKGS[@]}" >/tmp/upgrade.log 2>&1 || { sed 's/^/    /' /tmp/upgrade.log; echo "  CHECK 3 FAIL: upgrade"; return 1; }
+	# --allow-downgrades is added ONLY if the direction table found a source below stock. For this
+	# bump every source outranks stock (libqrtr-glib 1.4.0 > 1.2.2-1), so the flag is omitted and
+	# this is a genuine, no-downgrade upgrade — a stricter assertion than the old blanket flag.
+	local dgflag=()
+	[ "$NEED_DOWNGRADE" -eq 1 ] && dgflag=(--allow-downgrades)
+	apt-get install -y -qq "${dgflag[@]}" "${RUNTIME_PKGS[@]}" >/tmp/upgrade.log 2>&1 || { sed 's/^/    /' /tmp/upgrade.log; echo "  CHECK 3 FAIL: upgrade (flags: ${dgflag[*]:-none})"; return 1; }
 	local after; after="$(dpkg_ver modemmanager)"
 	echo "  modemmanager after upgrade: $after"
 	dpkg --compare-versions "$before" lt "$after" || { echo "  CHECK 3 FAIL: modemmanager did not move UP ($before !< $after)"; return 1; }
-	case "$after" in 1.24.0*~ceralive*) echo "  ok: modemmanager upgraded to 1.24.0 ceralive" ;; *) echo "  CHECK 3 FAIL: unexpected upgraded version $after"; return 1 ;; esac
+	# Revision-EXACT: the full <upstream>-<rev> base (e.g. 1.24.2-2) must match; a `-1` build fails.
+	case "$after" in ${MM_BASE}~ceralive*) echo "  ok: modemmanager upgraded to ${MM_BASE} ceralive" ;; *) echo "  CHECK 3 FAIL: expected ${MM_BASE}~ceralive*, got $after"; return 1 ;; esac
 	local pkg fail=0
 	for pkg in "${RUNTIME_PKGS[@]}"; do case "$(dpkg_ver "$pkg")" in *~ceralive*) : ;; *) echo "  FAIL: $pkg not on ceralive after upgrade"; fail=1 ;; esac; done
 	[ "$fail" -eq 0 ] || { echo "  CHECK 3 FAIL"; return 1; }
-	echo "  CHECK 3 PASS: apt upgraded modemmanager 1.20.4 -> 1.24.0 and landed the full coherent set."
+	echo "  CHECK 3 PASS: apt upgraded modemmanager ${STOCK_MM_UPSTREAM} -> ${MM_TAG} and landed the full coherent set."
 	purge_stack
 	disable_local_repo
 }
