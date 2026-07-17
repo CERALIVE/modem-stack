@@ -1,29 +1,26 @@
 // The D-Bus transport seam implementation.
 //
-// Wraps `@httptoolkit/dbus-native` behind the `DbusTransport` interface: method calls,
-// signal subscriptions, and an automatic reconnect loop that re-issues every match rule
-// after a bus restart. A single persistent `message` listener fans out to the live
-// subscription registry, so subscribing/unsubscribing never grows the connection's
-// listener count — the 100-cycle leak check depends on this.
+// Wraps `@httptoolkit/dbus-native` behind the `DbusTransport` interface. This module owns the
+// connection lifecycle — handshake, a reconnect loop that re-issues every match rule after a
+// bus restart, and teardown — and delegates method-call dispatch to `./calls` and signal
+// subscription/match-rule tracking to `./signals`. Its single `message` listener fans out to
+// the signal registry, so subscribing never grows the listener count (the 100-cycle leak check).
 
 import { EventEmitter } from 'node:events';
-import { decodeBody, encodeBody } from './codec';
+import { CallDispatcher, DEFAULT_CALL_TIMEOUT_MS } from './calls';
 import {
 	type CreateClientOptions,
 	createClient,
-	messageType,
 	type RawBus,
 	type RawMessage,
-	type ReplyContext,
 } from './dbus-native';
 import { DisconnectedError, TransportError } from './errors';
+import { SignalRegistry } from './signals';
 import type {
 	DbusTransport,
 	DbusTransportOptions,
-	DbusValue,
 	MethodCall,
 	MethodReply,
-	SignalEvent,
 	SignalListener,
 	SignalSpec,
 	Subscription,
@@ -39,19 +36,6 @@ interface ResolvedReconnect {
 	readonly maxAttempts: number;
 }
 
-interface SubscriptionRecord {
-	readonly id: number;
-	readonly spec: SignalSpec;
-	readonly listener: SignalListener;
-	readonly rule: string;
-}
-
-interface PendingCall {
-	settle(): void;
-	reject(error: unknown): void;
-}
-
-const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 // Bound a single connect/auth attempt so a stalled handshake cannot freeze the reconnect
 // loop. A local unix-socket D-Bus connect completes in milliseconds; 2s is ample headroom
 // while keeping reconnect responsive after a bus restart.
@@ -65,46 +49,19 @@ const DEFAULT_RECONNECT: ResolvedReconnect = {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-function buildMatchRule(spec: SignalSpec): string {
-	const parts = [`type='signal'`, `interface='${spec.interface}'`, `member='${spec.member}'`];
-	if (spec.path !== undefined) {
-		parts.push(`path='${spec.path}'`);
-	}
-	if (spec.sender !== undefined) {
-		parts.push(`sender='${spec.sender}'`);
-	}
-	return parts.join(',');
-}
-
-function signalMatches(spec: SignalSpec, message: RawMessage): boolean {
-	if (message.interface !== spec.interface || message.member !== spec.member) {
-		return false;
-	}
-	if (spec.path !== undefined && message.path !== spec.path) {
-		return false;
-	}
-	if (spec.sender !== undefined && message.sender !== spec.sender) {
-		return false;
-	}
-	return true;
-}
-
 class DbusTransportImpl implements DbusTransport {
 	readonly #options: DbusTransportOptions;
 	readonly #reconnect: ResolvedReconnect;
-	readonly #callTimeoutMs: number;
 	readonly #emitter = new EventEmitter();
-	readonly #subscriptions = new Map<number, SubscriptionRecord>();
-	readonly #matchRuleRefcount = new Map<string, number>();
-	readonly #pending = new Set<PendingCall>();
+	readonly #calls: CallDispatcher;
+	readonly #signals: SignalRegistry;
 
 	#bus: RawBus | null = null;
 	#state: State = 'idle';
 	#closing = false;
-	#nextSubId = 1;
 
 	// Bound once so the same references can be detached from a dead connection.
-	readonly #onMessage = (message: RawMessage): void => this.#dispatchSignal(message);
+	readonly #onMessage = (message: RawMessage): void => this.#signals.dispatch(message);
 	readonly #onConnectionError = (cause: unknown): void =>
 		this.#handleDrop(cause instanceof Error ? cause : new DisconnectedError(String(cause)));
 	readonly #onConnectionEnd = (): void =>
@@ -112,7 +69,12 @@ class DbusTransportImpl implements DbusTransport {
 
 	constructor(options: DbusTransportOptions) {
 		this.#options = options;
-		this.#callTimeoutMs = options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
+		this.#calls = new CallDispatcher(options.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS);
+		this.#signals = new SignalRegistry({
+			currentBus: () => this.#bus,
+			isConnected: () => this.#state === 'connected',
+			emitError: (error) => this.#emitter.emit('error', error),
+		});
 		this.#reconnect = {
 			enabled: options.reconnect?.enabled ?? DEFAULT_RECONNECT.enabled,
 			initialDelayMs: options.reconnect?.initialDelayMs ?? DEFAULT_RECONNECT.initialDelayMs,
@@ -144,113 +106,23 @@ class DbusTransportImpl implements DbusTransport {
 		this.#state = 'closed';
 		const bus = this.#bus;
 		this.#bus = null;
-		this.#rejectPending(new DisconnectedError('transport closed'));
+		this.#calls.rejectAll(new DisconnectedError('transport closed'));
 		if (bus) {
 			this.#quiesce(bus);
 			await bus.disconnect().catch(() => undefined);
 		}
 	}
 
-	async callMethod(call: MethodCall): Promise<MethodReply> {
-		const bus = this.#bus;
-		if (this.#state !== 'connected' || bus === null) {
-			throw new DisconnectedError('cannot call method: transport not connected');
-		}
-
-		const signature = call.signature ?? '';
-		const args = call.args ?? [];
-		const message: RawMessage = {
-			type: messageType.methodCall,
-			destination: call.destination,
-			path: call.path,
-			interface: call.interface,
-			member: call.member,
-		};
-		if (signature.length > 0) {
-			// Throws UnsupportedSignatureError / BigIntRequiredError before anything hits
-			// the wire.
-			message.signature = signature;
-			message.body = encodeBody(signature, args);
-		}
-
-		const timeoutMs = call.timeoutMs ?? this.#callTimeoutMs;
-		const pendingSet = this.#pending;
-		return new Promise<MethodReply>((resolve, reject) => {
-			let done = false;
-			const pending: PendingCall = {
-				settle: finish,
-				reject: (error) => {
-					finish();
-					reject(error);
-				},
-			};
-
-			function finish(): void {
-				if (done) {
-					return;
-				}
-				done = true;
-				clearTimeout(timer);
-				pendingSet.delete(pending);
-			}
-
-			const timer = setTimeout(() => {
-				finish();
-				reject(
-					new TransportError(
-						`Method call ${call.interface}.${call.member} timed out after ${timeoutMs}ms`,
-					),
-				);
-			}, timeoutMs);
-
-			pendingSet.add(pending);
-
-			bus.invoke(
-				message,
-				function reply(this: ReplyContext, error: unknown, ...body: unknown[]): void {
-					if (done) {
-						// Reply arrived after timeout/disconnect already settled the promise — ignore.
-						return;
-					}
-					finish();
-					if (error) {
-						reject(error instanceof Error ? error : new TransportError(String(error)));
-						return;
-					}
-					try {
-						const replySignature = this.signature ?? '';
-						const decoded: DbusValue[] =
-							replySignature.length > 0 ? decodeBody(replySignature, body) : [];
-						resolve({ signature: replySignature, body: decoded });
-					} catch (decodeError) {
-						reject(decodeError);
-					}
-				},
-			);
-		});
+	callMethod(call: MethodCall): Promise<MethodReply> {
+		return this.#calls.call(this.#bus, this.#state === 'connected', call);
 	}
 
-	async subscribeSignal(spec: SignalSpec, listener: SignalListener): Promise<Subscription> {
-		const rule = buildMatchRule(spec);
-		const id = this.#nextSubId++;
-		this.#subscriptions.set(id, { id, spec, listener, rule });
-		await this.#addMatchRule(rule);
-
-		let removed = false;
-		return {
-			unsubscribe: async (): Promise<void> => {
-				if (removed) {
-					return;
-				}
-				removed = true;
-				this.#subscriptions.delete(id);
-				await this.#removeMatchRule(rule);
-			},
-		};
+	subscribeSignal(spec: SignalSpec, listener: SignalListener): Promise<Subscription> {
+		return this.#signals.subscribe(spec, listener);
 	}
 
 	subscriptionCount(): number {
-		return this.#subscriptions.size;
+		return this.#signals.count();
 	}
 
 	on(event: TransportEvent, handler: (payload?: unknown) => void): void {
@@ -300,9 +172,7 @@ class DbusTransportImpl implements DbusTransport {
 			bus.connection.on('end', this.#onConnectionEnd);
 
 			// Re-issue every live match rule so a reconnect resubscribes transparently.
-			for (const rule of this.#matchRuleRefcount.keys()) {
-				await bus.addMatch(rule);
-			}
+			await this.#signals.reissueRules(bus);
 
 			this.#bus = bus;
 			this.#state = 'connected';
@@ -316,58 +186,6 @@ class DbusTransportImpl implements DbusTransport {
 				// The half-open connection is already dead; nothing to close.
 			}
 			throw error;
-		}
-	}
-
-	#dispatchSignal(message: RawMessage): void {
-		if (message.type !== messageType.signal) {
-			return;
-		}
-		for (const record of this.#subscriptions.values()) {
-			if (!signalMatches(record.spec, message)) {
-				continue;
-			}
-			let body: DbusValue[];
-			try {
-				const signature = message.signature ?? '';
-				body = signature.length > 0 ? decodeBody(signature, message.body ?? []) : [];
-			} catch (error) {
-				this.#emitter.emit('error', error);
-				continue;
-			}
-			const event: SignalEvent = {
-				path: message.path ?? '',
-				interface: message.interface ?? '',
-				member: message.member ?? '',
-				sender: message.sender,
-				signature: message.signature ?? '',
-				body,
-			};
-			try {
-				record.listener(event);
-			} catch (error) {
-				this.#emitter.emit('error', error);
-			}
-		}
-	}
-
-	async #addMatchRule(rule: string): Promise<void> {
-		const current = this.#matchRuleRefcount.get(rule) ?? 0;
-		this.#matchRuleRefcount.set(rule, current + 1);
-		if (current === 0 && this.#state === 'connected' && this.#bus) {
-			await this.#bus.addMatch(rule);
-		}
-	}
-
-	async #removeMatchRule(rule: string): Promise<void> {
-		const current = this.#matchRuleRefcount.get(rule) ?? 0;
-		if (current <= 1) {
-			this.#matchRuleRefcount.delete(rule);
-			if (current === 1 && this.#state === 'connected' && this.#bus) {
-				await this.#bus.removeMatch(rule).catch(() => undefined);
-			}
-		} else {
-			this.#matchRuleRefcount.set(rule, current - 1);
 		}
 	}
 
@@ -385,13 +203,6 @@ class DbusTransportImpl implements DbusTransport {
 		bus.connection.on('error', () => undefined);
 	}
 
-	#rejectPending(cause: unknown): void {
-		for (const pending of this.#pending) {
-			pending.reject(cause);
-		}
-		this.#pending.clear();
-	}
-
 	#handleDrop(cause: unknown): void {
 		if (this.#closing) {
 			return;
@@ -404,7 +215,7 @@ class DbusTransportImpl implements DbusTransport {
 			this.#quiesce(this.#bus);
 		}
 		this.#bus = null;
-		this.#rejectPending(cause);
+		this.#calls.rejectAll(cause);
 		this.#emitter.emit('disconnected', cause);
 		if (this.#reconnect.enabled) {
 			void this.#reconnectLoop();

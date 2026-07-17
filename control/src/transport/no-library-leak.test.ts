@@ -6,6 +6,7 @@
 // fallback `@particle/dbus-next`) must stay invisible to every caller.
 
 import { expect, test } from 'bun:test';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as transportPublic from './index';
 
@@ -26,11 +27,21 @@ test('the transport public entry does not import or re-export the D-Bus library'
 });
 
 test('only the quarantined facade imports the D-Bus library from production modules', async () => {
-	const productionModules = ['transport.ts', 'codec.ts', 'signature.ts', 'errors.ts', 'types.ts'];
+	// Enumerate every non-test production module in transport/ dynamically, so a NEW module
+	// (e.g. a future transport split) that imports the library directly is caught — the old
+	// fixed list never knew about files it did not name. The importer set must be EXACTLY the
+	// sanctioned facade, `dbus-native.ts`.
+	const productionModules = readdirSync(transportDir).filter(
+		(name) => name.endsWith('.ts') && !name.endsWith('.test.ts'),
+	);
+	const importers: string[] = [];
 	for (const moduleName of productionModules) {
 		const source = await Bun.file(join(transportDir, moduleName)).text();
-		expect(source).not.toContain(LIBRARY_IMPORT);
+		if (source.includes(LIBRARY_IMPORT)) {
+			importers.push(moduleName);
+		}
 	}
+	expect(importers.sort()).toEqual(['dbus-native.ts']);
 });
 
 test('the transport public surface exposes only the seam\u2019s own values', () => {
