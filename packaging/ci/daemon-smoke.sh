@@ -148,13 +148,50 @@ ls /usr/lib/udev/rules.d/77-mm-*.rules >/dev/null 2>&1 && ok "udev rules present
 [ -d /etc/ModemManager/fcc-unlock.d ]                && ok "FCC-unlock dispatcher dir (/etc/ModemManager/fcc-unlock.d)" || bad "FCC-unlock dispatcher dir missing"
 [ -d /usr/share/ModemManager/fcc-unlock.available.d ] && ok "FCC-unlock available dir (/usr/share/ModemManager/fcc-unlock.available.d)" || bad "FCC-unlock available dir missing"
 
-# ---- ASSERTION 4: GIR typelib + Vala .vapi in the installed file set ----------------------
+# ---- ASSERTION 4: GIR typelib + Vala .vapi are FUNCTIONAL, not merely present -------------
+# A presence-only stat of the .typelib / .gir / .vapi would still pass if the GI-1.74 bookworm
+# adaptation emitted a typelib PyGObject cannot load or a .vapi valac cannot compile against.
+# Exercise both for real instead — either failure invalidates the GI-1.74 adaptation.
 echo
-echo "==== GIR / Vala artifacts ===="
-TYPELIB="/usr/lib/${MA}/girepository-1.0/ModemManager-1.0.typelib"
-[ -f "$TYPELIB" ]                                 && ok "GIR typelib present ($TYPELIB)" || bad "GIR typelib missing ($TYPELIB)"
-[ -f /usr/share/gir-1.0/ModemManager-1.0.gir ]    && ok "GIR xml present (/usr/share/gir-1.0/ModemManager-1.0.gir)" || bad "GIR xml missing"
-[ -f /usr/share/vala/vapi/libmm-glib.vapi ]        && ok "Vala .vapi present (/usr/share/vala/vapi/libmm-glib.vapi)" || bad "Vala .vapi missing"
+echo "==== GIR / Vala FUNCTIONAL checks (typelib import + Vala compile-link) ===="
+echo "-- typelib multiarch dir: /usr/lib/${MA}/girepository-1.0 --"
+echo "-- installing python3-gi + valac + build-essential + pkg-config --"
+apt-get install -y -qq python3-gi valac build-essential pkg-config >/tmp/gi-tooling.log 2>&1 \
+	|| { sed 's/^/    /' /tmp/gi-tooling.log; bad "GI tooling install failed"; }
+
+# (i) Typelib functional import: PyGObject loads ModemManager-1.0.typelib and resolves a REAL
+#     enum member. The GI Python form is the enum member ModemManager.ModemCapability.LTE, NOT a
+#     flat MODEM_CAPABILITY_LTE constant (that flat form does not exist under GI's Python bindings).
+if GI_OUT="$(python3 -c 'import gi; gi.require_version("ModemManager", "1.0"); from gi.repository import ModemManager; print(ModemManager.ModemCapability.LTE)' 2>/tmp/gi-py.err)"; then
+	ok "typelib import via PyGObject works: ModemManager.ModemCapability.LTE = ${GI_OUT}"
+else
+	sed 's/^/    /' /tmp/gi-py.err; bad "typelib functional import failed (PyGObject could not load ModemManager-1.0.typelib)"
+fi
+
+# (ii) Vala compile+link that GENUINELY uses the library: it references the enum member
+#      MM.ModemCapability.LTE and calls the real libmm-glib function build_string_from_mask() —
+#      a genuine undefined symbol resolved from libmm-glib.so at link time, so a no-symbol
+#      program cannot false-pass. valac -C emits C from the .vapi; cc compiles+links it with the
+#      mm-glib pkg-config flags. (Running the binary is a bonus — it needs no D-Bus here.)
+VALA_DIR="$(mktemp -d)"
+cat > "$VALA_DIR/mini.vala" <<'EOF'
+void main () {
+	var cap = MM.ModemCapability.LTE;
+	string s = cap.build_string_from_mask ();
+	stdout.printf ("MM.ModemCapability.LTE=%d mask=%s\n", (int) cap, s);
+}
+EOF
+if ( cd "$VALA_DIR" && valac -C --pkg libmm-glib mini.vala ) >/tmp/valac.log 2>&1 && [ -f "$VALA_DIR/mini.c" ]; then
+	read -ra MM_PC < <(pkg-config --cflags --libs mm-glib) || true
+	if ( cd "$VALA_DIR" && cc mini.c "${MM_PC[@]}" -o mini ) >/tmp/cc.log 2>&1; then
+		ok "Vala compile+link against libmm-glib succeeded (valac -C + cc \$(pkg-config mm-glib)); ran: $("$VALA_DIR/mini" 2>/dev/null || echo '<link OK>')"
+	else
+		sed 's/^/    /' /tmp/cc.log; bad "Vala C compile+link against libmm-glib failed"
+	fi
+else
+	sed 's/^/    /' /tmp/valac.log; bad "valac could not compile the Vala program against libmm-glib (.vapi absent or GI adaptation broken)"
+fi
+rm -rf "$VALA_DIR"
 
 # ---- teardown ----------------------------------------------------------------------------
 kill "$MM_PID" 2>/dev/null || true
