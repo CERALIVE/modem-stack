@@ -22,6 +22,10 @@ describe('parseMmVersion', () => {
 		expect(parseMmVersion('1.24.0')).toEqual({ major: 1, minor: 24 });
 	});
 
+	test('parses the 1.24.2 FM350-fix release', () => {
+		expect(parseMmVersion('1.24.2')).toEqual({ major: 1, minor: 24 });
+	});
+
 	test('parses major.minor without a patch', () => {
 		expect(parseMmVersion('1.20')).toEqual({ major: 1, minor: 20 });
 	});
