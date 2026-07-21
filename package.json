@@ -20,6 +20,6 @@
 		"@biomejs/biome": "2.5.4",
 		"@ceralive/biome-config": "2026.6.2",
 		"@types/bun": "1.3.14",
-		"typescript": "^5"
+		"typescript": "^7"
 	}
 }
