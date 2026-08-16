@@ -89,8 +89,10 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
   adds one transition carrying its own `evidenceBundleSha256`.
 - **`canonicalMode` is a reviewer's stated claim, never inferred**; when transition evidence
   exists the seam cross-checks it against the captured `transition.from`.
-- Per-SKU capture runbooks are `docs/BENCH.md` **RB-11 … RB-15** (RB-16 reserved for the
-  FM350 probe, RB-17 is modem-flap resilience). All are `[PARTIAL]` — four named blockers
+- Per-SKU capture runbooks are `docs/BENCH.md` **RB-11 … RB-15** (RB-16 is the FM350
+  USB-vs-PCIe probe — its 2026-08-16 bench run found the unit not connected, so
+  `docs/FM350-DECISION.md`'s three-gate ledger stays OPEN with the probe evidence recorded;
+  RB-17 is modem-flap resilience). All are `[PARTIAL]` — four named blockers
   (`usbutils` absent from the board and its archive; the enumerator not populating `ifname`;
   no AT transport on the bench; an empty real-SKU catalog) are recorded in `docs/BENCH.md`
   § "Per-SKU certification". No SKU is certified and no matrix row is promoted.

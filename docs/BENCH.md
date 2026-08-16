@@ -1305,8 +1305,154 @@ the six that can be closed on the current image.
 
 ---
 
-> **RB-16 is reserved** for the Fibocom FM350 USB probe and its decision-doc gate-ledger
-> update. See [`FM350-DECISION.md`](FM350-DECISION.md); the runbook itself is not yet written.
+## RB-16 — Fibocom FM350 USB-vs-PCIe probe `[PARTIAL]`
+
+Determine, from real bus evidence, whether the physical FM350 unit enumerates as a **USB**
+device (`0e8d:7126` bootloader / `14c3:4d75` MBIM) — which would trigger the contrary-evidence
+**HARD STOP** in [`FM350-DECISION.md`](FM350-DECISION.md)'s mechanical rule — or as the
+documented **PCIe** `mtk_t7xx` device (`14c3:4d75` on the PCI bus), or is simply **not
+connected** to this bench at all. This runbook never certifies the FM350 and never adds a
+matrix row; it only produces the bus-level evidence the decision doc's mechanical rule
+consumes.
+
+> **USB enumeration alone never promotes support/matrix status.** Even in the branch where the
+> FM350 enumerates as USB (in scope for the classifier per the mechanical rule), the SKU still
+> has to clear the same per-family certification ladder as every RB-11…RB-15 unit (a real
+> `certify` bundle, `synthetic:false`) before `docs/MODEM-SUPPORT-MATRIX.md` changes. A bus
+> match is bus evidence, not a certification.
+
+**Preconditions**
+
+- Bench device reachable over SSH. **No `lsusb` and no `lspci` on the bench image** — the USB
+  tree comes from the `/sys/bus/usb/devices/*` sweep (RB-9's pattern) and the PCI tree from a
+  `/sys/bus/pci/devices/*` sweep, neither of which needs `usbutils`/`pciutils`.
+- `mmcli` on `PATH`, ModemManager **≥ 1.24.2** (the version floor `FM350-DECISION.md`'s gate 1
+  already confirms this repo ships).
+- Re-run this probe immediately before trusting a prior capture — hardware on this bench has
+  moved multiple times this session (`.omo/notepads/modem-stack-phase-b/learnings.md`); do not
+  assume the unit's absence from an earlier pass still holds.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/09; mkdir -p "$OUT"
+
+# 1) USB DESCRIPTOR SWEEP — lsusb-equivalent. Expect 0e8d:7126 (bootloader) or 14c3:4d75
+#    (MBIM mode) if the unit is USB-enumerating.
+{
+  for d in /sys/bus/usb/devices/*; do [ -f "$d/idVendor" ] && \
+    echo "$(basename "$d"): $(cat "$d/idVendor"):$(cat "$d/idProduct") mfg=\"$(cat "$d/manufacturer" 2>/dev/null)\" product=\"$(cat "$d/product" 2>/dev/null)\""; done
+  echo "--- FM350 USB candidate match ---"
+  m=$(for d in /sys/bus/usb/devices/*; do [ -f "$d/idVendor" ] && \
+    vp="$(cat "$d/idVendor"):$(cat "$d/idProduct")" && \
+    case "$vp" in 0e8d:7126|14c3:4d75) echo "MATCH: $(basename "$d") $vp";; esac; done)
+  [ -n "$m" ] && echo "$m" || echo "NO MATCHES (checked all usb nodes above)"
+} 2>&1 | tee "$OUT/usb-sweep.txt"
+
+# 2) DRIVER BINDING CHECK — only meaningful if step 1 matched. `cdc_mbim` is the expected
+#    driver for a USB MBIM personality; this is a DIFFERENT driver family than the documented
+#    PCIe mtk_t7xx path, so a match here is itself part of the contrary-evidence record.
+{
+  for d in /sys/bus/usb/devices/*:1.*; do [ -d "$d/driver" ] && \
+    echo "$(basename "$d"): driver=$(basename "$(readlink -f "$d/driver")")"; done
+} 2>&1 | tee "$OUT/driver-binding.txt"
+
+# 3) PCIe SWEEP — expect 14c3:4d75 (vendor:device) if the unit is in its native M.2 PCIe
+#    slot, plus the mtk_t7xx driver bound and the wwan/net subsystems populated
+#    (FM350-DECISION.md Citation 2).
+{
+  if [ -d /sys/bus/pci/devices ]; then
+    for d in /sys/bus/pci/devices/*; do [ -f "$d/vendor" ] && \
+      echo "$(basename "$d"): $(cat "$d/vendor"):$(cat "$d/device")"; done
+    echo "--- FM350 PCI candidate match (14c3:4d75) ---"
+    m=$(for d in /sys/bus/pci/devices/*; do [ -f "$d/vendor" ] && \
+      vd="$(cat "$d/vendor" | sed 's/^0x//'):$(cat "$d/device" | sed 's/^0x//')" && \
+      [ "$vd" = "14c3:4d75" ] && echo "MATCH: $(basename "$d") $vd"; done)
+    [ -n "$m" ] && echo "$m" || echo "NO MATCHES (checked all pci nodes above)"
+  else
+    echo "/sys/bus/pci/devices does not exist on this board"
+  fi
+  echo "--- wwan class (mtk_t7xx exposes the modem here) ---"
+  ls /sys/class/wwan/ 2>&1
+  echo "--- mtk_t7xx module ---"
+  lsmod | grep -E '^mtk_t7xx' || echo "mtk_t7xx not loaded"
+} 2>&1 | tee "$OUT/pcie-sweep.txt"
+
+# 4) MM DETECTION — does the packaged ModemManager 1.24.2 mtk plugin claim it on either bus.
+mmcli -L 2>&1 | tee "$OUT/mmcli-list.txt"
+mmcli --version 2>&1 | tee "$OUT/mm-version.txt"
+
+# 5) BEARER / DATA-SESSION SMOKE — only runs if step 4 found the FM350's MM index; <N> is
+#    filled in at capture time from that step's real output, never guessed.
+N=${FM350_MM_INDEX:-}
+if [ -n "$N" ]; then
+  mmcli -m "$N" 2>&1 | tee "$OUT/mmcli-dump.txt"
+  mmcli -m "$N" --simple-connect="apn=internet" 2>&1 | tee "$OUT/bearer-connect.txt"
+else
+  echo "FM350_MM_INDEX unset -- no MM index found for FM350 in step 4, bearer smoke SKIPPED (not simulated)" \
+    | tee "$OUT/bearer-connect.txt"
+fi
+
+# 6) PORT-CYCLE RECOVERY — via todo 7's hil-cycle harness, same shape as RB-10 step 4. <slot>
+#    is the ID_PATH found in step 1; hub-map entry is filled in once the unit is physically
+#    mapped to a hub port.
+SLOT=${FM350_ID_PATH:-}
+if [ -n "$SLOT" ]; then
+  sudo ./modem-control hil-cycle "$SLOT" --hub-map "$OUT/hub-map.json" --mm-slot "$N" \
+    2>&1 | tee "$OUT/hil-cycle-fm350.txt"
+else
+  echo "FM350_ID_PATH unset -- unit not enumerated on either bus, hil-cycle SKIPPED (not simulated)" \
+    | tee "$OUT/hil-cycle-fm350.txt"
+fi
+```
+
+**Expected output**
+
+If the unit is USB-enumerating, step 1 prints a `MATCH: <node> 0e8d:7126` or
+`MATCH: <node> 14c3:4d75` line. If it is PCIe-only, step 3 prints a `MATCH: <node> 14c3:4d75`
+line under the PCI sweep, a non-empty `/sys/class/wwan/` listing, and a `mtk_t7xx` row in
+`lsmod`. If neither fires, both sweeps print their full device list with a `NO MATCHES` line
+appended, `/sys/class/wwan/` does not exist, and `mtk_t7xx` is reported not loaded — the honest
+"not connected" outcome.
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/09
+if grep -q '^MATCH: ' "$OUT/usb-sweep.txt"; then
+  echo "RB-16 RESULT: USB-observed -- see FM350-DECISION.md Branch A template"
+elif grep -q '^MATCH: ' "$OUT/pcie-sweep.txt"; then
+  echo "RB-16 RESULT: PCIe-only observed -- see FM350-DECISION.md Branch B template"
+elif grep -q 'NO MATCHES' "$OUT/usb-sweep.txt" && grep -q 'NO MATCHES' "$OUT/pcie-sweep.txt"; then
+  echo "RB-16 RESULT: not connected -- ledger stays OPEN, probe evidence recorded"
+else
+  echo "RB-16 FAIL (sweep output malformed -- neither MATCH nor NO MATCHES present)"
+fi
+```
+
+**Live capture, 2026-08-16, `ceralive2` (192.168.78.132, kernel `7.1.7-ceralive-rk3588`,
+ModemManager `1.24.2`)**
+
+The FM350 is **not physically connected to this bench** — neither in a USB adapter nor in a
+PCIe M.2 slot. Step 1's USB sweep swept all 15 enumerated USB nodes (three `0bda:*` hubs, the
+five MM-managed/router-class modems from RB-9, one Bluetooth radio, eight host controllers) —
+zero matched `0e8d:7126` or `14c3:4d75`. Step 2 (driver binding) had nothing to check. Step 3's
+PCIe sweep found six real PCI devices (the RK3588 root complex `1d87:3588` ×3, a Realtek
+`10ec:b852` and `10ec:8125`, i.e. the board's own WiFi/Ethernet silicon, not a WWAN module) —
+zero matched `14c3:4d75`; `/sys/class/wwan/` does not exist; `mtk_t7xx` is not loaded (only the
+unrelated Bluetooth `btmtk` module is present, confirmed by name — it is not the WWAN driver).
+Step 4: `mmcli -L` shows only the Quectel RM530N-GL and SIMCom SIM7600G-H (`mmcli --version`
+confirms the packaged `1.24.2`), consistent with every prior inventory pass this session
+(RB-9). Steps 5-6 SKIPPED — no MM index or `ID_PATH` exists to act on, and this is recorded
+verbatim in `bearer-connect.txt`/`hil-cycle-fm350.txt` rather than simulated.
+
+**Status:** `[PARTIAL]` — probe run, unit not present. Per `FM350-DECISION.md`'s own mechanical
+rule, no branch fires when there is nothing to classify; the three-gate ledger stays exactly as
+recorded (gate 1 CLEARED, gates 2 and 3 OPEN). See `FM350-DECISION.md` § "Bench probe evidence
+(RB-16)" and § "Gate-ledger update template" for the fill-in-ready next step.
+
+**Evidence:** `test-results/modem-phase-b/09/{usb-sweep,driver-binding,pcie-sweep,mmcli-list,mm-version,bearer-connect,hil-cycle-fm350}.txt`
+(repo-local, gitignored).
 
 ---
 
@@ -1436,7 +1582,7 @@ guessed here; the `${GROUPS_CMD:?…}` guard makes an unfilled run fail closed o
 | RB-13 | SIMCom SIM7600G-H certification capture (QMI raw-IP) | `[PARTIAL]` | `test-results/modem-phase-b/08/simcom-sim7600g-h/{certify.txt,bundle.json,raw-ip-state.txt,rndis-observation.txt}` |
 | RB-14 | Huawei personality capture (Stick vs HiLink) | `[PARTIAL]` | `test-results/modem-phase-b/08/huawei/{personality-sweep.txt,id-path-fallback.txt,personality-switch-observation.txt}` |
 | RB-15 | ZTE MF79U router-mode capture | `[PARTIAL]` | `test-results/modem-phase-b/08/zte-mf79u/{class-evidence.txt,lan-dhcp.txt,web-ui.txt}` |
-| RB-16 | Fibocom FM350 USB probe | *(reserved — runbook not yet written)* | — |
+| RB-16 | Fibocom FM350 USB-vs-PCIe probe | `[PARTIAL]` | `test-results/modem-phase-b/09/{usb-sweep,driver-binding,pcie-sweep,mmcli-list,mm-version,bearer-connect,hil-cycle-fm350}.txt` |
 | RB-17 | Modem-flap resilience under a live bonded stream | `[PARTIAL]` | `test-results/modem-phase-b/08/flap/{baseline.txt,flap-x5.txt,final-groups.txt,hub-map.json}` |
 
 Every row stays `[PARTIAL]` until its evidence artifact is captured on a real bench device
