@@ -9,7 +9,7 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 
 | Directory | Artifact | Role |
 |-----------|----------|------|
-| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, USB composition-mode model, data-usage sampler. Published to public npm under `@ceralive`. |
+| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler. Published to public npm under `@ceralive`. |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
 | `packaging/` | ModemManager stack `.deb`s | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`). Bench installs from CI artifacts. |
 
@@ -73,6 +73,27 @@ The container build additionally enforces the finalized **two-set package model*
 arch-dependent stanzas + enumerated `-dbgsym`) for exact per-source set **equality** via
 `packaging/ci/check-package-sets.sh` (add/remove/rename fails closed). Full detail:
 `packaging/README.md`.
+
+## CERTIFICATION EVIDENCE → CATALOG (evidence-gated, human-reviewed)
+
+A SKU reaches `control/src/usb-mode/certified-catalog.json` only through a captured
+`certify` bundle and a human-reviewed commit. The path is documented in
+[`docs/CATALOG-INGESTION.md`](docs/CATALOG-INGESTION.md) and implemented as a pure
+transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse}.ts`.
+
+- **`synthetic: true` is REFUSED for catalog promotion by the code**, not by convention
+  (`buildCatalogEntryCandidate` → typed `reason: 'synthetic-bundle'`). Classifier fixtures
+  may be synthetic; their provenance says so. That asymmetry is the design.
+- **Certification is two-stage** because `certify --transition` refuses a SKU that is not
+  already in the catalog: stage 1 merges an entry with `permittedTransitions: []`, stage 2
+  adds one transition carrying its own `evidenceBundleSha256`.
+- **`canonicalMode` is a reviewer's stated claim, never inferred**; when transition evidence
+  exists the seam cross-checks it against the captured `transition.from`.
+- Per-SKU capture runbooks are `docs/BENCH.md` **RB-11 … RB-15** (RB-16 reserved for the
+  FM350 probe, RB-17 is modem-flap resilience). All are `[PARTIAL]` — four named blockers
+  (`usbutils` absent from the board and its archive; the enumerator not populating `ifname`;
+  no AT transport on the bench; an empty real-SKU catalog) are recorded in `docs/BENCH.md`
+  § "Per-SKU certification". No SKU is certified and no matrix row is promoted.
 
 ## POLICY
 

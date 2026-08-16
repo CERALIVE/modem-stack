@@ -790,6 +790,633 @@ gitignored). `<slot>` is the unit slug, matching RB-9's per-unit directory names
 
 ---
 
+## Per-SKU certification (RB-11 … RB-15) — shared contract
+
+RB-11 through RB-15 are one runbook per acquired modem family. They all drive the **same**
+command (`./modem-control certify <slot>`) and differ only in the SKU-specific facts each
+one must additionally capture. Everything the five have in common is stated **once**, here.
+
+### The two-stage certification order (not optional — it falls out of the code)
+
+A catalog entry cannot be authored in one pass, because `certify --transition` **refuses**
+a SKU that is not already in the catalog (`cli/src/certify/transition-evidence.ts`, the
+`no certified catalog entry for SKU …` throw). The order is therefore:
+
+| Stage | Command | Produces | Lands as |
+|-------|---------|----------|----------|
+| **1 — base** | `./modem-control certify <slot> --output <bundle>.json` | a base bundle: `lsusb -v`, `usb-devices`, the slot's udev properties, `mmcli -K`, redacted `GetManagedObjects`, a bounded signal window | a candidate entry with `permittedTransitions: []`, reviewed and committed by a human |
+| **2 — transition** | `./modem-control certify <slot> --transition <mode> --output <bundle>.json` | stage-1 evidence **plus** before/after descriptors, the executed AT command, and the port-drop / re-enumeration timeline | ONE `permittedTransitions[]` element on the entry from stage 1, carrying that bundle's `evidenceBundleSha256` |
+
+Stage 2 is only reachable for a SKU whose stage-1 entry is already merged. Both stages feed
+the same reviewed ingestion path: [`CATALOG-INGESTION.md`](CATALOG-INGESTION.md).
+
+### Blockers that make every RB-11…RB-15 row `[PARTIAL]` today
+
+All four were verified on `ceralive2` (192.168.78.132) on 2026-08-16. None is "not run yet";
+each is a named obligation with a code or packaging fix behind it.
+
+| # | Blocker | Verified how | Consequence |
+|---|---------|--------------|-------------|
+| **B1** | `usbutils` is **not installed and not in the board's apt archive** (`apt-cache show usbutils` → `E: No packages found`) | live on the board | `certify` runs `lsusb -v` **first** and `usb-devices` second (`cli/src/certify/capture.ts`); both fail, so **no bundle of any kind can be captured** until `usbutils` is installed from an archive that carries it, or built |
+| **B2** | The production USB enumerator never populates `ifname` (`control/src/backend/usb-enumerator.ts`, `buildSnapshot`), but `certify` matches its target device **by** `ifname` | code read | the matched device is always `undefined`, so a bundle comes out with **no `sku` and empty `udevProperties`**, and `--transition` refuses with `--transition needs a matched USB device` |
+| **B3** | There is **no AT transport** on the bench: the CLI's `benchAtSender` rejects every send, and the image has no `socat` / `picocom` / `minicom` for a manual session either | code read + live `command -v` sweep | stage 2 cannot execute an AT command at all — every `AT+…` line in RB-11/13/14 below is **documented, never executed** |
+| **B4** | The shipped `certified-catalog.json` holds exactly one entry, `CERALIVE-SYNTHETIC-TEST-SKU` | repo read | stage 2 is unreachable for every real SKU until that SKU's stage-1 entry is merged |
+
+**B1 and B2 gate stage 1. B3 and B4 additionally gate stage 2.** A run that reports a
+`CERTIFY OK` line with `synthetic=true`, or with an empty `sku`, is **not** a passing
+RB-11…RB-15 — the gate is the `synthetic=false` line *and* a bundle whose `sku` is populated.
+
+### The shared certify step
+
+Every RB-11…RB-15 "Commands" block below opens with this, differing only in `SLOT`/`UNIT`:
+
+```sh
+OUT=test-results/modem-phase-b/08; mkdir -p "$OUT/$UNIT"
+./modem-control certify "$SLOT" --output "$OUT/$UNIT/bundle.json" \
+  2>&1 | tee "$OUT/$UNIT/certify.txt"
+```
+
+and every one asserts the same gate line:
+
+```
+CERTIFY OK: sha256=<64 hex> synthetic=false transition=none slot=<SLOT>
+```
+
+```sh
+grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=' \
+  "$OUT/$UNIT/certify.txt"
+```
+
+> **`<slot>` is a ModemManager selector, and MM indices renumber.** `Modem/2` is the
+> Quectel *today*; a replug or an MM restart can move it. Re-read `mmcli -L` immediately
+> before each run (RB-9 step 2) and never reuse a recorded index across sessions. The
+> stable key is the udev `ID_PATH`, which is what the bundle carries.
+
+---
+
+## RB-11 — Quectel RM530N-GL certification capture (QMI) `[PARTIAL]`
+
+Capture the certification bundle for the Quectel RM530N-GL, and record the `AT+QCFG="usbnet"`
+composition-mode **transition candidate** — the one SKU on this bench with a documented,
+schema-representable within-ModemManager mode switch.
+
+> **`AT+QCFG="usbnet"` is a CANDIDATE, not a certified transition.** Nothing below promotes
+> it. The value set is firmware-dependent, so step 3 **reads** the current setting rather
+> than assuming a mapping, and the read result is what a reviewer uses to author the
+> stage-2 transition. Note also that the RNDIS value is **not representable** in a catalog
+> entry at all: `catalog-schema.ts` types a transition's `from`/`to` to the MM-mode enum
+> (`qmi` / `mbim` / `ecm-ncm`), so an `MM → rndis` transition fails to parse by construction.
+> Do not record one.
+
+**Preconditions**
+
+- The shared contract above, including blockers **B1–B4**.
+- The Quectel enumerated and MM-managed. Live values on this bench (2026-08-16):
+  USB `4-1.4.4`, VID:PID `2c7c:0801`, `ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.4.4:1.4`,
+  MM `/org/freedesktop/ModemManager1/Modem/2`, plugin `quectel`, drivers `qmi_wwan` +
+  `option`, primary port `cdc-wdm0`, net `wwan0`, firmware `RM530NGLAAR05A01M4G`.
+- **A SIM whose state does not block registration.** The inserted SIM currently reports
+  `lock: sim-pin2` (PIN1 satisfied — PIN2 only gates Fixed-Dialing-Number edits and does
+  **not** block registration) with `registration: idle`, `packet service state: detached`,
+  `signal quality: 0%`. That is a captureable state for the bundle, but it means no bearer
+  smoke can accompany it.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=quectel-rm530n-gl; SLOT=Modem/2
+mkdir -p "$OUT/$UNIT"
+
+# 1) STAGE-1 BUNDLE — the gate.
+./modem-control certify "$SLOT" --output "$OUT/$UNIT/bundle.json" \
+  2>&1 | tee "$OUT/$UNIT/certify.txt"
+
+# 2) SKU-SPECIFIC FACTS — QMI transport, raw-IP flag, port map.
+{
+  echo "--- mmcli dump ---";        mmcli -m "$SLOT"
+  echo "--- qmi raw_ip ---";        cat /sys/class/net/wwan0/qmi/raw_ip
+  echo "--- wda data format ---";   qmicli -d /dev/cdc-wdm0 --wda-get-data-format
+  echo "--- id_path ---";           udevadm info -q property -p /sys/class/net/wwan0 \
+                                      | grep -E '^ID_PATH=|^ID_NET_DRIVER='
+} 2>&1 | tee "$OUT/$UNIT/qmi-facts.txt"
+
+# 3) TRANSITION CANDIDATE — READ ONLY. Blocked by B3 (no AT transport); the command is
+#    recorded so the bench run is a fill-in, not a judgment call. AT ports: ttyUSB2, ttyUSB3.
+{
+  echo 'AT+QCFG="usbnet"'    # read the CURRENT value — never assume the mapping
+  echo 'AT+QCFG="usbnet",<n>'  # the switch, executed ONLY under stage 2, never here
+} | tee "$OUT/$UNIT/transition-candidate.txt"
+```
+
+**Expected output**
+
+Step 1 ends with the shared gate line, `slot=Modem/2`. Step 2's raw-IP read prints exactly
+`Y` (captured live 2026-08-16 — the Quectel's `qmi_wwan` link is in raw-IP mode), and the
+`ID_PATH` line reads `ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.4.4:1.4` with
+`ID_NET_DRIVER=qmi_wwan`. Step 3's read returns, on a working AT channel:
+
+```
++QCFG: "usbnet",<n>
+
+OK
+```
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=quectel-rm530n-gl
+grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=' \
+     "$OUT/$UNIT/certify.txt" \
+  && grep -Eq '"vidPid": *"2c7c:0801"' "$OUT/$UNIT/bundle.json" \
+  && echo "RB-11 PASS" || echo "RB-11 FAIL"
+```
+
+The `vidPid` clause is not decoration: it is what fails when blocker **B2** is still live,
+because an unmatched device yields a bundle with no `sku` at all.
+
+**Status:** `[PARTIAL]` — no capture. Blockers B1 (no `usbutils`) and B2 (no `ifname` on
+enumerated devices) both stop stage 1; B3 and B4 additionally stop stage 2.
+
+**Evidence:** `test-results/modem-phase-b/08/quectel-rm530n-gl/{certify.txt,bundle.json,qmi-facts.txt,transition-candidate.txt}`
+
+---
+
+## RB-12 — Sierra EM75xx certification capture (MBIM/QMI, FCC-locked) `[PARTIAL]`
+
+Capture the certification bundle for a Sierra Wireless EM75xx-class module, and record the
+**FCC-lock** behaviour honestly in its locked state.
+
+> **FCC unlock stays UNRUN, and that is a policy, not an omission.** Sierra EM-series
+> modules ship RF-disabled until an FCC-authorization sequence is sent; the community
+> `qmi-fcc-unlock` / `mbim-fcc-unlock` helpers exist and ModemManager 1.24 can invoke a
+> per-vendor unlock script. This project does **not** run one, and this runbook does not
+> document one as a step. Sending an FCC-authorization command is a **regulatory act about
+> the operator's own equipment**, so it is **opt-in per deployment** and is never performed
+> as part of a certification capture. What RB-12 captures instead is the **LOCKED-state
+> behaviour** — which is a real, useful, reportable fact: an FCC-locked EM75xx enumerates,
+> is MM-managed, reports its identity, and reports RF disabled. A bundle captured in the
+> locked state is a valid stage-1 bundle. It is **not** evidence of a working data path,
+> and no row may claim one from it.
+
+**Preconditions**
+
+- The shared contract above, including blockers **B1–B4**.
+- **A Sierra EM75xx module physically connected. There is none on this bench** — the
+  2026-08-16 USB sweep shows no `1199:*` device. Every value below is the *documented
+  expectation*, captured from no hardware, and is marked as such.
+- Expected identity when one is connected: VID `1199` (Sierra Wireless), MBIM composition
+  binding `cdc_mbim` (`0x02/0x0e` control + `0x0a` data), QMI composition binding
+  `qmi_wwan`; MM plugin `sierra`.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=sierra-em75xx; SLOT=Modem/0   # re-read mmcli -L first
+mkdir -p "$OUT/$UNIT"
+
+# 1) STAGE-1 BUNDLE — the gate.
+./modem-control certify "$SLOT" --output "$OUT/$UNIT/bundle.json" \
+  2>&1 | tee "$OUT/$UNIT/certify.txt"
+
+# 2) LOCKED-STATE CAPTURE — the whole point of this runbook.
+{
+  echo "--- mmcli dump ---";  mmcli -m "$SLOT"
+  echo "--- power state ---"; mmcli -m "$SLOT" -K | grep -E '^modem\.generic\.(state|power-state|device)'
+  echo "--- transport ---";   udevadm info -q property -p /sys/class/net/wwan0 \
+                                | grep -E '^ID_PATH=|^ID_NET_DRIVER=|^ID_VENDOR_ID='
+} 2>&1 | tee "$OUT/$UNIT/fcc-locked-state.txt"
+
+# 3) FCC POLICY MARKER — records that the unlock was deliberately NOT run.
+printf 'FCC-UNLOCK: NOT RUN (opt-in per deployment; see RB-12 policy note)\n' \
+  | tee "$OUT/$UNIT/fcc-policy.txt"
+```
+
+**Expected output**
+
+Step 1 ends with the shared gate line. Step 2, on an FCC-locked unit, shows the modem
+present and identified with its RF path disabled — typically `state: disabled` or
+`state: failed` alongside a `power state`, with the module's manufacturer/model/firmware all
+populated. **Both are a valid capture**; RB-12 does not require a particular one, it
+requires the observed one to be recorded verbatim. Step 3 writes the literal marker line.
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=sierra-em75xx
+grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=' \
+     "$OUT/$UNIT/certify.txt" \
+  && grep -Eq '"vidPid": *"1199:[0-9a-f]{4}"' "$OUT/$UNIT/bundle.json" \
+  && grep -Fq 'FCC-UNLOCK: NOT RUN' "$OUT/$UNIT/fcc-policy.txt" \
+  && echo "RB-12 PASS" || echo "RB-12 FAIL"
+```
+
+**Status:** `[PARTIAL]` — **fully** unrun, and unrunnable: no EM75xx exists on this bench, on
+top of blockers B1–B4. No capture directory is created; no value above was observed.
+
+**Evidence:** `test-results/modem-phase-b/08/sierra-em75xx/{certify.txt,bundle.json,fcc-locked-state.txt,fcc-policy.txt}`
+
+---
+
+## RB-13 — SIMCom SIM7600G-H certification capture (QMI raw-IP) `[PARTIAL]`
+
+Capture the certification bundle for the SIMCom SIM7600G-H R2, recording its **QMI raw-IP
+flag state** explicitly, and record the `AT+CUSBPIDSWITCH` RNDIS personality as an
+**observation only**.
+
+> **`AT+CUSBPIDSWITCH=9011` exists and is NOT certified.** SIM7600-series firmware exposes a
+> USB PID switch, and `9011` selects an RNDIS personality. It is recorded here so a bench
+> operator who encounters it knows what it is — **and knows not to certify it**. Two
+> independent reasons: (a) RNDIS is not a ModemManager-manageable mode, so the transition is
+> **schema-invalid** in `catalog-schema.ts` and cannot be written down as a permitted
+> transition; (b) a PID switch changes the device's VID:PID, i.e. its catalog
+> **discriminator**, so the post-switch device is a *different* catalog subject, not a mode
+> of this one. Observation only. Do not run it as part of a certification capture.
+
+**Preconditions**
+
+- The shared contract above, including blockers **B1–B4**.
+- The SIM7600G-H enumerated and MM-managed. Live values on this bench (2026-08-16):
+  USB `1-1.3.4`, VID:PID `1e0e:9001`, `ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.3.4:1.5`,
+  MM `/org/freedesktop/ModemManager1/Modem/4`, plugin `simtech`, drivers `qmi_wwan` +
+  `option`, primary port `cdc-wdm1`, net `wwan1`, firmware `LE20B04SIM7600G22`.
+- **No SIM is inserted** in this unit — MM reports `state: failed`,
+  `failed reason: sim-missing`. That is a captureable stage-1 state (the module identifies
+  itself fully), but it forbids any registration or bearer claim from this bundle.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=simcom-sim7600g-h; SLOT=Modem/4
+mkdir -p "$OUT/$UNIT"
+
+# 1) STAGE-1 BUNDLE — the gate.
+./modem-control certify "$SLOT" --output "$OUT/$UNIT/bundle.json" \
+  2>&1 | tee "$OUT/$UNIT/certify.txt"
+
+# 2) RAW-IP FLAG STATE — the SKU-specific fact this runbook exists to capture. The kernel
+#    sysfs flag and the modem's own WDA data format must AGREE; a mismatch is the classic
+#    "QMI link up, no traffic" fault and is a finding, not a pass.
+{
+  echo "--- kernel raw_ip flag ---"; cat /sys/class/net/wwan1/qmi/raw_ip
+  echo "--- modem wda format ---";   qmicli -d /dev/cdc-wdm1 --wda-get-data-format
+  echo "--- transport ---";          udevadm info -q property -p /sys/class/net/wwan1 \
+                                       | grep -E '^ID_PATH=|^ID_NET_DRIVER='
+  echo "--- sim state ---";          mmcli -m "$SLOT" -K | grep -E '^modem\.generic\.(state|state-failed-reason)'
+} 2>&1 | tee "$OUT/$UNIT/raw-ip-state.txt"
+
+# 3) RNDIS PERSONALITY — OBSERVATION ONLY. Recorded, never executed, never certified.
+printf 'AT+CUSBPIDSWITCH=9011  # RNDIS personality — EXISTS, NOT CERTIFIED, NOT RUN\n' \
+  | tee "$OUT/$UNIT/rndis-observation.txt"
+```
+
+**Expected output**
+
+Step 1 ends with the shared gate line, `slot=Modem/4`. Step 2's kernel flag prints exactly
+`Y` (captured live 2026-08-16), the `ID_PATH` line reads
+`ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.3.4:1.5` with `ID_NET_DRIVER=qmi_wwan`, and the
+SIM state reads `modem.generic.state-failed-reason : sim-missing` until a card is inserted.
+`--wda-get-data-format` reports its link-layer protocol; on a healthy raw-IP link it reads
+`raw-ip`, matching the `Y` above.
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=simcom-sim7600g-h
+grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=' \
+     "$OUT/$UNIT/certify.txt" \
+  && grep -Eq '"vidPid": *"1e0e:9001"' "$OUT/$UNIT/bundle.json" \
+  && sed -n '2p' "$OUT/$UNIT/raw-ip-state.txt" | grep -Eq '^(Y|N)$' \
+  && echo "RB-13 PASS" || echo "RB-13 FAIL"
+```
+
+The raw-IP clause asserts the flag was **captured**, not that it holds a particular value —
+`N` is a legitimate observation and a legitimate finding. Recording it is the gate.
+
+**Status:** `[PARTIAL]` — no capture; blockers B1/B2 stop stage 1, and this unit has no SIM.
+The raw-IP flag value (`Y`) and the transport facts above are RB-9-class live observations
+already captured on 2026-08-16; they are **not** a certification bundle.
+
+**Evidence:** `test-results/modem-phase-b/08/simcom-sim7600g-h/{certify.txt,bundle.json,raw-ip-state.txt,rndis-observation.txt}`
+
+---
+
+## RB-14 — Huawei personality capture (Stick vs HiLink) `[PARTIAL]`
+
+Capture which **personality** a Huawei dongle is presenting — *Stick* (an MM-managed modem
+with AT/QMI control ports) or *HiLink* (a self-contained router that presents only a
+CDC-Ethernet tether) — and record the class evidence for each. The two personalities are
+different device classes to this stack, not different settings of one device.
+
+> **A HiLink unit is `router-mode`, and that is a terminal classification here.** With a
+> CDC-Ethernet tether and no control port of any kind, `classifyDevice` returns
+> `router-mode` and `detectUsbMode` returns `router-ethernet`. Neither is an MM mode, so a
+> HiLink unit can hold a catalog entry with `canonicalMode: "router-ethernet"` and
+> **`permittedTransitions: []`** — and nothing else. Any Stick↔HiLink switch (`AT^SETPORT`,
+> a vendor tool, or a firmware reflash) crosses the MM↔router line the schema forbids and
+> is therefore **observation only**, exactly like RB-13's PID switch.
+
+**Preconditions**
+
+- The shared contract above, including blockers **B1–B4**. Note a HiLink unit is **not**
+  MM-managed, so `certify <slot>` — which selects a *ModemManager* slot — cannot be run
+  against one at all; RB-14's HiLink half is a udev/network capture, and only its Stick half
+  is a certify capture.
+- Live values on this bench (2026-08-16): **two** HiLink units, both `12d1:14dc`, at USB
+  `1-1.3.1` and `1-1.3.2`, both bound by `cdc_ether`, neither in `mmcli -L`. **No Huawei
+  Stick-mode unit is present** — the Stick half of this runbook is documented, not captured.
+
+> **The duplicate-MAC pair is the reason this runbook cannot key on anything but `ID_PATH`.**
+> Both HiLink units carry the **identical factory MAC `0c:5b:8f:27:9a:64`**, both DHCP-serve
+> `192.168.8.100/24` to the host, and both offer the same default gateway `192.168.8.1`. The
+> unit that wins the naming race gets `enx0c5b8f279a64`; the loser falls back to a legacy
+> `eth1` and — verified live — has **no `ID_PATH` udev property at all**, only a `DEVPATH`.
+> So the per-unit capture below reads `ID_PATH` **with a `DEVPATH` fallback**, and a run that
+> silently produces one row for two physical units is a FAIL, not a tidy result.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=huawei; mkdir -p "$OUT/$UNIT"
+
+# 1) PERSONALITY SWEEP — one row per physically present Huawei device, keyed on sysfs path.
+for d in /sys/bus/usb/devices/*; do
+  [ -f "$d/idVendor" ] || continue
+  [ "$(cat "$d/idVendor")" = "12d1" ] || continue
+  echo "=== $(basename "$d") $(cat "$d/idVendor"):$(cat "$d/idProduct") ==="
+  echo "interfaces: $(for i in "$d":*; do [ -f "$i/bInterfaceClass" ] && \
+    printf '%s/%s/%s(%s) ' "$(cat "$i/bInterfaceClass")" "$(cat "$i/bInterfaceSubClass")" \
+      "$(cat "$i/bInterfaceProtocol")" "$(basename "$(readlink -f "$i/driver" 2>/dev/null)")"; done)"
+  echo "net children: $(ls "$d"/*/net 2>/dev/null | tr '\n' ' ')"
+  echo "tty children: $(ls -d "$d"/*/tty* 2>/dev/null | tr '\n' ' ')"
+done 2>&1 | tee "$OUT/$UNIT/personality-sweep.txt"
+
+# 2) PER-INTERFACE IDENTITY — ID_PATH, with the DEVPATH fallback the duplicate-MAC loser needs.
+for ifc in $(ip -br link | awk '{print $1}'); do
+  drv=$(udevadm info -q property -p "/sys/class/net/$ifc" 2>/dev/null | grep -E '^ID_NET_DRIVER=')
+  case "$drv" in *cdc_ether*|*rndis_host*|*cdc_ncm*|*option*|*qmi_wwan*) ;; *) continue ;; esac
+  echo "--- $ifc ---"
+  udevadm info -q property -p "/sys/class/net/$ifc" 2>/dev/null \
+    | grep -E '^ID_PATH=|^DEVPATH=|^ID_VENDOR_ID=|^ID_MODEL_ID=|^ID_NET_DRIVER='
+  echo "mac=$(cat "/sys/class/net/$ifc/address")"
+done 2>&1 | tee "$OUT/$UNIT/id-path-fallback.txt"
+
+# 3) STICK HALF — only when an MM-managed Huawei is present (none on this bench).
+#    SLOT comes from `mmcli -L`; skip entirely when no 12d1 unit is listed.
+# ./modem-control certify "$SLOT" --output "$OUT/$UNIT/stick-bundle.json" \
+#   2>&1 | tee "$OUT/$UNIT/stick-certify.txt"
+
+# 4) PERSONALITY-SWITCH OBSERVATION — recorded, never executed, never certified.
+printf 'AT^SETPORT  # Huawei Stick<->HiLink personality — EXISTS, NOT CERTIFIED, NOT RUN\n' \
+  | tee "$OUT/$UNIT/personality-switch-observation.txt"
+```
+
+**Expected output**
+
+Step 1 prints one `===` block per physical Huawei device — **two** on this bench. A HiLink
+block shows CDC-Ethernet interfaces bound to `cdc_ether`, a `net` child, and **no** `tty`
+children; a Stick block would show `option`-bound `ttyUSB*` children (and, on a QMI-capable
+Stick, a `qmi_wwan` interface). Step 2 prints, for the naming-race winner:
+
+```
+ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.3.2:1.0
+ID_NET_DRIVER=cdc_ether
+mac=0c:5b:8f:27:9a:64
+```
+
+and, for the loser, a `DEVPATH=` line with **no** `ID_PATH` — the same MAC on a different
+sysfs path. Two blocks, two paths, one MAC.
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=huawei
+n=$(grep -c '^=== ' "$OUT/$UNIT/personality-sweep.txt")
+p=$(grep -cE '^(ID_PATH=|DEVPATH=)' "$OUT/$UNIT/id-path-fallback.txt")
+[ "$n" -ge 1 ] && [ "$p" -ge "$n" ] \
+  && echo "RB-14 PASS (units=$n identity-rows=$p)" || echo "RB-14 FAIL (units=$n identity-rows=$p)"
+```
+
+Every physical unit must contribute at least one identity row. That is the assertion the
+duplicate-MAC pair would otherwise silently defeat.
+
+**Status:** `[PARTIAL]` — no certification bundle. The HiLink half is capturable today (it
+needs neither `certify` nor `usbutils`), but it has not been run as an RB-14 capture; the
+Stick half has no hardware at all.
+
+**Evidence:** `test-results/modem-phase-b/08/huawei/{personality-sweep.txt,id-path-fallback.txt,personality-switch-observation.txt}` (+ `stick-{certify.txt,bundle.json}` when a Stick unit exists)
+
+---
+
+## RB-15 — ZTE MF79U router-mode capture `[PARTIAL]`
+
+Capture the router-mode class evidence for the ZTE MF79U-class dongle: the LAN subnet it
+actually serves, the DHCP lease it hands the host, its default gateway, and the presence of
+its embedded web UI. This is the canonical **`router-ethernet`** capture — the device MM
+never manages.
+
+> **A router dongle's catalog entry can only ever be `canonicalMode: "router-ethernet"` with
+> `permittedTransitions: []`.** There is no AT channel, no QMI channel, and no MM slot. The
+> entry records *what it is*, so the stack can recognise it and hand it to the netns layer —
+> it never records a switch. Nothing in RB-15 produces a `certify` bundle, because `certify`
+> selects a ModemManager slot and this device has none.
+
+**Preconditions**
+
+- Bench device reachable over SSH; `curl` present (**verified installed**; `wget` is **not**
+  on this image, so the web-UI step has no fallback and is a hard dependency).
+- Live values on this bench (2026-08-16): USB `1-1.1`, VID:PID `19d2:1405`,
+  `ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.1:1.0`, driver `cdc_ether`, interface
+  `enx344b50000000` (MAC `34:4b:50:00:00:00`, unique — **no** collision, unlike RB-14's pair),
+  host lease `192.168.0.169/24`, gateway `192.168.0.1`.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=zte-mf79u; IF=enx344b50000000
+mkdir -p "$OUT/$UNIT"
+
+# 1) CLASS EVIDENCE — descriptors + driver + the absence of any control port.
+{
+  D=/sys/bus/usb/devices/1-1.1
+  echo "vidpid: $(cat $D/idVendor):$(cat $D/idProduct)"
+  echo "interfaces: $(for i in $D:*; do [ -f "$i/bInterfaceClass" ] && \
+    printf '%s/%s/%s(%s) ' "$(cat "$i/bInterfaceClass")" "$(cat "$i/bInterfaceSubClass")" \
+      "$(cat "$i/bInterfaceProtocol")" "$(basename "$(readlink -f "$i/driver" 2>/dev/null)")"; done)"
+  echo "tty children: $(ls -d $D/*/tty* 2>/dev/null | wc -l)   # MUST be 0 for router-mode"
+  echo "cdc-wdm children: $(ls -d $D/*/usbmisc 2>/dev/null | wc -l)  # MUST be 0"
+  echo "mm-managed: $(mmcli -L 2>/dev/null | grep -c 19d2)          # MUST be 0"
+} 2>&1 | tee "$OUT/$UNIT/class-evidence.txt"
+
+# 2) LAN SUBNET + DHCP LEASE the dongle actually serves to the host.
+{
+  ip -br addr show "$IF"
+  ip route show dev "$IF"
+  udevadm info -q property -p "/sys/class/net/$IF" \
+    | grep -E '^ID_PATH=|^ID_NET_DRIVER=|^ID_VENDOR_ID=|^ID_MODEL_ID='
+  echo "mac=$(cat "/sys/class/net/$IF/address")"
+} 2>&1 | tee "$OUT/$UNIT/lan-dhcp.txt"
+
+# 3) WEB-UI PRESENCE — the router personality's own control surface, header-only.
+GW=$(ip route show dev "$IF" | awk '/^default/{print $3}' | head -1)
+curl -sS -m 8 -o /dev/null -w "gw=$GW http_code=%{http_code} redirect=%{redirect_url}\n" \
+  "http://$GW/" 2>&1 | tee "$OUT/$UNIT/web-ui.txt"
+```
+
+**Expected output**
+
+Step 1 prints `vidpid: 19d2:1405`, CDC-Ethernet interface triples bound to `cdc_ether`, and
+**three zeros** — no tty child, no `cdc-wdm` child, not in `mmcli -L`. Those three zeros
+*are* the router-mode classification. Step 2 prints the live lease and gateway:
+
+```
+enx344b50000000  UP   192.168.0.169/24 fe80::a408:7435:436b:94db/64
+default via 192.168.0.1 proto dhcp src 192.168.0.169 metric 103
+ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.1:1.0
+ID_NET_DRIVER=cdc_ether
+```
+
+Step 3 prints the embedded web UI's redirect — captured live 2026-08-16:
+
+```
+gw=192.168.0.1 http_code=302 redirect=http://192.168.0.1/index.html
+```
+
+For contrast (RB-14's HiLink units, same command against `192.168.8.1`) the response is
+`http_code=307 redirect=http://192.168.8.1/html/index.html` — a different vendor UI at a
+different path, which is why the assertion below accepts any 2xx/3xx rather than one code.
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/08; UNIT=zte-mf79u
+grep -Eq '^vidpid: 19d2:1405$' "$OUT/$UNIT/class-evidence.txt" \
+  && grep -Eq 'tty children: 0 ' "$OUT/$UNIT/class-evidence.txt" \
+  && grep -Eq '^default via [0-9.]+ ' "$OUT/$UNIT/lan-dhcp.txt" \
+  && grep -Eq 'http_code=[23][0-9]{2} ' "$OUT/$UNIT/web-ui.txt" \
+  && echo "RB-15 PASS" || echo "RB-15 FAIL"
+```
+
+**Status:** `[PARTIAL]` — no RB-15 capture has been run. Every value quoted above is a live
+RB-9-class observation from 2026-08-16, not an RB-15 evidence bundle. Unlike RB-11…RB-14
+this runbook is **not** blocked by B1–B4 (it never invokes `certify`), so it is the first of
+the six that can be closed on the current image.
+
+**Evidence:** `test-results/modem-phase-b/08/zte-mf79u/{class-evidence.txt,lan-dhcp.txt,web-ui.txt}`
+
+---
+
+> **RB-16 is reserved** for the Fibocom FM350 USB probe and its decision-doc gate-ledger
+> update. See [`FM350-DECISION.md`](FM350-DECISION.md); the runbook itself is not yet written.
+
+---
+
+## RB-17 — Modem-flap resilience under a live bonded stream `[PARTIAL]`
+
+Prove that a modem physically disappearing and returning **while a bonded stream is live**
+costs the stream nothing permanent: the link re-registers, the surviving link(s) carry the
+stream throughout, and the receiver's SRTLA group count returns to its pre-flap baseline
+rather than accumulating stale groups.
+
+> **This is a RESILIENCE runbook, not a certification runbook.** It certifies no SKU and
+> produces no catalog entry. It is the acceptance that the device-stable-core effort
+> specified and never closed, restated here against the RB-10 hub-cycle mechanism now that
+> one exists.
+
+> **The stale-group assertion is the real gate.** A flap that re-registers the link but
+> leaves the receiver holding an orphaned SRTLA group is the failure this runbook exists to
+> catch: it is invisible on the sender, invisible in the video for one flap, and accumulates
+> — five flaps leave five groups, and the receiver's group table is what eventually breaks.
+> "The stream kept playing" is **not** a passing RB-17.
+
+**Preconditions**
+
+- **RB-10 passing on the hub carrying the flapped modem.** RB-17 flaps via the RB-10
+  mechanism, so a hub that has not proven per-port power switching (`ppps`) cannot host this
+  test. On this bench only the `0bda:0411` tree qualifies, and it carries exactly one modem
+  (the Quectel at `4-1.4.4`) — see RB-10's per-hub table. `uhubctl` is **not installed on the
+  board and not in its apt archive**, so RB-10 itself is unrun.
+- **At least TWO links carrying a live bonded stream**, of which the flapped modem is one.
+  The surviving link is what proves continuity; flapping a single-link stream proves nothing
+  but that the stream dies.
+- Receiver-side access to the SRTLA receiver's group count for the baseline assertion.
+- A registered modem with a working bearer. **No modem on this bench is registered** — the
+  Quectel reports `registration: idle` / `signal quality: 0%`, and the SIMCom has no SIM.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/08; mkdir -p "$OUT/flap"
+HUB=4-1.4; PORT=4; SLOT='platform-xhci-hcd.0.auto-usb-0:1.4.4'; MMSLOT=2
+
+# GROUPS_CMD belongs to the SRTLA RECEIVER deployment used for this run — it is deliberately
+# NOT guessed here. It must print the receiver's current SRTLA group count as a bare integer.
+# Unset ⇒ the runbook fails closed on the first line rather than silently asserting nothing.
+GROUPS_CMD=${GROUPS_CMD:?set GROUPS_CMD to the receiver group-count command before running}
+
+# 0) BASELINE — with the stream LIVE over >=2 links, before any flap.
+{
+  echo "--- links ---";        ip -br addr
+  echo "--- mm ---";           mmcli -L
+  echo "--- srtla groups ---"; sh -c "$GROUPS_CMD"
+} 2>&1 | tee "$OUT/flap/baseline.txt"
+
+# 1) FLAP x5 within 60 s. Each iteration is one RB-10 hub cycle plus per-flap assertions.
+for n in 1 2 3 4 5; do
+  echo "===== flap $n ====="
+  sudo ./modem-control hil-cycle "$SLOT" --hub-map "$OUT/flap/hub-map.json" --mm-slot "$MMSLOT"
+  sleep 3
+  echo "--- post-flap links ---";  ip -br addr
+  echo "--- post-flap mm ---";     mmcli -L
+  echo "--- post-flap groups ---"; sh -c "$GROUPS_CMD"
+done 2>&1 | tee "$OUT/flap/flap-x5.txt"
+
+# 2) SETTLE + FINAL GROUP COUNT — must equal the baseline, not merely be "small".
+sleep 30
+sh -c "$GROUPS_CMD" 2>&1 | tee "$OUT/flap/final-groups.txt"
+
+# 3) STREAM CONTINUITY — the receiver-side record for the whole 60 s window, captured
+#    independently of the sender so a sender-side "everything is fine" cannot mask a gap.
+```
+
+**Expected output**
+
+Each of the five iterations ends with the RB-10 harness line
+
+```
+HIL-CYCLE PASS slot=platform-xhci-hcd.0.auto-usb-0:1.4.4 disappeared=<ms> reenumerated=<ms>
+```
+
+and shows the flapped modem back in `mmcli -L` at the same `modem.generic.device` path. The
+final group count equals the baseline count **exactly**. The receiver-side continuity record
+shows no interruption attributable to the flapped link.
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/08
+flaps=$(grep -c '^HIL-CYCLE PASS ' "$OUT/flap/flap-x5.txt")
+base=$(tail -1 "$OUT/flap/baseline.txt" | tr -dc '0-9')
+final=$(tail -1 "$OUT/flap/final-groups.txt" | tr -dc '0-9')
+[ "$flaps" -eq 5 ] && [ -n "$base" ] && [ "$final" = "$base" ] \
+  && echo "RB-17 PASS (flaps=$flaps groups=$final==$base)" \
+  || echo "RB-17 FAIL (flaps=$flaps baseline=$base final=$final)"
+```
+
+Both clauses are load-bearing. `flaps -eq 5` fails a run that gave up early; `final = base`
+fails the stale-group accumulation that a "the stream survived" eyeball check passes.
+
+**Status:** `[PARTIAL]` — unrun, and blocked on **four** independent counts: `uhubctl` is
+absent from the board and its archive (so RB-10 is unrun and RB-17's flap mechanism does not
+exist yet); no modem on this bench is registered; there is no live bonded stream on this
+bench; and only one modem sits behind a `ppps`-capable hub, so a two-link flap cannot be
+staged there at all. The `GROUPS_CMD` fill-in is deliberate — the receiver-side command
+belongs to the SRTLA receiver deployment used for the run and must be taken from it, not
+guessed here; the `${GROUPS_CMD:?…}` guard makes an unfilled run fail closed on line one.
+
+**Evidence:** `test-results/modem-phase-b/08/flap/{baseline.txt,flap-x5.txt,final-groups.txt,hub-map.json}`
+
+---
+
 ## Evidence index
 
 | Runbook | Item | Status | Evidence path (`test-results/modem-control/…`) |
@@ -804,6 +1431,13 @@ gitignored). `<slot>` is the unit slug, matching RB-9's per-unit directory names
 | RB-8 | Daemon smoke on real hardware | `[PARTIAL]` | `A6.3/daemon-smoke.txt` |
 | RB-9 | Fleet inventory capture | `[PARTIAL]` | `A6.3/{usb-tree,mmcli-list,mmcli-dump,id-path-per-iface,ip-addr}.txt` + `test-results/modem-phase-b/05/<unit>/` |
 | RB-10 | Hub VBUS verification | `[PARTIAL]` | `test-results/modem-phase-b/07/{uhubctl-discovery,uhubctl-ppps,vbus-drop-proof,vbus-drop-proof-nosysfs}.txt` + `hil-cycle-<slot>.txt` |
+| RB-11 | Quectel RM530N-GL certification capture (QMI) | `[PARTIAL]` | `test-results/modem-phase-b/08/quectel-rm530n-gl/{certify.txt,bundle.json,qmi-facts.txt,transition-candidate.txt}` |
+| RB-12 | Sierra EM75xx certification capture (MBIM/QMI, FCC-locked) | `[PARTIAL]` | `test-results/modem-phase-b/08/sierra-em75xx/{certify.txt,bundle.json,fcc-locked-state.txt,fcc-policy.txt}` |
+| RB-13 | SIMCom SIM7600G-H certification capture (QMI raw-IP) | `[PARTIAL]` | `test-results/modem-phase-b/08/simcom-sim7600g-h/{certify.txt,bundle.json,raw-ip-state.txt,rndis-observation.txt}` |
+| RB-14 | Huawei personality capture (Stick vs HiLink) | `[PARTIAL]` | `test-results/modem-phase-b/08/huawei/{personality-sweep.txt,id-path-fallback.txt,personality-switch-observation.txt}` |
+| RB-15 | ZTE MF79U router-mode capture | `[PARTIAL]` | `test-results/modem-phase-b/08/zte-mf79u/{class-evidence.txt,lan-dhcp.txt,web-ui.txt}` |
+| RB-16 | Fibocom FM350 USB probe | *(reserved — runbook not yet written)* | — |
+| RB-17 | Modem-flap resilience under a live bonded stream | `[PARTIAL]` | `test-results/modem-phase-b/08/flap/{baseline.txt,flap-x5.txt,final-groups.txt,hub-map.json}` |
 
 Every row stays `[PARTIAL]` until its evidence artifact is captured on a real bench device
 and its machine check prints `PASS`. No row may be claimed `[EXISTS]` on the strength of the
