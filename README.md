@@ -12,7 +12,7 @@ changes to CeraUI, the device image, or apt-worker**. Bench devices install the 
 | Directory | Artifact | What it is |
 |-----------|----------|------------|
 | [`control/`](control/) | **`@ceralive/modem-control`** (npm package) | The TypeScript control library: modem domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, USB composition-mode model, data-usage sampler. Published to the public npm registry under the `@ceralive` scope. |
-| [`cli/`](cli/) | **`modem-control`** (bench CLI) | The iteration surface: `probe`, `watch`, `apply`, `set-usb-mode`, `usage`, `certify`. Compiled for `arm64` + `amd64` and run against real modems on a bench device to mature the package and capture per-SKU certification bundles. |
+| [`cli/`](cli/) | **`modem-control`** (bench CLI) | The iteration surface: `probe`, `watch`, `apply`, `set-usb-mode`, `usage`, `certify`, `hil-cycle`. Compiled for `arm64` + `amd64` and run against real modems on a bench device to mature the package, capture per-SKU certification bundles, and prove hub VBUS port-cycling (RB-10). |
 | [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork, zero source patches** (see [`POLICY.md`](POLICY.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
 
 ## Versioning at a glance

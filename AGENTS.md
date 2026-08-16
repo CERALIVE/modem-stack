@@ -10,7 +10,7 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 | Directory | Artifact | Role |
 |-----------|----------|------|
 | `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, USB composition-mode model, data-usage sampler. Published to public npm under `@ceralive`. |
-| `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
+| `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
 | `packaging/` | ModemManager stack `.deb`s | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`). Bench installs from CI artifacts. |
 
 `control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a bookworm container.

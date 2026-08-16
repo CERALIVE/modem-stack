@@ -626,6 +626,170 @@ gitignored).
 
 ---
 
+## RB-10 — Hub VBUS verification `[PARTIAL]`
+
+Prove that a USB hub on the bench really **switches per-port power**, and that cutting a
+port's power actually recovers a modem. This is the hardware half of the
+`usb-hub-port-cycle` PowerHook (recovery-ladder rung 4): the code path is unit-tested with
+a fake runner, but nothing in CI can prove a physical hub drops VBUS.
+
+> **A zero exit code from `uhubctl` does NOT prove power was cut — and it is not this
+> runbook's gate.** `uhubctl -a cycle` exits 0 whenever the hub *accepts* the control
+> request. A hub whose per-port power switching is absent, ganged, or simply not wired to
+> the VBUS rail accepts the request and cuts nothing, exiting 0 every time. **The only
+> honest observable is the modem DISAPPEARING from the USB bus and coming back at the same
+> physical topology path.** Step 3 below is that proof, performed by hand; step 4 is the
+> automated harness that asserts the same thing plus ModemManager re-detection. A run that
+> reports only "uhubctl exited 0" is **not** a passing RB-10.
+
+> **Second honesty caveat — `uhubctl` may disable the port instead of cutting VBUS.**
+> `uhubctl --help` (2.6.0) documents `--nosysfs, -S — do not use the Linux sysfs port
+> disable interface`, i.e. by default it *prefers* the kernel's port-disable path where
+> one exists. Port-disable makes the device vanish from the bus exactly like a power cut,
+> so it satisfies steps 3 and 4 — but it does **not** electrically de-power a wedged
+> modem, which is the whole reason rung 4 exists. Run step 3 **both ways** (default and
+> `-S`) and record which one the hub honoured. The PowerHook never passes `-S` (its argv
+> allowlist admits only `-l`, `-p`, `-a`, `-d`), so whatever the default path does on this
+> hub is what rung 4 will do in production.
+
+**Preconditions**
+
+- Bench device reachable over SSH. `mmcli` on `PATH`. **No `lsusb` and no `usbutils` on
+  the bench image** — the USB tree comes from the `/sys/bus/usb/devices/*` sweep (RB-9).
+- `uhubctl` installed and runnable as root. **It is NOT on the bench image and is NOT in
+  the image's apt archive** (`apt-cache show uhubctl` → `E: No packages found`, verified
+  2026-08-16 on `ceralive2`), so it must be installed for the bench run — from a bookworm
+  archive that carries it, or built from source. `uhubctl` needs `sudo` (or a udev
+  permissions rule); the PowerHook never escalates on its own.
+- The compiled `modem-control` binary (RB-1 preconditions).
+
+**Commands**
+
+```sh
+OUT=test-results/modem-phase-b/07; mkdir -p "$OUT"
+
+# 1) DISCOVERY — list every hub uhubctl considers power-switchable. Read-only, no action.
+sudo uhubctl | tee "$OUT/uhubctl-discovery.txt"
+
+# 2) CAPABILITY — assert the target hub advertises per-port power switching.
+#    `ppps` in the hub's status line is uhubctl's rendering of the USB hub descriptor's
+#    "Per-port power switching" bit — the `lsusb -v` field, read without lsusb.
+grep -E 'Current status for hub .*, ppps\]' "$OUT/uhubctl-discovery.txt" \
+  | tee "$OUT/uhubctl-ppps.txt"
+
+# 3) PHYSICAL VBUS-DROP PROOF — the real gate. Cut the port, observe the modem LEAVE the
+#    bus, restore the port, observe it COME BACK. HUB/PORT below are the mapped values.
+HUB=4-1.4; PORT=4; DEV=4-1.4.4
+sweep() { for d in /sys/bus/usb/devices/*; do [ -f "$d/idVendor" ] && \
+  echo "$(basename "$d"): $(cat "$d/idVendor"):$(cat "$d/idProduct") product=\"$(cat "$d/product" 2>/dev/null)\""; done; }
+{
+  echo "--- before (device MUST be present) ---";      sweep
+  echo "--- uhubctl -a off ---";                        sudo uhubctl -l "$HUB" -p "$PORT" -a off; echo "exit=$?"
+  sleep 3
+  echo "--- dark (device MUST be absent) ---";          sweep
+  echo "--- uhubctl -a on ---";                         sudo uhubctl -l "$HUB" -p "$PORT" -a on; echo "exit=$?"
+  sleep 8
+  echo "--- after (device MUST be present again) ---";  sweep
+} 2>&1 | tee "$OUT/vbus-drop-proof.txt"
+
+# 3b) Repeat step 3 with -S (no sysfs port-disable) to learn which mechanism the hub
+#     actually honours. Same assertions; recorded separately, never merged with 3.
+{
+  sudo uhubctl -S -l "$HUB" -p "$PORT" -a off; echo "exit=$?"; sleep 3; sweep
+  sudo uhubctl -S -l "$HUB" -p "$PORT" -a on;  echo "exit=$?"; sleep 8; sweep
+} 2>&1 | tee "$OUT/vbus-drop-proof-nosysfs.txt"
+
+# 4) AUTOMATED HARNESS — one bounded cycle with all five assertions. `<slot>` is the
+#    modem's udev ID_PATH (the hub-map key); `--mm-slot` is its ModemManager selector.
+cat > "$OUT/hub-map.json" <<'EOF'
+{
+  "platform-xhci-hcd.0.auto-usb-0:1.4.4": { "hubLocation": "4-1.4", "port": 4 }
+}
+EOF
+sudo ./modem-control hil-cycle 'platform-xhci-hcd.0.auto-usb-0:1.4.4' \
+  --hub-map "$OUT/hub-map.json" --mm-slot 2 \
+  2>&1 | tee "$OUT/hil-cycle-quectel-rm530n-gl.txt"
+```
+
+**Expected output**
+
+Step 1 prints one block per power-switchable hub, in this exact shape (uhubctl 2.6.0):
+
+```
+Current status for hub 4-1.4 [0bda:0411 Generic USB3.2 Hub, USB 3.20, 4 ports, ppps]
+  Port 1: 0100 power
+  Port 4: 0503 power highspeed enable connect [2c7c:0801]
+```
+
+The trailing **`ppps`** token is the capability assertion of step 2 — a hub listed
+`ganged` (or absent entirely, which is how `uhubctl` reports a hub it will not touch
+without `-f`) **fails** RB-10 and must not be put in a hub map.
+
+Step 3 must show the target `$DEV` line **present**, then **absent** in the dark sweep,
+then **present again**. The absence is the pass; the two `exit=0` lines are not.
+
+Step 4 ends with exactly:
+
+```
+HIL-CYCLE PASS slot=<slot> disappeared=<ms> reenumerated=<ms>
+```
+
+Any failure prints `HIL-CYCLE FAIL slot=<slot> reason=<reason>` and exits non-zero, where
+`<reason>` is one of `hub-map-unreadable`, `hub-map-slot-unmapped`, `pre-capture-failed`,
+`slot-not-enumerated`, `mm-slot-absent`, `power-cycle-unsupported`, `power-cycle-failed`,
+`no-vbus-drop`, `reenumeration-timeout`, `mm-redetect-timeout`, `mm-slot-mismatch`.
+
+`no-vbus-drop` is the reason that means **this hub exited 0 and cut nothing** — or that
+the port came back faster than the harness sampled it. `uhubctl -a cycle -d N` blocks for
+the whole dark window and only returns afterwards, so the harness observes the gap through
+the tail of re-enumeration rather than the dark window itself. If step 3 proves a real
+drop by hand but step 4 reports `no-vbus-drop`, that is a sampling miss, not a hub fault —
+record both captures and treat step 3 as authoritative.
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-phase-b/07; DEV=4-1.4.4
+grep -Eq 'Current status for hub .*, ppps\]' "$OUT/uhubctl-discovery.txt" \
+  && awk -v d="$DEV" '/^--- dark/{s=1} /^--- after/{s=0} s && $0 ~ ("^" d ":"){f=1} END{exit !f}' \
+       "$OUT/vbus-drop-proof.txt" && echo "RB-10 FAIL (device present while dark)" \
+  || grep -Eq "^HIL-CYCLE PASS slot=.+ disappeared=[0-9]+ reenumerated=[0-9]+$" \
+       "$OUT/hil-cycle-quectel-rm530n-gl.txt" \
+     && echo "RB-10 PASS" || echo "RB-10 FAIL"
+```
+
+**Per-hub capability status (this bench, `ceralive2` 192.168.78.132)**
+
+| Hub location | VID:PID | uhubctl compatible-hub list | Modems behind it | Status |
+|---|---|---|---|---|
+| `4-1`, `4-1.3`, `4-1.4` | `0bda:0411` | **yes** — listed for the Rosonway RSH-A10 / RSH-A16 | Quectel RM530N-GL at `4-1.4.4` (hub `4-1.4`, port 4) | `[PARTIAL]` — `uhubctl` not installed on the board and not in its apt archive; no discovery, no VBUS proof, no harness run |
+| `1-1`, `1-1.3`, `1-1.4` | `0bda:5411` | **no** — not on the list; may need `-f`, which the PowerHook never passes | SIMCom SIM7600G-H at `1-1.3.4`; ZTE, both Huawei HiLink, both generic sticks | `[PARTIAL]` — untested; if it reports no `ppps` it is not mappable and rung 4 stays `unsupported` for every modem behind it |
+| `3-1` | `1a40:0101` | not evaluated | none (Bluetooth radio only) | `[PARTIAL]` — out of scope, no modem behind it |
+
+The two hub families matter: only the `0bda:0411` tree is a documented per-port-power
+switcher, and on this bench that tree carries exactly **one** modem (the Quectel). Every
+other unit hangs off `0bda:5411` hubs, so until step 2 is actually run there is no evidence
+any of them can be power-cycled at all. Do not write a hub-map entry for a hub that has not
+passed step 2 — the PowerHook's refuse-if-unmapped rule is the only thing standing between
+a wrong entry and blacking out an unrelated device.
+
+**Slot keys.** The hub-map key is the modem's udev **`ID_PATH`**, not a MAC, not an
+`ifname`, and not a USB port number. This bench has already produced a duplicate-MAC pair
+and has seen port positions move when devices were reordered on the hub (RB-9), so those
+are all disqualified as identity. Current values, captured 2026-08-16:
+
+| Unit | Sysfs node | `ID_PATH` (hub-map key) | `modem.generic.device` (`--mm-slot 2` / `4`) |
+|---|---|---|---|
+| Quectel RM530N-GL | `4-1.4.4` | `platform-xhci-hcd.0.auto-usb-0:1.4.4` | `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb4/4-1/4-1.4/4-1.4.4` |
+| SIMCom SIM7600G-H | `1-1.3.4` | `platform-xhci-hcd.0.auto-usb-0:1.3.4` | `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb1/1-1/1-1.3/1-1.3.4` |
+
+**Evidence:** `test-results/modem-phase-b/07/{uhubctl-discovery,uhubctl-ppps,vbus-drop-proof,vbus-drop-proof-nosysfs}.txt`
+plus one `test-results/modem-phase-b/07/hil-cycle-<slot>.txt` per cycled unit (repo-local,
+gitignored). `<slot>` is the unit slug, matching RB-9's per-unit directory names — e.g.
+`test-results/modem-phase-b/07/hil-cycle-quectel-rm530n-gl.txt`.
+
+---
+
 ## Evidence index
 
 | Runbook | Item | Status | Evidence path (`test-results/modem-control/…`) |
@@ -639,6 +803,7 @@ gitignored).
 | RB-7 | arm64-on-real-hardware validation | `[PARTIAL]` | `A6.3/arm64-{uname,probe}.txt` |
 | RB-8 | Daemon smoke on real hardware | `[PARTIAL]` | `A6.3/daemon-smoke.txt` |
 | RB-9 | Fleet inventory capture | `[PARTIAL]` | `A6.3/{usb-tree,mmcli-list,mmcli-dump,id-path-per-iface,ip-addr}.txt` + `test-results/modem-phase-b/05/<unit>/` |
+| RB-10 | Hub VBUS verification | `[PARTIAL]` | `test-results/modem-phase-b/07/{uhubctl-discovery,uhubctl-ppps,vbus-drop-proof,vbus-drop-proof-nosysfs}.txt` + `hil-cycle-<slot>.txt` |
 
 Every row stays `[PARTIAL]` until its evidence artifact is captured on a real bench device
 and its machine check prints `PASS`. No row may be claimed `[EXISTS]` on the strength of the
