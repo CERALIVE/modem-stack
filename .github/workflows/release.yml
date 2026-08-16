@@ -172,7 +172,7 @@ jobs:
 
       # arm64 .debs are built under full-system QEMU (never cross-compiled); register binfmt.
       - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       # Real rebuilds. RELEASE_VERSION injects <upstream>-<rev>~ceraliveX.Y.Z into a COPY of
       # each source's debian/changelog inside the container (the committed tree is never
