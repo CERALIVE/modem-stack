@@ -1,7 +1,10 @@
 # modem-stack — AI routing & repo contract
 
 Cellular modem control for CeraLive: a control library, a bench CLI, and ModemManager-stack
-`.deb` packaging. **Phase A** — iterated standalone, no product wiring.
+`.deb` packaging. Through `v0.2.0` this repository was **Phase A** — iterated standalone, no
+product wiring. **Phase B adoption (CeraUI / device-image / apt integration) is authorized
+starting at the `v1.0.0` release tag** — see `POLICY.md` §4. Each downstream integration
+remains its own explicit, reviewed change in the receiving repository.
 
 Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE/modem-stack`.
 
@@ -9,7 +12,7 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 
 | Directory | Artifact | Role |
 |-----------|----------|------|
-| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler. Published to public npm under `@ceralive`. |
+| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (see § below), USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler. Published to public npm under `@ceralive`. |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
 | `packaging/` | ModemManager stack `.deb`s | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`). Bench installs from CI artifacts. |
 
@@ -74,6 +77,34 @@ arch-dependent stanzas + enumerated `-dbgsym`) for exact per-source set **equali
 `packaging/ci/check-package-sets.sh` (add/remove/rename fails closed). Full detail:
 `packaging/README.md`.
 
+## RECOVERY LADDER — uhubctl POWER HOOK (rung 4)
+
+`control/src/backend/uhubctl-power-hook.ts` (`createUhubctlPowerHook`) is the first real
+`PowerHook` implementation: the `usb-hub-port-cycle` capability backing recovery-ladder
+rung 4. It cuts VBUS on one port of a per-port-power-switching (PPPS) USB hub via `uhubctl`
+and reports `applied` only once the SAME modem (by udev `ID_PATH`) is observed back on the
+bus — a zero exit from `uhubctl` is never treated as success on its own.
+
+- **Config-mapped, never discovered.** A stable key is cyclable only if an operator wrote
+  it into an explicit, Zod-validated port-map file: `{ [stableKey]: { hubLocation: string,
+  port: number } }`. There is no default path and no probing/guessing — `hubLocation` is
+  regex-pinned to the sysfs bus-port shape so a shell-metacharacter or flag cannot parse
+  into it.
+- **Argv-only, allowlisted, no shell.** The command is built as an argv array
+  (`['-l', loc, '-p', port, '-a', 'cycle', '-d', '3']`) and every emitted token is
+  re-checked against an allowlist before the injected runner is called.
+- **Bounded + cancellable** (`commandTimeoutMs` + `enumerationTimeoutMs`, plus an optional
+  `AbortSignal`); **serialised per modem** through the shared `ModemActor`, keyed on the
+  stable key, so two overlapping cycles on one port cannot interleave power-on/power-off.
+- **Disabled by default**, matching the existing recovery-ladder default
+  (`RECOVERY_DISABLED: { enabled: false }` in `control/src/domain/policy.ts`) — this hook
+  does not change that default; it is only reachable when an operator opts in.
+- The HIL harness (`cli hil-cycle <slot> --hub-map <file>`, bench runbook
+  [`docs/BENCH.md` RB-10](docs/BENCH.md)) orchestrates a full cycle end-to-end: pre-state
+  capture → PowerHook cycle → USB-disappearance assertion → re-enumeration assertion → MM
+  re-detection of the same `modem.generic.device` slot UID. See `cli/README.md` for the
+  exact CLI contract and typed failure reasons.
+
 ## CERTIFICATION EVIDENCE → CATALOG (evidence-gated, human-reviewed)
 
 A SKU reaches `control/src/usb-mode/certified-catalog.json` only through a captured
@@ -96,12 +127,28 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
   (`usbutils` absent from the board and its archive; the enumerator not populating `ifname`;
   no AT transport on the bench; an empty real-SKU catalog) are recorded in `docs/BENCH.md`
   § "Per-SKU certification". No SKU is certified and no matrix row is promoted.
+- The full bench-runbook ladder, RB-1 through RB-17, lives in `docs/BENCH.md`: RB-9 is the
+  fleet-inventory capture (one identity bundle per acquired physical unit), RB-10 is the
+  hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
+  per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe.
+
+## eSIM (investigate-only, implementation deferred)
+
+`docs/ESIM-DECISION.md` records the full eSIM investigation: SGP.22 profile-binding makes
+cross-device profile "copying" cryptographically impossible; the workable paths are
+removable eUICC, carrier reissue, or multi-profile remote switching; `lpac` (external LPA)
+is assessed but not adopted (AGPL-3.0 core, AT backend is demo-only, needs MM
+inhibit-coordination). Implementation is **deferred by user decision (2026-08-13)** — this
+doc is the exit artifact, not a task list. No eSIM code exists in this repository.
 
 ## POLICY
 
 `packaging/` is a **no-fork** effort: the first release carries zero quilt patches; adding a
 patch later is an architecture gate (rationale + filed upstream MR + review);
-udev/plugin/device-support improvements go **upstream first**. Full terms: `POLICY.md`.
+udev/plugin/device-support improvements go **upstream first** — this binds permanently,
+independent of phase. The Phase A → Phase B scope boundary is **version-gated at
+`v1.0.0`**: CeraUI / device-image / apt integration is out of scope through `v0.2.0` and
+authorized from the `v1.0.0` tag forward. Full terms: `POLICY.md` §4.
 The Fibocom **FM350** modem (PCIe / `mtk_t7xx`) is documented-**deferred**, not supported —
 rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION.md`.
 

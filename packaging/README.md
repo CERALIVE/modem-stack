@@ -2,7 +2,8 @@
 
 Bookworm rebuilds of the ModemManager stack — **packaging only, not a fork, zero source
 patches** (see `POLICY.md` at the repo root). Bench devices install the resulting `.deb`s
-from CI artifacts; nothing is published to `apt.ceralive.tv` in Phase A.
+from CI artifacts; nothing is published to `apt.ceralive.tv` yet — apt publication is part
+of Phase B adoption, authorized from the `v1.0.0` release tag forward (`POLICY.md` §4).
 
 ## Sources (4)
 
