@@ -529,6 +529,103 @@ grep -q 'ModemManager1' A6.3/daemon-smoke.txt \
 
 ---
 
+## RB-9 — Fleet inventory capture `[PARTIAL]`
+
+Capture a per-unit inventory bundle for every physical modem/dongle on the bench: raw USB
+descriptor (VID:PID per port), USB `ID_PATH`, firmware string, personality (Stick vs HiLink;
+router vs MM-managed), ModemManager detection, transport, hub port mapping, SIM state, and —
+for router-mode dongles — the actual served LAN subnet. This is inventory only: it records
+what is physically connected and what state it honestly reports. It does **not** certify a
+USB-mode transition (that is RB-5) and does not claim any unit "certified" (that is a later
+step in the plan, outside this runbook).
+
+**Preconditions**
+
+- Bench device reachable over SSH. `mmcli` on `PATH` for MM-managed units. **No `lsusb` binary
+  on the bench image** — the canonical raw-USB-tree capture below uses the `/sys/bus/usb/devices/*`
+  sweep instead, never `lsusb`.
+- Re-run the sweep immediately before trusting any prior capture — hardware on this bench gets
+  physically moved/reconnected between sessions, and USB port position is **not** a stable
+  identity key across a replug (empirically confirmed — see the machine check below for the
+  `ID_PATH`, not port, assertion).
+
+**Commands**
+
+```sh
+mkdir -p A6.3
+# 1) Raw USB tree — canonical capture, NOT lsusb (not installed on this image):
+for d in /sys/bus/usb/devices/*; do [ -f "$d/idVendor" ] && echo "$(basename $d): $(cat $d/idVendor):$(cat $d/idProduct) mfg=\"$(cat $d/manufacturer 2>/dev/null)\" product=\"$(cat $d/product 2>/dev/null)\" serial=\"$(cat $d/serial 2>/dev/null)\""; done | tee A6.3/usb-tree.txt
+
+# 2) ModemManager-visible units:
+mmcli -L | tee A6.3/mmcli-list.txt
+
+# 3) Per MM-managed unit, full dump (repeat per index reported by step 2):
+for i in $(mmcli -L 2>/dev/null | grep -oE '/Modem/[0-9]+' | grep -oE '[0-9]+$'); do
+  mmcli -m "$i" | tee -a A6.3/mmcli-dump.txt
+done
+
+# 4) USB ID_PATH per network interface (router-mode dongles and MM net legs alike):
+for ifc in $(ip -br addr | awk '{print $1}'); do
+  echo "--- $ifc ---"
+  udevadm info -q property -p "/sys/class/net/$ifc" 2>/dev/null | grep -E '^ID_PATH=|^ID_VENDOR_ID=|^ID_MODEL_ID='
+done | tee A6.3/id-path-per-iface.txt
+
+# 5) Router-dongle LAN subnets actually served (host-side DHCP lease per interface):
+ip -br addr | tee A6.3/ip-addr.txt
+```
+
+**Expected output** — each command produces at least one non-empty line matching its capture
+target:
+
+```
+1-1.1: 19d2:1405 mfg="ZTE,Incorporated" product="ZTE Mobile Boardband" serial="..."
+```
+
+for the USB tree sweep;
+
+```
+    /org/freedesktop/ModemManager1/Modem/<n> [<Vendor>] <Model>
+```
+
+for every MM-managed unit; and a non-empty `ID_PATH=platform-...` line per claimed network
+interface.
+
+**Machine check**
+
+```sh
+grep -Eq '^[0-9]+-[0-9.]+: [0-9a-f]{4}:[0-9a-f]{4} ' A6.3/usb-tree.txt \
+  && grep -Eq 'ID_PATH=platform-' A6.3/id-path-per-iface.txt \
+  && echo "RB-9 PASS" || echo "RB-9 FAIL"
+```
+
+**Per-unit capture status (this bench, `ceralive2` 192.168.78.132)**
+
+| Unit | VID:PID | Personality | MM status | Evidence |
+|------|---------|-------------|-----------|----------|
+| ZTE Mobile Broadband | `19d2:1405` | router-hilink | not MM-managed | `test-results/modem-phase-b/05/zte-mf79u/` |
+| Huawei HiLink #1 | `12d1:14dc` | router-hilink | not MM-managed | `test-results/modem-phase-b/05/huawei-hilink-1/` |
+| Huawei HiLink #2 | `12d1:14dc` | router-hilink | not MM-managed | `test-results/modem-phase-b/05/huawei-hilink-2/` |
+| Quectel RM530N-GL | `2c7c:0801` | MM-managed stick | enabled, sim-pin2, not registered | `test-results/modem-phase-b/05/quectel-rm530n-gl/` |
+| SIMCom SIM7600G-H R2 | `1e0e:9001` | MM-managed stick | failed, sim-missing | `test-results/modem-phase-b/05/simcom-sim7600g-h/` |
+| Generic AliExpress stick #1 | `05c6:9024` | generic router-class, QMI passthrough not supported by design | not MM-managed | `test-results/modem-phase-b/05/aliexpress-stick-1/` |
+| Generic AliExpress stick #2 | `05c6:9024` | generic router-class, QMI passthrough not supported by design | not MM-managed | `test-results/modem-phase-b/05/aliexpress-stick-2/` |
+| Sierra EM75xx | `1199:*` (expected) | — | — | `[PARTIAL]` — not physically connected to this bench yet; capture commands above are documented and ready, no capture run |
+| Fibocom FM350 | `0e8d:7126` / `14c3:4d75` (expected) | — | — | `[PARTIAL]` — not physically connected to this bench yet (also see `docs/FM350-DECISION.md` — this SKU is documented-deferred for support, not just uncaptured); capture commands above are documented and ready, no capture run |
+
+The Huawei HiLink pair ships from the factory with an **identical MAC address**
+(`0c:5b:8f:27:9a:64`) on both physically distinct units. Both units independently DHCP-serve
+`192.168.8.100/24`; the host loses `enx<mac>`-predictable naming for the second unit to
+enumerate and it falls back to a legacy `ethN` name. Recorded explicitly in both units' evidence
+bundles — this is the exact scenario `image-building-pipeline`'s dongle-netns contract
+(`docs/dongle-netns-contract.md`) requires keying identity off USB `ID_PATH`, never MAC, to
+survive.
+
+**Evidence:** `test-results/modem-control/A6.3/{usb-tree,mmcli-list,mmcli-dump,id-path-per-iface,ip-addr}.txt`
+plus one JSON+text bundle per unit under `test-results/modem-phase-b/05/<unit>/` (repo-local,
+gitignored).
+
+---
+
 ## Evidence index
 
 | Runbook | Item | Status | Evidence path (`test-results/modem-control/…`) |
@@ -541,6 +638,7 @@ grep -q 'ModemManager1' A6.3/daemon-smoke.txt \
 | RB-6 | Usage-meter accuracy (machine-checkable) | `[PARTIAL]` | `A6.3/usage-accuracy.txt` |
 | RB-7 | arm64-on-real-hardware validation | `[PARTIAL]` | `A6.3/arm64-{uname,probe}.txt` |
 | RB-8 | Daemon smoke on real hardware | `[PARTIAL]` | `A6.3/daemon-smoke.txt` |
+| RB-9 | Fleet inventory capture | `[PARTIAL]` | `A6.3/{usb-tree,mmcli-list,mmcli-dump,id-path-per-iface,ip-addr}.txt` + `test-results/modem-phase-b/05/<unit>/` |
 
 Every row stays `[PARTIAL]` until its evidence artifact is captured on a real bench device
 and its machine check prints `PASS`. No row may be claimed `[EXISTS]` on the strength of the
