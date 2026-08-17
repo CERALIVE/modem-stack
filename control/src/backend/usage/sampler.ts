@@ -36,6 +36,8 @@ export interface SlotUsageSnapshot {
 	readonly cycleBytes: number;
 	readonly cycleStartMs: number;
 	readonly paused: boolean;
+	/** The cycle day in force for this slot, when the operator set one. */
+	readonly cycleDay?: number;
 	readonly thresholdBytes?: number;
 	/** Advisory-only: `cycleBytes > thresholdBytes`. Never gates the connection. */
 	readonly thresholdExceeded: boolean;
@@ -85,6 +87,13 @@ export class UsageSampler {
 	readonly #defaultCycleDay: number;
 	readonly #accounts = new Map<string, SlotAccount>();
 	readonly #policies = new Map<string, DesiredUsage>();
+	// Policies written through `applyUsagePolicy` OUTRANK whatever an observation
+	// carries, for the life of the process. Without this, the next `sample()` would
+	// clobber a just-applied write with the policy the composition root happened to
+	// build its observation from — and the operator would watch their setting
+	// revert. The durable store is the source of truth for both, so an override and
+	// an observation can only ever disagree inside that window.
+	readonly #policyOverrides = new Map<string, DesiredUsage>();
 	#lastPersistMs: number;
 	#dirty = false;
 
@@ -145,8 +154,9 @@ export class UsageSampler {
 		const now = this.#now();
 		for (const obs of observations) {
 			const slotId = obs.logicalSlotId as string;
-			this.#policies.set(slotId, obs.usage);
-			const cycleDay = obs.usage.cycleDay ?? this.#defaultCycleDay;
+			const usage = this.#policyOverrides.get(slotId) ?? obs.usage;
+			this.#policies.set(slotId, usage);
+			const cycleDay = usage.cycleDay ?? this.#defaultCycleDay;
 			const cycleStartMs = cycleStart(epochMillis(now), cycleDay);
 			const current = counters.get(obs.ifname);
 			if (current === undefined) {
@@ -179,17 +189,61 @@ export class UsageSampler {
 		const generatedAtMs = this.#now();
 		const slots: SlotUsageSnapshot[] = [];
 		for (const [slotId, account] of this.#accounts) {
-			const thresholdBytes = this.#policies.get(slotId)?.thresholdBytes;
+			const policy = this.#policies.get(slotId);
+			const thresholdBytes = policy?.thresholdBytes;
 			slots.push({
 				logicalSlotId: slotId,
 				cycleBytes: account.cycleBytes,
 				cycleStartMs: account.cycleStartMs,
 				paused: account.paused,
+				...(policy?.cycleDay !== undefined ? { cycleDay: policy.cycleDay } : {}),
 				...(thresholdBytes !== undefined ? { thresholdBytes } : {}),
 				thresholdExceeded: thresholdBytes !== undefined && account.cycleBytes > thresholdBytes,
 			});
 		}
 		return { bootId: this.#bootId, generatedAtMs, slots };
+	}
+
+	/**
+	 * Apply an operator's usage policy to this slot immediately, without waiting
+	 * for the next sampling pass.
+	 *
+	 * A CHANGED CYCLE ANCHOR RESTARTS THE WINDOW AT ZERO, and keeps the counter
+	 * BASELINE. Those two halves are the honest answer to a question with no
+	 * truthful one: bytes already accrued were measured under the OLD window, so
+	 * carrying them into the new one over-reports it, and there is no record of
+	 * how they were distributed within it. Starting fresh states plainly that the
+	 * new window began now; keeping `lastObserved` means the next sample still
+	 * attributes only genuinely new bytes, never a jump. A threshold-only change
+	 * moves no anchor and therefore resets nothing.
+	 */
+	applyUsagePolicy(
+		logicalSlotId: string,
+		usage: DesiredUsage,
+		atMs?: number,
+	): {
+		cycleStartMs: number;
+		cycleReset: boolean;
+	} {
+		const now = atMs ?? this.#now();
+		this.#policyOverrides.set(logicalSlotId, usage);
+		this.#policies.set(logicalSlotId, usage);
+		const cycleStartMs = cycleStart(
+			epochMillis(now),
+			usage.cycleDay ?? this.#defaultCycleDay,
+		) as number;
+		const account = this.#accounts.get(logicalSlotId);
+		if (account === undefined) {
+			this.#accounts.set(logicalSlotId, initialAccount(cycleStartMs));
+			this.#dirty = true;
+			return { cycleStartMs, cycleReset: false };
+		}
+		if (account.cycleStartMs === cycleStartMs) {
+			return { cycleStartMs, cycleReset: false };
+		}
+		this.#accounts.set(logicalSlotId, { ...account, cycleBytes: 0, cycleStartMs });
+		this.#dirty = true;
+		return { cycleStartMs, cycleReset: true };
 	}
 
 	/** Flush unpersisted state immediately — the shutdown hook (bounds loss to ≤1 min). */

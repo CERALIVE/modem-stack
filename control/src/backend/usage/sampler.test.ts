@@ -217,3 +217,111 @@ describe('UsageSampler — reboot (new boot id) re-baselines without losing the 
 		expect(rebooted.snapshot().slots[0]?.cycleBytes).toBe(350);
 	});
 });
+
+describe('UsageSampler — applyUsagePolicy (the setUsagePolicy live-apply seam)', () => {
+	const AUG_16 = Date.UTC(2026, 7, 16, 12, 0, 0);
+
+	async function samplerAt(now: number) {
+		const counters = new FakeCounters();
+		const sampler = await createUsageSampler({
+			bootId: 'boot-1',
+			source: counters,
+			store: new MemStore(),
+			now: () => now,
+		});
+		return { counters, sampler };
+	}
+
+	test('a threshold-only change takes effect immediately and resets nothing', async () => {
+		const { counters, sampler } = await samplerAt(AUG_16);
+		counters.set('wwan0', 100);
+		await sampler.sample([obs(SLOT_A, 'wwan0')]);
+		counters.set('wwan0', 900);
+		await sampler.sample([obs(SLOT_A, 'wwan0')]);
+
+		const applied = sampler.applyUsagePolicy(SLOT_A, { thresholdBytes: 500 });
+
+		expect(applied.cycleReset).toBe(false);
+		const slot = sampler.snapshot().slots[0];
+		expect(slot?.cycleBytes).toBe(800);
+		expect(slot?.thresholdBytes).toBe(500);
+		expect(slot?.thresholdExceeded).toBe(true);
+	});
+
+	test('a CHANGED cycle day restarts the window at zero and re-anchors it', async () => {
+		const { counters, sampler } = await samplerAt(AUG_16);
+		counters.set('wwan0', 100);
+		await sampler.sample([obs(SLOT_A, 'wwan0')]);
+		counters.set('wwan0', 900);
+		await sampler.sample([obs(SLOT_A, 'wwan0')]);
+		expect(sampler.snapshot().slots[0]?.cycleBytes).toBe(800);
+
+		const applied = sampler.applyUsagePolicy(SLOT_A, { cycleDay: 20 });
+
+		expect(applied.cycleReset).toBe(true);
+		expect(applied.cycleStartMs).toBe(Date.UTC(2026, 6, 20));
+		const slot = sampler.snapshot().slots[0];
+		expect(slot?.cycleBytes).toBe(0);
+		expect(slot?.cycleStartMs).toBe(Date.UTC(2026, 6, 20));
+		expect(slot?.cycleDay).toBe(20);
+	});
+
+	test('the BASELINE survives the reset, so the next sample attributes no jump', async () => {
+		const { counters, sampler } = await samplerAt(AUG_16);
+		counters.set('wwan0', 1_000_000);
+		await sampler.sample([obs(SLOT_A, 'wwan0')]);
+
+		sampler.applyUsagePolicy(SLOT_A, { cycleDay: 20 });
+		counters.set('wwan0', 1_000_150);
+		await sampler.sample([obs(SLOT_A, 'wwan0', { cycleDay: 20 })]);
+
+		expect(sampler.snapshot().slots[0]?.cycleBytes).toBe(150);
+	});
+
+	test('re-applying the SAME cycle day is a no-op — repeated saves never zero a window', async () => {
+		const { counters, sampler } = await samplerAt(AUG_16);
+		counters.set('wwan0', 100);
+		await sampler.sample([obs(SLOT_A, 'wwan0', { cycleDay: 20 })]);
+		counters.set('wwan0', 400);
+		await sampler.sample([obs(SLOT_A, 'wwan0', { cycleDay: 20 })]);
+
+		const applied = sampler.applyUsagePolicy(SLOT_A, { cycleDay: 20 });
+
+		expect(applied.cycleReset).toBe(false);
+		expect(sampler.snapshot().slots[0]?.cycleBytes).toBe(300);
+	});
+
+	test('an applied policy OUTRANKS a stale observation on the next sample', async () => {
+		const { counters, sampler } = await samplerAt(AUG_16);
+		counters.set('wwan0', 100);
+		await sampler.sample([obs(SLOT_A, 'wwan0', { thresholdBytes: 10 })]);
+
+		sampler.applyUsagePolicy(SLOT_A, { thresholdBytes: 999 });
+		// The composition root has not rebuilt its observations yet and still
+		// carries the OLD policy — the write must not silently revert.
+		await sampler.sample([obs(SLOT_A, 'wwan0', { thresholdBytes: 10 })]);
+
+		expect(sampler.snapshot().slots[0]?.thresholdBytes).toBe(999);
+	});
+
+	test('applying to a slot never sampled creates it without claiming any bytes', async () => {
+		const { sampler } = await samplerAt(AUG_16);
+
+		const applied = sampler.applyUsagePolicy(SLOT_B, { cycleDay: 3, thresholdBytes: 7 });
+
+		expect(applied.cycleReset).toBe(false);
+		const slot = sampler.snapshot().slots[0];
+		expect(slot?.logicalSlotId).toBe('slot-b');
+		expect(slot?.cycleBytes).toBe(0);
+		expect(slot?.cycleDay).toBe(3);
+		expect(slot?.thresholdBytes).toBe(7);
+	});
+
+	test('a slot with no policy reports no cycleDay rather than the sampler default', async () => {
+		const { counters, sampler } = await samplerAt(AUG_16);
+		counters.set('wwan0', 10);
+		await sampler.sample([obs(SLOT_A, 'wwan0')]);
+
+		expect(sampler.snapshot().slots[0]?.cycleDay).toBeUndefined();
+	});
+});

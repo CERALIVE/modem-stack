@@ -12,7 +12,7 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 
 | Directory | Artifact | Role |
 |-----------|----------|------|
-| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (see § below), USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler. Published to public npm under `@ceralive`. |
+| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (see § below), USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface** (see § below). Published to public npm under `@ceralive`. |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
 | `packaging/` | ModemManager stack `.deb`s | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`). Bench installs from CI artifacts. |
 
@@ -104,6 +104,59 @@ bus — a zero exit from `uhubctl` is never treated as success on its own.
   capture → PowerHook cycle → USB-disappearance assertion → re-enumeration assertion → MM
   re-detection of the same `modem.generic.device` slot UID. See `cli/README.md` for the
   exact CLI contract and typed failure reasons.
+
+## DATA-USAGE POLICY — A LOCAL WRITE, BECAUSE MODEMMANAGER HAS NO SUCH API
+
+`setUsagePolicy` (`control/src/backend/usage/policy-write.ts`) is the WRITE half of
+the data-usage surface: it persists a slot's cycle day + advisory threshold and,
+when a live `UsageSampler` is supplied, applies them to it in the same call. Until
+it existed the package could only REPORT `cycleBytes` / `thresholdBytes` /
+`thresholdExceeded` — `DesiredUsage` was a shape the planner echoed into a receipt,
+with no persistence and no apply path.
+
+**It writes a local file, never the modem, and that is a finding rather than a
+shortcut.** Verified against a live ModemManager 1.24.2 (`mmcli --help-all` plus a
+D-Bus introspection of a real `…/ModemManager1/Modem/N`): the only `Setup`/threshold
+surface on the entire object is `Modem.Signal.Setup` /
+`Modem.Signal.SetupThresholds`, whose keys are `rssi-threshold` and
+`error-rate-threshold` — RADIO QUALITY, not bytes. The only byte counters MM offers
+are the per-BEARER read-only `Stats` (`rx-bytes`/`tx-bytes`), which reset with every
+connection and so cannot carry a monthly cycle. That is why the sampler counts
+`/proc/net/dev` instead, and why `control/src/ports/README.md`'s ownership table
+records usage policy as LOCAL-CONTROLLER owned. `Modem.Signal.Setup` is separately
+forbidden outright by the shadow-mode mutation-freedom contract; nothing here goes
+near it.
+
+- **`createUsagePolicyFileStore`** mirrors `createUsageFileStore` exactly — versioned
+  document, temp → chmod → atomic rename so the file is **mode 0600** regardless of
+  umask, and **fail-soft on corruption**: an unparseable file logs METADATA ONLY
+  (byte count + a named field, never the content) and is replaced by a fresh empty
+  one. A row carries only an opaque slot id and two numbers, so the no-PII property
+  of the counter store holds here by construction.
+- **Typed results, never a throw on bad input** (the `PowerHook` precedent): an
+  out-of-range day answers `{status:'rejected', reason:'invalid-cycle-day'}`. This is
+  called from an RPC boundary, where a throw becomes an opaque 500.
+- **Tri-state fields.** `undefined` leaves a persisted value ALONE; an explicit
+  `null` CLEARS it. So a caller changing only the threshold cannot silently drop a
+  cycle day it never mentioned, and a caller that cannot express `null` can never
+  unset a policy. Clearing both fields REMOVES the row rather than storing an empty one.
+- **Order is load → validate → persist → apply.** The store is the source of truth
+  (the composition root rebuilds every `UsageObservation.usage` from it via
+  `selectUsagePolicy`), so a live apply that landed while the write failed would
+  leave the running process disagreeing with what a restart restores.
+- **`UsageSampler.applyUsagePolicy` resets the window on a CHANGED cycle anchor and
+  KEEPS the counter baseline.** Bytes already accrued were measured under the old
+  window and there is no record of how they were distributed within it, so carrying
+  them over would over-report the new one; keeping `lastObserved` means the next
+  sample still attributes only genuinely new bytes, never a jump. A threshold-only
+  change moves no anchor and resets nothing.
+- **An applied policy OUTRANKS a later observation carrying the old one**, for the
+  process lifetime. Without that, the next `sample()` would clobber a just-applied
+  write with whatever the composition root had built its observation from, and the
+  operator would watch their setting revert.
+
+`SlotUsageSnapshot` gained an additive `cycleDay` so the read side reports the policy
+in force, not only its consequences.
 
 ## CERTIFICATION EVIDENCE → CATALOG (evidence-gated, human-reviewed)
 
