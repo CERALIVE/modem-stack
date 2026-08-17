@@ -367,6 +367,24 @@ says to stop and surface to a human.
    clears the SAME per-SKU certification ladder every other USB modem does (a real `certify`
    bundle, `synthetic:false` for the exact SKU+firmware).
 
+### Branch-A STOP closed — adapter-mediated bench observation (2026-08-17)
+
+The human clarification was: **"It is being connected through an adapter M2 to USB."** The
+bench FM350 is mounted through an M.2-to-USB carrier/adapter, whose USB identity is interposed
+in front of the module. Therefore Citation 6 remains accurate evidence of what this bench
+observed (`0e8d:7127`, `rndis_host` + `option`), but it is an adapter artifact and is not
+evidence that the FM350 has a native USB mode. A production board seats the FM350 in a real
+M.2 PCIe slot, so the ModemManager source-audit conclusion for the shipping topology remains
+correct and unchanged.
+
+Decision: **no classifier change**. This is deliberate: no classifier code, branch, type, or
+fixture is added, and no CeraUI classifier is touched. The three-gate ledger remains exactly
+as todo 65 left it — gate 1 **CLEARED**, gate 2 **OPEN**, and gate 3 **OPEN** — and the
+FM350's **documented-deferred** PCIe conclusion remains unchanged. Consistent with the
+existing rule, USB enumeration alone does not promote support, matrix, or certification
+status. This note closes the Branch-A human-decision-required STOP; it does not retract or
+rewrite Citation 6.
+
 ### Branch B — PCIe-only observed (`14c3:4d75` on the PCI bus, `mtk_t7xx` driver bound, no USB VID:PID)
 
 This CONFIRMS the mechanical rule's already-fired branch 3 (documented-deferred) with real
