@@ -13,6 +13,29 @@ export {
 export { clampCycleDay, cycleStart, daysInMonth } from './billing-cycle';
 export { readBootId } from './boot-id';
 export {
+	createUsagePolicyFileStore,
+	isValidCycleDay,
+	isValidThresholdBytes,
+	type PersistedUsagePolicy,
+	type PersistedUsagePolicySlot,
+	selectUsagePolicy,
+	USAGE_POLICY_SCHEMA_VERSION,
+	type UsagePolicyFileStoreOptions,
+	type UsagePolicyLogEvent,
+	type UsagePolicyLogger,
+	type UsagePolicyStore,
+} from './policy-store';
+export {
+	getUsagePolicy,
+	type SetUsagePolicyDeps,
+	type SetUsagePolicyRejection,
+	type SetUsagePolicyRequest,
+	type SetUsagePolicyResult,
+	setUsagePolicy,
+	type UsagePolicyApplication,
+	type UsagePolicyTarget,
+} from './policy-write';
+export {
 	type CounterSource,
 	parseProcNetDev,
 	procNetDevCounterSource,

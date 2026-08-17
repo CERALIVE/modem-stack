@@ -6,7 +6,16 @@ device; the reasons and the future-decision gates are recorded below so the defe
 deliberate, evidence-backed choice rather than an oversight.
 
 This is a **tracked** engineering decision record (committed to git), not a claim that the
-FM350 works on any CeraLive device. Nothing here has been exercised on real hardware.
+FM350 works on any CeraLive device.
+
+> **⚠ CONTRADICTED BY HARDWARE, 2026-08-17 — decision frozen pending human review.** A real
+> FM350-GL is now connected to the bench and enumerates as a **USB** device (`0e8d:7127`,
+> `rndis_host` + `option`), not as the PCIe `mtk_t7xx` device this record describes. The
+> evidence is recorded verbatim in **[Citation 6](#citation-6--hardware-a-real-fm350-gl-observed-on-the-usb-bus-2026-08-17)**;
+> this is the mechanical rule's branch-1 contrary-evidence **HARD STOP**. Everything below
+> Citation 6 — the status line above, "What the FM350 is", the branch verdict, the three-gate
+> ledger — is left **exactly as previously written** on purpose, so the contradiction is
+> visible rather than smoothed over. Nothing is resolved until a human adjudicates.
 
 ## What the FM350 is
 
@@ -141,6 +150,114 @@ keyed on `14c3:4d75` plus its meson wiring. None is a USB identity.
 The FM350 is handled by the (PCIe) `mtk` plugin's T7xx path — corroborating the source-level
 findings above.
 
+### Citation 6 — HARDWARE: a real FM350-GL observed on the **USB** bus (2026-08-17)
+
+> **HARD STOP — Branch A fired. Human decision required before any classifier change.**
+> Recorded per the Branch-A template below, steps 1-2 ONLY. No classifier entry, branch,
+> type, or fixture has been added; the three-gate ledger below is deliberately left as it
+> was. Steps 4-5 require human sign-off that has not happened.
+
+An RB-16 re-run against the live bench board `ceralive2` (192.168.78.132, kernel
+`7.1.7-ceralive-rk3588`, packaged ModemManager `1.24.2-2~ceralive0.2.0`) found a physically
+connected Fibocom FM350-GL — **enumerating over USB**, not PCIe. This is the first hardware
+evidence of any kind for this module, and it contradicts the "no USB VID:PID" conclusion of
+Citations 1-4 at the observation level (see the reconciliation note below for what it does and
+does not overturn).
+
+**Observed identity**
+
+| Field | Value |
+|-------|-------|
+| USB `VID:PID` | **`0e8d:7127`** |
+| sysfs node | `/sys/bus/usb/devices/1-1.2` → `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb1/1-1/1-1.2` |
+| udev `ID_PATH` | `platform-xhci-hcd.0.auto-usb-0:1.2` |
+| `manufacturer` / `product` | `Fibocom Wireless Inc.` / `FM350-GL` |
+| `ID_VENDOR_FROM_DATABASE` | **`MediaTek Inc.`** |
+| Device descriptor | `bDeviceClass=ef` `bDeviceSubClass=02` `bDeviceProtocol=01` (IAD composite), `bNumInterfaces=10`, `bcdDevice=0001`, USB 2.10 @ 480 Mb/s |
+| `ID_USB_INTERFACES` | `:0202ff:0a0000:ff0000:ff4201:` |
+
+**Observed driver bindings — NOT `cdc_mbim`.** The Branch-A template predicted `cdc_mbim` as
+the expected driver family for a USB MBIM personality. That prediction is **wrong for this
+unit**: the composition is RNDIS + AT, with no MBIM function at all.
+
+```
+1-1.2:1.0  class=02 sub=02 proto=ff  driver=rndis_host   -> net/enx000011121314
+1-1.2:1.1  class=0a sub=00 proto=00  driver=rndis_host
+1-1.2:1.2  class=ff sub=00 proto=00  driver=option       -> ttyUSB9
+1-1.2:1.3  class=ff sub=00 proto=00  driver=option       -> ttyUSB10
+1-1.2:1.4  class=ff sub=00 proto=00  driver=option       -> ttyUSB11
+1-1.2:1.5  class=ff sub=42 proto=01  driver=(none)
+1-1.2:1.6  class=ff sub=00 proto=00  driver=option       -> ttyUSB12
+1-1.2:1.7  class=ff sub=00 proto=00  driver=option       -> ttyUSB13
+1-1.2:1.8  class=ff sub=00 proto=00  driver=option       -> ttyUSB14
+1-1.2:1.9  class=ff sub=00 proto=00  driver=option       -> ttyUSB15
+```
+
+`cdc_mbim` is not loaded on this board; `mtk_t7xx` is not loaded either. Interface `1-1.2:1.5`
+(`ff/42/01`) is claimed by no driver.
+
+**`0e8d` matches NOTHING previously considered in this record.** It is neither the PCI vendor
+`14c3` of Citations 1-2, nor any of the fibocom USB plugin's vendor ids `0x2cb7` / `0x1782` /
+`0x1508` from Citation 3. It is a **fourth, previously unconsidered vendor id** — MediaTek's
+*USB* vendor id per the hwdb (`ID_VENDOR_FROM_DATABASE=MediaTek Inc.`), as distinct from
+MediaTek's *PCI* vendor id `14c3`. The product id `7127` likewise appears nowhere in the MM
+1.24.2 tree (Citation 4 enumerated every `14c3`/`4d75` occurrence; neither `0e8d` nor `7127`
+was among them), and it is not the `0e8d:7126` bootloader id RB-16 was written to look for.
+
+**ModemManager's own verdict — the `generic` plugin, not `mtk`, not `fibocom`.**
+`mmcli -L` lists it cleanly as `/org/freedesktop/ModemManager1/Modem/4 [Fibocom Wireless Inc.]
+FM350-GL`. Abridged `mmcli -m 4 -K` (full transcript in the evidence bundle):
+
+```
+modem.generic.manufacturer      : Fibocom Wireless Inc.
+modem.generic.model             : FM350-GL
+modem.generic.revision          : 81600.0000.00.19.17.10
+modem.generic.device            : /sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb1/1-1/1-1.2
+modem.generic.drivers.value[1]  : option
+modem.generic.drivers.value[2]  : rndis_host
+modem.generic.plugin            : generic
+modem.generic.primary-port      : ttyUSB12
+modem.generic.ports.value[1]    : enx000011121314 (net)
+modem.generic.ports.value[2]    : ttyUSB12 (at)
+modem.generic.state             : failed
+modem.generic.state-failed-reason : sim-missing
+modem.generic.supported-capabilities.value[1] : gsm-umts, lte
+modem.generic.supported-modes.value[1]        : allowed: 2g, 3g, 4g, 5g; preferred: none
+modem.3gpp.imei                 : 350274430001765
+modem.3gpp.registration-state   : --
+modem.generic.sim               : --
+```
+
+**No SIM is installed** (`state: failed`, `failed reason: sim-missing`), so every 3GPP field
+beyond the IMEI is empty and no registration, bearer, or data-session evidence exists. The
+5G capability the SKU advertises is not reported: MM sees `gsm-umts, lte` only.
+
+**PCIe bus: still nothing.** The step-3 sweep found the same six PCI devices as the 2026-08-16
+run (RK3588 root complex `1d87:3588` ×3, Realtek `10ec:b852` / `10ec:8125`) — no `14c3:4d75`,
+`/sys/class/wwan/` does not exist, `mtk_t7xx` not loaded. So this is not a module that also
+appeared on PCIe; on this bench it is USB-only.
+
+**What this does and does not overturn.** Citations 1-4 audited the MM 1.24.2 *plugin* layer
+and concluded no plugin matches an FM350 by USB VID:PID. That conclusion is **not** falsified
+by this observation — MM here claims the device through the `generic` plugin (the fallback for
+a device exposing AT ports), precisely because no vendor plugin's VID table contains `0e8d`.
+What IS contradicted is this record's broader hardware claim, stated at the top of the file and
+in "What the FM350 is": that the FM350 "is **not** a USB modem and presents **no** USB VID:PID."
+The unit on this bench does present one. Whether that is the bare M.2 module in a USB
+composition mode or an M.2-to-USB carrier interposing its own USB identity is **not determined
+by this evidence** and is part of what needs human adjudication — no inference either way is
+recorded here.
+
+**Evidence bundle:** `test-results/modem-phase-b/65/{usb-sweep,driver-binding,pcie-sweep,mmcli-list,mmcli-dump,context}.txt`
+(repo-local, gitignored); mirrored to `.omo/notepads/modem-stack-phase-b/`.
+
+**RB-16 runbook defect, recorded not fixed.** [`BENCH.md`](BENCH.md) § RB-16 step 1 matches
+only `0e8d:7126|14c3:4d75`, so its literal machine check prints `NO MATCHES` — i.e. "not
+connected" — against a board where the FM350 is plainly enumerated. This run therefore ran the
+runbook expression verbatim AND an explicit `0e8d:7127` extension, and both results are in
+`usb-sweep.txt`. Widening the runbook's candidate list is deliberately left to the same human
+decision that governs the classifier question, so the runbook and the decision stay in sync.
+
 ## Three-gate ledger
 
 FM350 device enablement upstream requires three independent gates. This record is honest
@@ -155,6 +272,144 @@ about each: only gate 1 is verified in this repo; gates 2 and 3 are untested.
 Gate 1 being CLEARED does **not** imply the FM350 works — it only removes the upstream
 version-floor obstacle. Gates 2 and 3 remain the blocking, hardware-gated unknowns, and are
 deliberately left OPEN rather than assumed.
+
+> **Ledger frozen pending human decision (2026-08-17).** The table above is UNCHANGED despite
+> Citation 6's hardware observation. Branch A's ledger update (gate 2 → `N/A (USB path
+> observed, not PCIe)`, gate 3 → `CLEARED`) is step 4 of the Branch-A procedure and is
+> explicitly gated on human sign-off, which has not been given. Independently of that gate,
+> gate 3 could not be closed on this evidence anyway: no SIM is installed, so no registration
+> or bearer/data-session smoke ran — USB enumeration is not an end-to-end HIL pass.
+
+## Bench probe evidence (RB-16)
+
+On 2026-08-16, [`docs/BENCH.md`](BENCH.md) § RB-16 was run against the live bench board
+`ceralive2` (192.168.78.132, kernel `7.1.7-ceralive-rk3588`, packaged ModemManager `1.24.2`).
+Full transcript: `test-results/modem-phase-b/09/{usb-sweep,driver-binding,pcie-sweep,mmcli-list,mm-version,bearer-connect,hil-cycle-fm350}.txt`
+(repo-local, gitignored); mirrored to `.omo/notepads/modem-stack-phase-b/evidence-todo09-fm350.log`.
+
+**Result: the FM350 is not physically connected to this bench** — neither in a USB adapter nor
+in a PCIe M.2 slot. The USB sysfs sweep covered all 15 enumerated USB nodes and matched neither
+`0e8d:7126` nor `14c3:4d75`. The PCIe sysfs sweep (this image has no `lspci`; walked
+`/sys/bus/pci/devices/*` instead) found six real PCI devices — the RK3588 root complex
+(`1d87:3588` ×3) and the board's own Realtek WiFi/Ethernet silicon (`10ec:b852`, `10ec:8125`) —
+none matching `14c3:4d75`; `/sys/class/wwan/` does not exist; the `mtk_t7xx` module is not
+loaded (the only MediaTek-named module present, `btmtk`, is Bluetooth, not WWAN, confirmed by
+name). `mmcli -L` under the packaged `1.24.2` shows only the Quectel RM530N-GL and SIMCom
+SIM7600G-H, consistent with every prior inventory pass this session
+(`.omo/notepads/modem-stack-phase-b/learnings.md`, RB-9).
+
+Per the mechanical rule above, **no branch fired** — there was nothing on either bus to
+classify. The three-gate ledger stays exactly as recorded: gate 1 CLEARED, gates 2 and 3 OPEN.
+This probe does not close gate 3; it is a documented non-event, recorded so a future reader
+does not have to re-derive "was the unit ever actually checked on this bench."
+
+### RB-16 re-run, 2026-08-17 — the unit IS connected, on USB
+
+Same board, same image, one day later: the FM350-GL is physically present and enumerated at
+`/sys/bus/usb/devices/1-1.2` as `0e8d:7127`, claimed by ModemManager 1.24.2 as Modem/4 via the
+`generic` plugin over `option` + `rndis_host`. The PCIe sweep is unchanged from the 2026-08-16
+pass (no `14c3:4d75`, no `/sys/class/wwan/`, no `mtk_t7xx`). Steps 5-6 of RB-16 did not run:
+no SIM is installed (`state: failed / sim-missing`), so the bearer smoke has nothing to connect
+and the port-cycle harness was not exercised — neither was simulated.
+
+Per the mechanical rule, **branch 1 (USB VID:PID) fires, with its contrary-evidence HARD STOP**.
+Full detail, exact descriptors, and driver bindings: [Citation 6](#citation-6--hardware-a-real-fm350-gl-observed-on-the-usb-bus-2026-08-17).
+Evidence bundle: `test-results/modem-phase-b/65/` (repo-local, gitignored).
+
+**Read-only observation on the classifier path (no change made):** on this board the device is
+MM-managed — `nmcli` reports `ttyUSB12:gsm:unavailable`, i.e. NetworkManager sees it as a modem
+port owned by ModemManager, and its RNDIS interface `enx000011121314` (MAC `00:00:11:12:13:14`,
+no IPv4 lease) is not under NM management and hands out no DHCP address, so it does not present
+as a router-mode dongle. No classifier in this repo or in CeraUI was modified, and none has an
+entry for `0e8d:7127`; an unrecognized descriptor set is correctly `unmanaged` by the USB-only
+classifier's own honesty rule. That is the current, truthful behavior — changing it is exactly
+the decision this HARD STOP defers.
+
+## Gate-ledger update template — fill in on the next bench run that captures real FM350 data
+
+The mechanical rule above is unambiguous once real bus data exists. Whoever next runs RB-16
+against a physically connected unit MUST resolve to exactly ONE of the two branches below, fill
+in the bracketed evidence, and land it as the update to the three-gate ledger table — never
+invent a third outcome, and never promote a matrix/certification claim from this probe alone.
+
+### Branch A — USB VID:PID observed (`0e8d:7126` or `14c3:4d75` on the USB bus)
+
+> **THIS BRANCH FIRED on 2026-08-17 — steps 1-3 DONE, steps 4-5 BLOCKED on human sign-off.**
+> The observed id is `0e8d:7127`, a third value this template did not anticipate (see
+> [Citation 6](#citation-6--hardware-a-real-fm350-gl-observed-on-the-usb-bus-2026-08-17)); it is
+> still a USB VID:PID for the FM350, so the branch applies unchanged.
+> Step 1 (STOP — no classifier entry, branch, or fixture added): **done**.
+> Step 2 (record VID:PID + sysfs node + driver binding as Citation 6 with the evidence-bundle
+> path): **done** — bundle `test-results/modem-phase-b/65/`.
+> Step 3 (surface to a human, verbatim): **done** — the message in that step was reported to the
+> operator on 2026-08-17.
+> Steps 4 (ledger update + classifier fixture) and 5 (matrix/certification) are **NOT done** and
+> must not be done without that sign-off.
+
+This is the mechanical rule's **branch-1 contrary-evidence HARD STOP** (line ~27 above): a USB
+VID:PID for the FM350 would contradict Citations 1-4's PCIe-only finding from the verified MM
+1.24.2 source. **Do not silently update the classifier** — this is exactly the case the rule
+says to stop and surface to a human.
+
+1. STOP. Do not add a classifier entry, branch, or fixture without human sign-off, even though
+   the mechanical rule literally reads "in scope for the USB-only classifier."
+2. Record the exact `[VID:PID]`, the sysfs node, and the driver binding observed
+   (`[driver name]` — `cdc_mbim` is the expected driver family for a USB MBIM personality, a
+   **different** driver family than the documented PCIe `mtk_t7xx` path) as a new Citation 6
+   here, with the RB-16 evidence bundle path `[test-results/modem-phase-b/09/...]`.
+3. Surface to a human, verbatim: "FM350 unexpectedly enumerated as a USB device — contradicts
+   MM 1.24.2 source Citations 1-4. Human decision required before any classifier change."
+4. Ledger update, ONLY after human sign-off to proceed: gate 2 (kernel) → `N/A (USB path
+   observed, not PCIe)`; gate 3 (HIL) → `CLEARED`, basis = the RB-16 evidence bundle path. Add
+   the real classifier fixture (`device-classifier.test.ts`-shape) for the observed descriptor.
+5. **USB enumeration alone does NOT promote any support/matrix/certification status** (per the
+   plan's Metis a5 finding) — `docs/MODEM-SUPPORT-MATRIX.md` stays unchanged until the unit
+   clears the SAME per-SKU certification ladder every other USB modem does (a real `certify`
+   bundle, `synthetic:false` for the exact SKU+firmware).
+
+### Branch-A STOP closed — adapter-mediated bench observation (2026-08-17)
+
+The human clarification was: **"It is being connected through an adapter M2 to USB."** The
+bench FM350 is mounted through an M.2-to-USB carrier/adapter, whose USB identity is interposed
+in front of the module. Therefore Citation 6 remains accurate evidence of what this bench
+observed (`0e8d:7127`, `rndis_host` + `option`), but it is an adapter artifact and is not
+evidence that the FM350 has a native USB mode. A production board seats the FM350 in a real
+M.2 PCIe slot, so the ModemManager source-audit conclusion for the shipping topology remains
+correct and unchanged.
+
+Decision: **no classifier change**. This is deliberate: no classifier code, branch, type, or
+fixture is added, and no CeraUI classifier is touched. The three-gate ledger remains exactly
+as todo 65 left it — gate 1 **CLEARED**, gate 2 **OPEN**, and gate 3 **OPEN** — and the
+FM350's **documented-deferred** PCIe conclusion remains unchanged. Consistent with the
+existing rule, USB enumeration alone does not promote support, matrix, or certification
+status. This note closes the Branch-A human-decision-required STOP; it does not retract or
+rewrite Citation 6.
+
+### Branch B — PCIe-only observed (`14c3:4d75` on the PCI bus, `mtk_t7xx` driver bound, no USB VID:PID)
+
+This CONFIRMS the mechanical rule's already-fired branch 3 (documented-deferred) with real
+hardware evidence for the first time — the deferral decision itself does not change; it moves
+from "source-verified" to "source-verified AND bench-confirmed."
+
+1. Record the exact `[PCI vendor:device]`, `[wwan interface name]`, and `[mtk_t7xx module
+   version/load status]` as a new Citation 6 here, with the RB-16 evidence bundle path
+   `[test-results/modem-phase-b/09/...]`.
+2. Ledger update: gate 2 (kernel) → `CLEARED`, basis = "`mtk_t7xx` observed bound and
+   enumerating the module over PCIe on bench `[board id]`, RB-16 evidence `[path]`." Gate 3
+   (HIL) → `CLEARED` only if the RB-16 bearer/data-session smoke (step 5) also succeeded end to
+   end; otherwise gate 3 stays `OPEN` with the partial evidence noted explicitly (kernel-level
+   PCIe enumeration alone is not an end-to-end HIL pass).
+3. **No classifier entry is added** — the FM350 remains correctly out of scope for the
+   USB-only classifier (see "No USB classifier entry — and why" below); PCIe modems are modeled
+   elsewhere per "If this is revisited."
+4. `docs/MODEM-SUPPORT-MATRIX.md` is NOT updated by this alone — gate closure is a prerequisite
+   for a future support decision, not the decision itself.
+
+### If the unit is still not connected
+
+No branch fires. Append to "Bench probe evidence" above (date, board, what was swept, zero
+matches) and leave the ledger untouched — this is the honest, expected outcome until physical
+FM350 hardware exists on a reachable bench.
 
 ## No USB classifier entry — and why
 

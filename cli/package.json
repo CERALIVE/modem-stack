@@ -1,9 +1,9 @@
 {
 	"name": "modem-control-cli",
-	"version": "0.2.0",
+	"version": "1.0.0",
 	"private": true,
 	"type": "module",
-	"description": "modem-control bench CLI — probe/watch/apply/set-usb-mode/usage/certify against real modems (Phase A iteration surface).",
+	"description": "modem-control bench CLI — probe/watch/apply/set-usb-mode/usage/certify/hil-cycle against real modems (the bench iteration surface).",
 	"license": "AGPL-3.0",
 	"bin": {
 		"modem-control": "./src/index.ts"

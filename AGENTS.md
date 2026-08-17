@@ -1,7 +1,10 @@
 # modem-stack — AI routing & repo contract
 
 Cellular modem control for CeraLive: a control library, a bench CLI, and ModemManager-stack
-`.deb` packaging. **Phase A** — iterated standalone, no product wiring.
+`.deb` packaging. Through `v0.2.0` this repository was **Phase A** — iterated standalone, no
+product wiring. **Phase B adoption (CeraUI / device-image / apt integration) is authorized
+starting at the `v1.0.0` release tag** — see `POLICY.md` §4. Each downstream integration
+remains its own explicit, reviewed change in the receiving repository.
 
 Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE/modem-stack`.
 
@@ -9,8 +12,8 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 
 | Directory | Artifact | Role |
 |-----------|----------|------|
-| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, USB composition-mode model, data-usage sampler. Published to public npm under `@ceralive`. |
-| `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
+| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (see § below), USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface** (see § below). Published to public npm under `@ceralive`. |
+| `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
 | `packaging/` | ModemManager stack `.deb`s | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`). Bench installs from CI artifacts. |
 
 `control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a bookworm container.
@@ -74,11 +77,131 @@ arch-dependent stanzas + enumerated `-dbgsym`) for exact per-source set **equali
 `packaging/ci/check-package-sets.sh` (add/remove/rename fails closed). Full detail:
 `packaging/README.md`.
 
+## RECOVERY LADDER — uhubctl POWER HOOK (rung 4)
+
+`control/src/backend/uhubctl-power-hook.ts` (`createUhubctlPowerHook`) is the first real
+`PowerHook` implementation: the `usb-hub-port-cycle` capability backing recovery-ladder
+rung 4. It cuts VBUS on one port of a per-port-power-switching (PPPS) USB hub via `uhubctl`
+and reports `applied` only once the SAME modem (by udev `ID_PATH`) is observed back on the
+bus — a zero exit from `uhubctl` is never treated as success on its own.
+
+- **Config-mapped, never discovered.** A stable key is cyclable only if an operator wrote
+  it into an explicit, Zod-validated port-map file: `{ [stableKey]: { hubLocation: string,
+  port: number } }`. There is no default path and no probing/guessing — `hubLocation` is
+  regex-pinned to the sysfs bus-port shape so a shell-metacharacter or flag cannot parse
+  into it.
+- **Argv-only, allowlisted, no shell.** The command is built as an argv array
+  (`['-l', loc, '-p', port, '-a', 'cycle', '-d', '3']`) and every emitted token is
+  re-checked against an allowlist before the injected runner is called.
+- **Bounded + cancellable** (`commandTimeoutMs` + `enumerationTimeoutMs`, plus an optional
+  `AbortSignal`); **serialised per modem** through the shared `ModemActor`, keyed on the
+  stable key, so two overlapping cycles on one port cannot interleave power-on/power-off.
+- **Disabled by default**, matching the existing recovery-ladder default
+  (`RECOVERY_DISABLED: { enabled: false }` in `control/src/domain/policy.ts`) — this hook
+  does not change that default; it is only reachable when an operator opts in.
+- The HIL harness (`cli hil-cycle <slot> --hub-map <file>`, bench runbook
+  [`docs/BENCH.md` RB-10](docs/BENCH.md)) orchestrates a full cycle end-to-end: pre-state
+  capture → PowerHook cycle → USB-disappearance assertion → re-enumeration assertion → MM
+  re-detection of the same `modem.generic.device` slot UID. See `cli/README.md` for the
+  exact CLI contract and typed failure reasons.
+
+## DATA-USAGE POLICY — A LOCAL WRITE, BECAUSE MODEMMANAGER HAS NO SUCH API
+
+`setUsagePolicy` (`control/src/backend/usage/policy-write.ts`) is the WRITE half of
+the data-usage surface: it persists a slot's cycle day + advisory threshold and,
+when a live `UsageSampler` is supplied, applies them to it in the same call. Until
+it existed the package could only REPORT `cycleBytes` / `thresholdBytes` /
+`thresholdExceeded` — `DesiredUsage` was a shape the planner echoed into a receipt,
+with no persistence and no apply path.
+
+**It writes a local file, never the modem, and that is a finding rather than a
+shortcut.** Verified against a live ModemManager 1.24.2 (`mmcli --help-all` plus a
+D-Bus introspection of a real `…/ModemManager1/Modem/N`): the only `Setup`/threshold
+surface on the entire object is `Modem.Signal.Setup` /
+`Modem.Signal.SetupThresholds`, whose keys are `rssi-threshold` and
+`error-rate-threshold` — RADIO QUALITY, not bytes. The only byte counters MM offers
+are the per-BEARER read-only `Stats` (`rx-bytes`/`tx-bytes`), which reset with every
+connection and so cannot carry a monthly cycle. That is why the sampler counts
+`/proc/net/dev` instead, and why `control/src/ports/README.md`'s ownership table
+records usage policy as LOCAL-CONTROLLER owned. `Modem.Signal.Setup` is separately
+forbidden outright by the shadow-mode mutation-freedom contract; nothing here goes
+near it.
+
+- **`createUsagePolicyFileStore`** mirrors `createUsageFileStore` exactly — versioned
+  document, temp → chmod → atomic rename so the file is **mode 0600** regardless of
+  umask, and **fail-soft on corruption**: an unparseable file logs METADATA ONLY
+  (byte count + a named field, never the content) and is replaced by a fresh empty
+  one. A row carries only an opaque slot id and two numbers, so the no-PII property
+  of the counter store holds here by construction.
+- **Typed results, never a throw on bad input** (the `PowerHook` precedent): an
+  out-of-range day answers `{status:'rejected', reason:'invalid-cycle-day'}`. This is
+  called from an RPC boundary, where a throw becomes an opaque 500.
+- **Tri-state fields.** `undefined` leaves a persisted value ALONE; an explicit
+  `null` CLEARS it. So a caller changing only the threshold cannot silently drop a
+  cycle day it never mentioned, and a caller that cannot express `null` can never
+  unset a policy. Clearing both fields REMOVES the row rather than storing an empty one.
+- **Order is load → validate → persist → apply.** The store is the source of truth
+  (the composition root rebuilds every `UsageObservation.usage` from it via
+  `selectUsagePolicy`), so a live apply that landed while the write failed would
+  leave the running process disagreeing with what a restart restores.
+- **`UsageSampler.applyUsagePolicy` resets the window on a CHANGED cycle anchor and
+  KEEPS the counter baseline.** Bytes already accrued were measured under the old
+  window and there is no record of how they were distributed within it, so carrying
+  them over would over-report the new one; keeping `lastObserved` means the next
+  sample still attributes only genuinely new bytes, never a jump. A threshold-only
+  change moves no anchor and resets nothing.
+- **An applied policy OUTRANKS a later observation carrying the old one**, for the
+  process lifetime. Without that, the next `sample()` would clobber a just-applied
+  write with whatever the composition root had built its observation from, and the
+  operator would watch their setting revert.
+
+`SlotUsageSnapshot` gained an additive `cycleDay` so the read side reports the policy
+in force, not only its consequences.
+
+## CERTIFICATION EVIDENCE → CATALOG (evidence-gated, human-reviewed)
+
+A SKU reaches `control/src/usb-mode/certified-catalog.json` only through a captured
+`certify` bundle and a human-reviewed commit. The path is documented in
+[`docs/CATALOG-INGESTION.md`](docs/CATALOG-INGESTION.md) and implemented as a pure
+transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse}.ts`.
+
+- **`synthetic: true` is REFUSED for catalog promotion by the code**, not by convention
+  (`buildCatalogEntryCandidate` → typed `reason: 'synthetic-bundle'`). Classifier fixtures
+  may be synthetic; their provenance says so. That asymmetry is the design.
+- **Certification is two-stage** because `certify --transition` refuses a SKU that is not
+  already in the catalog: stage 1 merges an entry with `permittedTransitions: []`, stage 2
+  adds one transition carrying its own `evidenceBundleSha256`.
+- **`canonicalMode` is a reviewer's stated claim, never inferred**; when transition evidence
+  exists the seam cross-checks it against the captured `transition.from`.
+- Per-SKU capture runbooks are `docs/BENCH.md` **RB-11 … RB-15** (RB-16 is the FM350
+  USB-vs-PCIe probe — its 2026-08-16 bench run found the unit not connected, so
+  `docs/FM350-DECISION.md`'s three-gate ledger stays OPEN with the probe evidence recorded;
+  RB-17 is modem-flap resilience). All are `[PARTIAL]` — four named blockers
+  (`usbutils` absent from the board and its archive; the enumerator not populating `ifname`;
+  no AT transport on the bench; an empty real-SKU catalog) are recorded in `docs/BENCH.md`
+  § "Per-SKU certification". No SKU is certified and no matrix row is promoted.
+- The full bench-runbook ladder, RB-1 through RB-17, lives in `docs/BENCH.md`: RB-9 is the
+  fleet-inventory capture (one identity bundle per acquired physical unit), RB-10 is the
+  hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
+  per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe.
+
+## eSIM (investigate-only, implementation deferred)
+
+`docs/ESIM-DECISION.md` records the full eSIM investigation: SGP.22 profile-binding makes
+cross-device profile "copying" cryptographically impossible; the workable paths are
+removable eUICC, carrier reissue, or multi-profile remote switching; `lpac` (external LPA)
+is assessed but not adopted (AGPL-3.0 core, AT backend is demo-only, needs MM
+inhibit-coordination). Implementation is **deferred by user decision (2026-08-13)** — this
+doc is the exit artifact, not a task list. No eSIM code exists in this repository.
+
 ## POLICY
 
 `packaging/` is a **no-fork** effort: the first release carries zero quilt patches; adding a
 patch later is an architecture gate (rationale + filed upstream MR + review);
-udev/plugin/device-support improvements go **upstream first**. Full terms: `POLICY.md`.
+udev/plugin/device-support improvements go **upstream first** — this binds permanently,
+independent of phase. The Phase A → Phase B scope boundary is **version-gated at
+`v1.0.0`**: CeraUI / device-image / apt integration is out of scope through `v0.2.0` and
+authorized from the `v1.0.0` tag forward. Full terms: `POLICY.md` §4.
 The Fibocom **FM350** modem (PCIe / `mtk_t7xx`) is documented-**deferred**, not supported —
 rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION.md`.
 

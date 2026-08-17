@@ -44,8 +44,22 @@ a step away from `apt`-clean rebuilds. Keeping the packaging patch-free — and 
 fixes upstream — is what lets the bench track current ModemManager (1.24 and beyond)
 without inheriting a fork's maintenance debt.
 
-## 4. Scope reminder (Phase A)
+## 4. Scope boundary (Phase A → Phase B, version-gated at v1.0.0)
 
-This policy governs Phase A only: standalone iteration, bench installs from CI artifacts,
-no product wiring. It does not authorize any change to CeraUI, the device image, or the
-apt distribution. Those are out of scope until Phase B is explicitly triggered.
+Sections 1–3 (no-fork gate, upstream-contribution-first) bind this repository permanently
+and are unaffected by phase.
+
+**Through the `0.x` line — including this repository's releases up to and including
+`v0.2.0` — this repository was Phase A only:** standalone iteration, bench installs from
+CI artifacts, no product wiring. That scope did not authorize any change to CeraUI, the
+device image, or the apt distribution.
+
+**Phase B adoption is authorized starting at the `v1.0.0` release tag, not before.** From
+that tag forward, this repository's artifacts — `@ceralive/modem-control` and the packaged
+ModemManager-stack `.deb`s — may be integrated into CeraUI, the device image, and the apt
+distribution. `v1.0.0` is the version gate, not an integration itself: it marks the control
+library's public API and the packaging contract stable enough to build on. Each downstream
+integration (CeraUI adopting the npm package, `image-building-pipeline` installing the
+`.deb`s, `apt-worker` serving them) remains its own explicit, reviewed change in the
+receiving repository — this section lifts the standing prohibition, it does not pre-approve
+any specific integration PR.
