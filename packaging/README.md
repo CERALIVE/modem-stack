@@ -110,7 +110,26 @@ ModemManager 1.24 exposes **no vendor `conf.d` tier** — verified against the p
 packaging, whose only `/etc` surface is the D-Bus policy file. Its documented per-device
 configuration mechanism is udev properties, so CeraLive's MM-directed configuration rides
 the packaged rules file rather than a conf snippet. ModemManager's own available FCC-unlock
-tier (`/usr/share/ModemManager/fcc-unlock.d`) receives nothing from this package.
+tier (`/usr/share/ModemManager/fcc-unlock.available.d`) receives nothing from this package.
+
+### The FCC-unlock tiers, and which one the reconciler owns
+
+ModemManager has THREE fcc-unlock directories and consults only two of them. Getting the
+pair wrong is silent — a link in the wrong place is simply never opened:
+
+| Tier | Path (Debian) | Who owns it |
+|---|---|---|
+| available | `/usr/share/ModemManager/fcc-unlock.available.d/` | ModemManager. Shipped-but-INERT; nothing here ever runs. |
+| enabled — **admin** | `/etc/ModemManager/fcc-unlock.d/` | **this package's reconciler**, and only from an operator opt-in |
+| enabled — package | `${libdir}/ModemManager/fcc-unlock.d/` (multiarch) | a distribution package. **CeraLive writes here never.** |
+
+`src/mm-dispatcher-fcc-unlock.c` builds ONE filename, `g_strdup_printf("%04x:%04x", vid,
+pid)`, and looks for it in the admin tier then the package tier. It opens no other name,
+so a vendor-only file (`2c7c`) is never a dispatcher target — it exists only as what the
+available tier's `<vid>:<pid>` symlinks point AT. The policy therefore keys on
+`<vid>:<pid>` too, and the reconciler refuses a vendor-only key.
+
+Full coverage matrix and the fleet verdicts: [`../docs/FCC-UNLOCK-COVERAGE.md`](../docs/FCC-UNLOCK-COVERAGE.md).
 
 ### The udev basename hazard (read before renaming anything)
 
@@ -136,7 +155,8 @@ A clean chroot has no sysfs devices and no running daemons, so the contract is s
 * **CHROOT stage** — [`ci/test-companion-chroot.sh`](ci/test-companion-chroot.sh), run in a
   clean `debian:trixie` container: fresh install, declared-inventory equality, chroot guard
   (with a non-vacuity leg), single-owner `dpkg -S`, `/etc` override precedence, both
-  override-removal branches, the FCC absent/enabled/malformed matrix, upgrade with no
+  override-removal branches, the FCC absent/enabled/opt-out/malformed/foreign-file matrix
+  (against the real `/etc` admin tier and `<vid>:<pid>` keys), upgrade with no
   conffile prompt, downgrade, and purge-with-zero-leftovers.
 * **CONSUMER stage** — bench-board only: `udevadm test` against a real modem's sysfs path,
   `usb_modeswitch -c`, `systemd-analyze verify` + `systemctl is-enabled` + a real boot's
@@ -175,6 +195,7 @@ rule refuses.
 | [`ci/test-package-contract.sh`](ci/test-package-contract.sh) | The **package contract suite** over the A5.1 build output. `test-package-contract.sh <amd64\|arm64>` launches a `debian:bookworm` container and runs: metadata/arch over the 9-package closure (revision-exact — every deb's base must equal its `read-pin.sh` `<upstream>-<rev>`); clean-bookworm `apt-get install ./*.deb`; upgrade (stock 1.20.4 → ceralive set) with a **direction-aware** `--allow-downgrades` (computed per-package from real `dpkg --compare-versions` vs `madison` stock — post-bump every source sorts ABOVE stock, so the flag is dropped); rollback (`madison`-derived stock versions + `--allow-downgrades`); coherence (identical `~ceralive` suffix + mismatched-libqmi negative); real ordering proofs; tag-guard negative; piuparts-style install→purge leftover-scan. All version literals are `read-pin.sh`-derived. amd64 = full; arm64 defaults to `metadata` mode (`CONTRACT_MODE=full` forces the apt scenarios under QEMU). |
 | [`ci/daemon-smoke.sh`](ci/daemon-smoke.sh) | The **daemon smoke**. `daemon-smoke.sh <amd64\|arm64>` installs system D-Bus + polkit + NetworkManager (bookworm 1.42.4) and the built MM debs, starts a system `dbus-daemon` + `ModemManager`, then asserts: `busctl introspect` shows the root `ObjectManager`; `mmcli --version` matches the **pinned** ModemManager upstream version (via `ci/read-pin.sh`, never hardcoded); the udev-rules + FCC-unlock dispatcher dirs exist; and — **functional GI validation**, not presence-only (it installs `python3-gi valac build-essential pkg-config`) — the `gir1.2-modemmanager-1.0` typelib **loads** through PyGObject (`gi.require_version('ModemManager','1.0')` + a real `ModemManager.ModemCapability.LTE` enum read) and the `libmm-glib` `.vapi` **compiles+links** via `valac -C` → `cc $(pkg-config --cflags --libs mm-glib)` against a Vala program that genuinely calls a libmm-glib symbol (a broken/absent GI-1.74 adaptation fails closed here). amd64 by default. |
 | [`ci/build-companion.sh`](ci/build-companion.sh) | Builds the first-party `ceralive-modem-support` companion `.deb` — ONCE, `Architecture: all`, into `build/all/`. Container by default (`debian:bookworm`), `--native` for the local QA loop. `RELEASE_VERSION=vX.Y.Z` → Version `X.Y.Z` (unset → `0.0.0~dev`), injected into a COPY of the changelog. Fails closed if the produced deb's `Architecture` is not `all` or its `Version` is not the requested one. |
+| [`ci/test-fcc-reconcile.sh`](ci/test-fcc-reconcile.sh) | The FCC reconciler's **behaviour** contract, runnable on any host with no container and no root: every path is redirected into a scratch tree via `CERALIVE_FCC_{POLICY_FILE,AVAILABLE_DIR,ACTIVE_DIR}`. Covers absent/malformed/opt-out/idempotence, the one-model policy that must not parse as empty, the refused vendor-only key, an enabled model MM ships no script for, and both foreign-entry cases (a real file and a symlink pointing outside the available tier). Complements — never replaces — the chroot contract, which proves the same logic from the PACKAGED location after a real `dpkg` install. |
 | [`ci/test-companion-chroot.sh`](ci/test-companion-chroot.sh) | The companion's **CHROOT-stage** contract in a clean `debian:trixie` container: install / declared-inventory equality / chroot guard (+ non-vacuity) / single-owner `dpkg -S` / `/etc` override precedence / both override-removal branches / FCC absent-enabled-malformed matrix / upgrade with no conffile prompt / downgrade / purge with zero leftovers. Builds 0.9.0 and 1.1.0 so the upgrade and downgrade legs exercise real dpkg. The consumer stage is bench-gated. |
 | [`ci/companion-inventory.txt`](ci/companion-inventory.txt) | The companion's frozen declared file inventory, compared for EQUALITY by the chroot QA — an added, dropped or relocated asset fails the gate naming itself. |
 | [`ci/generate-release-manifest.sh`](ci/generate-release-manifest.sh) | Emits the **manifest-complete per-release manifest** (`generate-release-manifest.sh <tag>` → `dist/release-manifest.txt`): a checksum row for **every** built deb (both arches), the 9-package runtime closure MARKED (`role=runtime`, the rest `role=aux`) — the `build_arch package source version role filename sha256` matrix Phase-B apt publication AND `create-release` asset reconciliation consume. Emits **`closure_version: 2`** — the versioned contract apt-worker validates against — which adds the `Architecture: all` companion as ONE row with `build_arch` `all`, alongside the unchanged 9 × 2 arch-dependent rows. Build architecture and index membership are separate: `all` enters EVERY index arch, anything else its own. Per-source equality is scoped by `[arch-all sources]` so `build/all` is checked against the companion only and `build/<arch>` against the four upstream sources only. Fails closed on any set drift. dpkg-free (filename parse + `sha256sum`), so it runs anywhere. |

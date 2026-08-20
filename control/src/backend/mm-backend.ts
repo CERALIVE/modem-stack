@@ -16,6 +16,7 @@
 import type { DesiredRadio } from '../domain';
 import { epochMillis } from '../domain';
 import type {
+	BandReadResult,
 	InhibitLease,
 	ModemManagerPort,
 	ModemRef,
@@ -109,6 +110,14 @@ export class MmDbusBackend implements ModemManagerPort {
 
 	setPrimarySimSlot(modem: ModemRef, slotIndex: number): Promise<Receipt> {
 		return this.#mutations.setPrimarySimSlot(modem, slotIndex);
+	}
+
+	readBands(modem: ModemRef): Promise<BandReadResult> {
+		return this.#mutations.readBands(modem);
+	}
+
+	setCurrentBands(modem: ModemRef, bands: readonly string[]): Promise<Receipt> {
+		return this.#mutations.setCurrentBands(modem, bands);
 	}
 
 	sendPin(modem: ModemRef, pin: string): Promise<SimUnlockResult> {

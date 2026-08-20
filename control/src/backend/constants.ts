@@ -26,6 +26,12 @@ export const MODEM_IFACE = 'org.freedesktop.ModemManager1.Modem';
 /** The separate `Modem.Modem3gpp` interface (never merged into `Modem`). */
 export const MODEM3GPP_IFACE = 'org.freedesktop.ModemManager1.Modem.Modem3gpp';
 
+/** `Modem.Modem3gpp.Ussd` — a SEPARATE interface a modem may omit entirely. */
+export const MODEM3GPP_USSD_IFACE = `${MODEM3GPP_IFACE}.Ussd`;
+
+/** The `Modem.Location` interface — GNSS capabilities, `Setup`, `GetLocation`. */
+export const MODEM_LOCATION_IFACE = 'org.freedesktop.ModemManager1.Modem.Location';
+
 /** A SIM object's `Sim` interface (SIMs are separate `/SIM/<n>` objects). */
 export const SIM_IFACE = 'org.freedesktop.ModemManager1.Sim';
 

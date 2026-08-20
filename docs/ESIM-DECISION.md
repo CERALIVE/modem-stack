@@ -1,7 +1,15 @@
 # eSIM Decision Record (Investigate-Only)
 
-**Status:** Investigation complete. Implementation explicitly deferred by user decision, 2026-08-13.
-This document is the exit artifact for that investigation — see §8.
+**Status:** **`blocked` — no eUICC-capable hardware exists on the fleet.** No eSIM code
+ships and the feature gate stays off.
+
+| Date | Decision | Recorded in |
+|---|---|---|
+| 2026-08-13 | Implementation **deferred** by user decision; investigation closed as investigate-only. | §8 |
+| 2026-08-18 | Deferral **reversed** by user decision, then closed **`blocked`** on a named hardware gap: no bench modem exposes an eUICC. The adoption spike could not run; its **licensing half did**, and is recorded. | §9 |
+
+§1–§7 are the 2026-08-13 research and stand unchanged. §8 records the first decision;
+**§9 is the current one and supersedes §8's "that decision stands."**
 
 ## Why this document exists
 
@@ -325,3 +333,190 @@ eSIM work is picked back up, it starts from verified findings instead of re-deri
 
 Nothing in this document should be read as a task list, a roadmap, or a set of "next steps
 to build." It is a closed research record.
+
+> **Superseded on 2026-08-18 — see §9.** The deferral above was reversed by user decision,
+> and eSIM re-entered scope as a hardware-gated adoption spike. That spike could not run,
+> so the outcome is not "still deferred by choice" but **`blocked` by a measured hardware
+> gap**. The distinction matters: §8 is a scope decision, §9 is a hardware fact.
+
+---
+
+## 9. 2026-08-18 — reversal, then `blocked`: no eUICC target exists; licensing review completed
+
+**Closing state: `blocked (named hardware gap from todo 2, B5)`.**
+
+This is one of the four legal outcome states for the phase's gated capability modules, and
+eSIM is the only module permitted to use it. A `blocked` closure does **not** halt the
+release wave — the feature gate simply stays off and this document says so truthfully.
+
+### 9.1 The hardware gap (the reason)
+
+The phase's hardware-prerequisites gate measured the entire bench fleet live on the board
+(RK3588, ModemManager 1.24.2) and recorded item (b) as **BLOCKER B5 — no eUICC/eSIM-capable
+modem on the fleet**:
+
+| Check | Measured result |
+|---|---|
+| SIMs present across the whole bench | exactly **one** — on the Quectel RM530N-GL. Every other modem reads `sim-missing`. |
+| That SIM's ModemManager property set | `active`, `imsi`, `iccid`, `operator id` — **no `eid`** |
+| Interpretation | MM 1.24.2 reports an `eid` property for an eUICC. Its absence is **positive evidence of a classic removable UICC**, not merely missing data. |
+| RM530N-GL eUICC capability | **UNPROVEN** for this unit and firmware (`RM530NGLAAR05A01M4G`). Consistent with §6: Quectel's own support staff state the module "doesn't have eSIM… it should be physical eSIM installed in SIM slot or soldered MFF2 SIM." |
+| Any other fleet modem with an eUICC | none — a `sim-missing` modem cannot present one |
+
+Nothing on the bench can hold, receive, or report an eUICC profile.
+
+### 9.2 What that does to the spike — `blocked`, which is NOT a NO-GO
+
+The spike had four questions: lpac↔ModemManager coexistence, device/APDU access on a
+certified eUICC target, arm64 packaging, and licensing. Three of the four are hardware
+questions:
+
+| Spike step | Status | Why |
+|---|---|---|
+| lpac builds/runs on arm64, version captured | **not run** | Executable in isolation, but it is not evidence *toward the verdict* — it would prove a binary starts, not that lpac can reach an eUICC or share the port with MM. Running it would mean installing an AGPL-3.0 binary on the bench to answer a question nobody asked. |
+| APDU/QMI channel opens against the certified eUICC target, MM inhibited | **impossible** | There is no eUICC target to open a channel to. |
+| Port arbitration — MM regains the modem cleanly after lpac exits | **impossible** | Depends on the step above having run. |
+| Licensing review | **COMPLETE** — §9.3 | Research, not hardware. It ran. |
+
+**Therefore no GO/NO-GO verdict is recorded, and none may be inferred.** A NO-GO would be a
+technical judgment that lpac cannot work here; nothing was measured that would support such
+a judgment. The spike did not resolve — it could not start. That is precisely what `blocked`
+means, and it is why this todo closes `blocked` rather than `re-deferred` (a scope choice) or
+`NO-GO` (a verdict).
+
+**Consequence, stated explicitly:** with no GO verdict, none of the GO-path delivery ships.
+There is **no** `ceralive-lpac` `.deb`, **no** row added to the packaging closure, **no**
+release-manifest entry, **no** apt publication, and **no** image package pin. The
+modem-stack release manifest stays at `closure_version: 2` with its frozen matrix, untouched
+by this decision.
+
+### 9.3 Licensing review — the half that could run (and did)
+
+Re-verified against upstream on **2026-08-18**, not carried over from §5.
+
+**Primary sources, fetched this session:**
+
+- `REUSE.toml` at [`estkme-group/lpac@main`](https://raw.githubusercontent.com/estkme-group/lpac/main/REUSE.toml)
+  — confirmed **unchanged** from what §5 recorded on 2026-08-13:
+
+  | Path glob | SPDX identifier |
+  |---|---|
+  | `src/**`, `driver/**`, `utils/**` | **`AGPL-3.0-only`** |
+  | `euicc/**` | `LGPL-2.1-only OR LicenseRef-ESTKME-Commercial` |
+  | `docs/**`, `cmake/**`, `CMakeLists.txt`, `README.md`, `.github/**`, tool configs | `MIT` |
+  | `cjson-ext/**` | `MIT` |
+  | `dlfcn-win32/**` | `MIT` (Ramiro Polla + contributors) |
+
+- GitHub's own repository metadata
+  ([API](https://api.github.com/repos/estkme-group/lpac)) reports
+  `license.spdx_id: "AGPL-3.0"` for the project as a whole. The
+  `/license` endpoint returns **404** — there is no single detectable top-level `LICENSE`
+  file, because the project is REUSE-structured rather than single-licensed.
+- [`LICENSES/`](https://github.com/estkme-group/lpac/tree/main/LICENSES) carries six license
+  texts: `AGPL-3.0-only`, `LGPL-2.1-only`, `GPL-2.0-only`, `MIT`, `CC0-1.0`, and
+  `LicenseRef-ESTKME-Commercial`. That last one reads, in full: *"Non-public commercial
+  license, please contact ESTKME TECHNOLOGY LIMITED, Hong Kong for details via
+  inquiry@estk.me."* It is the paid alternative to LGPL-2.1 for `euicc/**` and is
+  irrelevant to us — LGPL-2.1-only is acceptable, so the commercial branch never applies.
+
+**Verdict 1 — the program logic is AGPL-3.0-only, so lpac can only ever be an external
+process.** This re-confirms §5's boundary against live upstream state: lpac must be
+spawned as a separate binary over its CLI, and must **never** be linked, statically
+embedded, or otherwise combined into `cerastream`, `CeraUI`, or
+`@ceralive/modem-control`. None of those are AGPL-licensed and none may become so.
+
+**Verdict 2 — redistributing lpac is permitted, but it is not free of obligations.** AGPL-3.0
+is a free-software license and Debian carries lpac in `main` (§9.4), so redistribution is
+clearly allowed. Two obligations attach:
+
+- **Corresponding Source, from the same place (AGPL-3.0 §6).** Conveying object code
+  requires the Corresponding Source under one of §6(a)–(e); for network distribution the
+  applicable option is **§6(d)** — equivalent access to the source *at the same place*, at
+  no further charge. `apt.ceralive.tv` today publishes **binary indexes only**
+  (`binary-arm64` / `binary-amd64`); there is no source channel in the closure at all. So
+  publishing an lpac `.deb` there would require **adding a source channel** (or an
+  equivalent §6(b) written offer) before the first upload — an infrastructure precondition,
+  not a paperwork detail. Recording it now means a future GO does not discover it late.
+- **§13 attaches only to *modified* versions.** AGPL-3.0 §13's obligation to offer
+  Corresponding Source to users interacting with the program remotely over a network is
+  written against a version *you modified*. Shipping lpac **unmodified** and driving it by
+  subprocess does not trigger that clause. Patch it even once, however, and the CeraUI web
+  surface driving it makes §13 a live, continuous obligation. **Policy, therefore: ship
+  lpac unmodified or not at all** — which happens to be exactly what `POLICY.md`'s no-fork
+  rule already demands of every package in `packaging/`. The licensing constraint and the
+  existing repo policy point the same direction; no new rule is needed.
+
+**Observation (flagged, not adjudicated) — one vendored file is `GPL-2.0-only`.**
+[`utils/lpac/list.h`](https://github.com/estkme-group/lpac/blob/main/utils/lpac/list.h)
+carries an inline `SPDX-License-Identifier: GPL-2.0-only` with
+`SPDX-FileCopyrightText: Linux Project` — the kernel's linked-list header — inside a
+directory that `REUSE.toml` annotates as `AGPL-3.0-only`. GPLv2-only is
+[documented by the FSF](https://www.gnu.org/licenses/gpl-faq.html#v2v3Compatibility) as
+incompatible with GPLv3-family terms for combination into a single work. This is an
+**upstream** question, not a CeraLive one, and Debian's acceptance of lpac into `main`
+strongly suggests ftp-master's copyright review already addressed it. It is recorded here
+so a future GO-stage review **reads Debian's `debian/copyright` for `lpac`** instead of
+re-deriving the analysis — and does not treat §9.3 as having cleared it. Nothing here is
+legal advice; a real adoption decision gets counsel review of the whole file set.
+(`CC0-1.0.txt` is likewise present in `LICENSES/` with no annotation naming it; the files
+it covers were not located in this review.)
+
+### 9.4 Shipping form — decided in principle, moot in practice
+
+The todo made the licensing verdict the input that decides the shipping form. It does, but
+so does availability, and the availability answer is the one that changed since §5.
+
+**lpac is now packaged in Debian — but not in a suite we ship.**
+
+| Channel | State (checked 2026-08-18) | Source |
+|---|---|---|
+| Debian archive | source `lpac` **2.3.0-1** in `main`, binaries **amd64 / arm64 / armhf** — present in **testing + unstable only**; **absent from bookworm and trixie** | [tracker.debian.org/pkg/lpac](https://tracker.debian.org/pkg/lpac) |
+| Ubuntu | source `lpac` 2.3.0-1 in `universe`, amd64 / arm64 / armhf | [launchpad.net/ubuntu/+source/lpac](https://launchpad.net/ubuntu/+source/lpac) |
+| Upstream release artifacts | **v2.3.0 (2025-08-15)**, including Linux **aarch64** ZIPs and an upstream-built **`lpac_2.3.0_arm64.deb`** | [releases/tag/v2.3.0](https://github.com/estkme-group/lpac/releases/tag/v2.3.0) |
+| Others | Alpine `community` (aarch64), OpenWrt `packages` feed (2.3.0-2), Nixpkgs 2.3.0, AUR (`lpac`, `lpac-git`). **Absent** from Arch official repos and from Fedora. | [Alpine](https://pkgs.alpinelinux.org/package/v3.20/community/aarch64/lpac) · [OpenWrt](https://github.com/openwrt/packages/blob/master/utils/lpac/Makefile) · [Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/lp/lpac/package.nix) · [AUR](https://aur.archlinux.org/packages/lpac) |
+| Build from source | CMake (`cmake -B build`; `-DSTANDALONE_MODE=ON` for a relocatable install). Build deps per Debian's control: `cmake`, `libcurl4-openssl-dev`, `libpcsclite-dev`, QMI/QRTR dev libraries, `zip`. | [docs/DEVELOPERS.md](https://github.com/estkme-group/lpac/blob/main/docs/DEVELOPERS.md) · [Debian control](https://tracker.debian.org/media/packages/l/lpac/control-2.3.0-1) |
+
+Ranked the same way the bench's `uhubctl` delivery decision was ranked — stock distro
+package first, first-party build only if that fails:
+
+1. **Stock Debian package — preferred, but currently unavailable to us.** Ruled out by
+   *suite*, not by licence: 2.3.0-1 exists only in testing/unstable, and this stack's
+   packaging targets bookworm. Revisit on any suite move; this is the option that would
+   cost the least.
+2. **Upstream's own `lpac_2.3.0_arm64.deb` — rejected as a shipping form.** It is not built
+   by us, not covered by `packaging/upstream-pins.yaml`'s four-link provenance chain, and
+   not signed by our key. Adopting it would put a binary into the device image through a
+   path every other `.deb` in this repo is forbidden to use.
+3. **First-party bookworm rebuild in `modem-stack/packaging/` — the recommended form on a
+   future GO.** It is not a new model: Debian now maintains a `debian/` recipe (2.3.0-1)
+   that can be pinned and rebuilt for bookworm exactly like ModemManager, libmbim, libqmi,
+   and libqrtr-glib already are — same zero-patch rule, same provenance chain, same
+   two-set package model. The one genuinely new requirement is the AGPL §6(d) source
+   channel from §9.3.
+
+**All three are moot today.** No GO verdict exists, so nothing ships, and this subsection
+is a decision recorded *in advance* for whoever picks eSIM back up — not authorization to
+build anything.
+
+### 9.5 What would unblock this
+
+The gate is one piece of hardware. Two ways to clear it, cheapest first:
+
+1. **A removable eUICC card in an existing bench modem.** Per §4 path 1, a programmable
+   eUICC in plastic form factor (eSTK.me, ST4SIM, or similar) dropped into the Quectel
+   RM530N-GL's SIM slot gives the bench a real EID to read — no new modem required. It also
+   unlocks a second, better-behaved route: with a **PC/SC reader**, lpac's *default* `pcsc`
+   backend reaches the card entirely outside ModemManager, which sidesteps the port-
+   arbitration question for the inventory/EID half of the spike and isolates the
+   coexistence question to the modem-slot path only.
+2. **A modem with a genuine on-board eUICC**, per §6's reality table — noting that entry's
+   central warning: eUICC presence is a per-SKU/per-firmware fact, so a datasheet claim is
+   not acceptance. The unit still has to clear §7's checklist.
+
+With either in hand, §7 step 1 (EID read) becomes runnable, and the spike's three blocked
+steps become answerable. Until then this record stands as written.
+
+**The question put to the user, verbatim:** *"No modem on the bench exposes an eUICC — the
+only SIM present reports no `eid`, and RM530N-GL eSIM capability is unproven for this unit.
+Can you supply an eUICC-capable modem (or confirm the RM530N-GL variant on the bench has
+one)? Otherwise eSIM closes `blocked` with its feature gate off and the docs stating so."*

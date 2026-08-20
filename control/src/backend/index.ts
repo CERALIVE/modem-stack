@@ -29,7 +29,9 @@ export {
 	MM_MANAGER_IFACE,
 	MM_ROOT_PATH,
 	MODEM_IFACE,
+	MODEM_LOCATION_IFACE,
 	MODEM3GPP_IFACE,
+	MODEM3GPP_USSD_IFACE,
 	SIM_IFACE,
 } from './constants';
 export {
@@ -102,6 +104,12 @@ export {
 	MmDbusBackend,
 	type MmDbusBackendOptions,
 } from './mm-backend';
+export {
+	decodeLocationSources,
+	encodeLocationSources,
+	MmLocation,
+	type MmLocationDeps,
+} from './mm-location';
 export { MmMutations, type MmMutationsDeps } from './mm-mutations';
 export {
 	ModemActor,

@@ -21,9 +21,14 @@ RemainAfterExit=yes
 ExecStart=/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile
 
 # The reconciler answers 0 for every "cannot act" case (absent policy, malformed policy,
-# no ModemManager, unresolvable multiarch dir) precisely so a device without the CeraLive
-# partition layout boots clean. A non-zero exit therefore means a genuine internal error
-# and is surfaced rather than swallowed.
+# no ModemManager available tier) precisely so a device without the CeraLive partition
+# layout boots clean. A non-zero exit therefore means a genuine internal error and is
+# surfaced rather than swallowed.
+#
+# It writes ONLY into /etc/ModemManager/fcc-unlock.d — ModemManager's ADMIN enabled tier,
+# the first of the two the dispatcher consults. The multiarch PACKAGE tier
+# (${libdir}/ModemManager/fcc-unlock.d) is never touched: it is the tier a distribution
+# package would own, and this package deliberately owns no active FCC-unlock script.
 ProtectHome=yes
 ProtectHostname=yes
 ProtectKernelLogs=yes

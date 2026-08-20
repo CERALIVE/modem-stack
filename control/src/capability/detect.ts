@@ -11,16 +11,18 @@
 // nothing. Answering `absent` there would hide a working capability; answering
 // `present` would offer a control the modem cannot honour.
 
-import { MODEM_IFACE, MODEM3GPP_IFACE } from '../backend/constants';
+import { MODEM_IFACE, MODEM3GPP_USSD_IFACE } from '../backend/constants';
 import type { MmPropertyProbe } from '../backend/features';
+import type { RadioAccessTechnology } from '../domain';
+import { fiveGPreferenceEvidence } from './five-g-preference';
 import type { CapabilityEvidence, CapabilityModule } from './support-claim';
 
 /** MM's Messaging interface — SMS list/read lives here. */
 export const MESSAGING_IFACE = `${MODEM_IFACE}.Messaging`;
 /** MM's Location interface — GNSS sources are advertised here. */
 export const LOCATION_IFACE = `${MODEM_IFACE}.Location`;
-/** MM's 3GPP USSD interface. */
-export const USSD_IFACE = `${MODEM3GPP_IFACE}.Ussd`;
+/** MM's 3GPP USSD interface — the same name the USSD adapter dials. */
+export const USSD_IFACE = MODEM3GPP_USSD_IFACE;
 
 /**
  * What A3.2 observed, plus the two signals the static object tree cannot carry.
@@ -36,6 +38,15 @@ export interface ModuleCapabilityProbe extends MmPropertyProbe {
 	 * An EMPTY set is a real answer — the interface exists and offers no GNSS.
 	 */
 	readonly locationSources?: ReadonlySet<string>;
+	/**
+	 * `SupportedModes` decoded to the RAT families it actually names.
+	 *
+	 * OPTIONAL, and its absence is the pre-existing behaviour verbatim: a caller
+	 * that decoded only property NAMES answers exactly as before. Supplying it
+	 * strictly NARROWS `five-g-pref`, because the property's mere presence is
+	 * equally true of a 4G-only modem — see `detectCapabilityModules`.
+	 */
+	readonly supportedRats?: ReadonlySet<RadioAccessTechnology>;
 }
 
 const GNSS_SOURCES = ['gps-raw', 'gps-nmea', 'gps-unmanaged', 'agps-msa', 'agps-msb'];
@@ -90,6 +101,14 @@ function detectGnss(probe: ModuleCapabilityProbe): CapabilityEvidence {
  * module on hardware that supports it, and `present` would promise a plugin that
  * may not be installed — so the honest answer is that this probe cannot tell, and
  * evidence for it has to come from the catalog instead.
+ *
+ * `five-g-pref` is the one module whose property NAME is not the question. Every
+ * ModemManager modem exports `SupportedModes`, including a 4G-only one, so the
+ * name alone would resolve `present` on hardware with no 5G at all and offer a 5G
+ * posture nothing could honour. When the caller decoded the property's VALUE the
+ * verdict narrows to whether the catalog actually names 5GNR; when it did not,
+ * the property-name answer stands, so this is a strict narrowing and never a new
+ * way to claim a capability.
  */
 export function detectCapabilityModules(
 	probe: ModuleCapabilityProbe,
@@ -97,7 +116,10 @@ export function detectCapabilityModules(
 	return {
 		'band-lock': fromProperty(probe, 'SupportedBands'),
 		sms: fromInterface(probe, MESSAGING_IFACE),
-		'five-g-pref': fromProperty(probe, 'SupportedModes'),
+		'five-g-pref':
+			probe.supportedRats === undefined
+				? fromProperty(probe, 'SupportedModes')
+				: fiveGPreferenceEvidence(probe.supportedRats),
 		'fcc-auto-unlock': 'unknown',
 		gps: detectGnss(probe),
 		ussd: fromInterface(probe, USSD_IFACE),

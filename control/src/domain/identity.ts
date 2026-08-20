@@ -30,6 +30,16 @@ export type LogicalSlotId = Brand<string, 'LogicalSlotId'>;
 export type SubscriptionId = Brand<string, 'SubscriptionId'>;
 
 /**
+ * The SIM's OWN number (MSISDN), as ModemManager's `Modem.OwnNumbers` reports it.
+ *
+ * SENSITIVE — it is the subscriber's telephone number, so it belongs to the same
+ * class as `subscriptionId`: never printed raw, never a policy binding key. It is
+ * DISPLAYED to the operator on an explicit reveal; that is a rendering decision
+ * and does not make it loggable.
+ */
+export type SubscriberNumber = Brand<string, 'SubscriberNumber'>;
+
+/**
  * The live ModemManager D-Bus object path (e.g. `/org/freedesktop/ModemManager1/Modem/3`).
  *
  * NEVER PERSISTED — this is a per-boot runtime handle. ModemManager reassigns it
@@ -76,6 +86,11 @@ export interface ModemIdentity {
 	readonly equipmentId: EquipmentId;
 	/** Absent with no SIM. SENSITIVE — redact everywhere (A2.2 redaction module). */
 	readonly subscriptionId?: SubscriptionId;
+	/**
+	 * The SIM's own number(s). ABSENT when the carrier/SIM published none — most
+	 * SIMs do not, so absence is the common case and never an error. SENSITIVE.
+	 */
+	readonly ownNumbers?: readonly SubscriberNumber[];
 	/** NEVER PERSISTED — per-boot runtime handle only. */
 	readonly runtimePath: RuntimePath;
 }
@@ -90,6 +105,11 @@ export function logicalSlotId(value: string): LogicalSlotId {
 /** Construct a `SubscriptionId` from a non-empty string. */
 export function subscriptionId(value: string): SubscriptionId {
 	return nonEmptyString(value, 'subscriptionId') as SubscriptionId;
+}
+
+/** Construct a `SubscriberNumber` from a non-empty string. */
+export function subscriberNumber(value: string): SubscriberNumber {
+	return nonEmptyString(value, 'subscriberNumber') as SubscriberNumber;
 }
 
 /** Construct a `RuntimePath` from a non-empty string. */

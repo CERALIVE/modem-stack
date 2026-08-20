@@ -10,6 +10,7 @@ export type PolicyDimension =
 	| 'connection'
 	| 'roaming'
 	| 'radio'
+	| 'band'
 	| 'simSlot'
 	| 'recovery'
 	| 'usage';

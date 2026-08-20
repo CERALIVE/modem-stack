@@ -16,10 +16,12 @@ function probe(overrides: ProbeOverrides = {}): ModuleCapabilityProbe {
 	const interfaces = 'interfaces' in overrides ? overrides.interfaces : DEFAULT_INTERFACES;
 	const locationSources =
 		'locationSources' in overrides ? overrides.locationSources : DEFAULT_LOCATION_SOURCES;
+	const supportedRats = overrides.supportedRats;
 	return {
 		properties: overrides.properties ?? DEFAULT_PROPERTIES,
 		...(interfaces === undefined ? {} : { interfaces }),
 		...(locationSources === undefined ? {} : { locationSources }),
+		...(supportedRats === undefined ? {} : { supportedRats }),
 	};
 }
 
@@ -93,5 +95,48 @@ describe('per-module capability detection', () => {
 				locationSources: new Set(),
 			}),
 		).not.toThrow();
+	});
+});
+
+describe('`five-g-pref` narrows on the decoded mode catalog', () => {
+	// The property NAME is not the question: every MM modem exports
+	// `SupportedModes`, so the name alone resolves `present` on a 4G-only radio.
+	test('a decoded catalog naming 5GNR is present', () => {
+		expect(
+			detectCapabilityModules(probe({ supportedRats: new Set(['lte', '5gnr']) }))['five-g-pref'],
+		).toBe('present');
+	});
+
+	test('a decoded catalog WITHOUT 5GNR is absent, even though the property exists', () => {
+		const detected = detectCapabilityModules(probe({ supportedRats: new Set(['umts', 'lte']) }));
+		expect(detected['five-g-pref']).toBe('absent');
+		// The property-name answer for the same probe is `present` — proving the
+		// decoded catalog is what narrowed it, not a changed property set.
+		expect(detectCapabilityModules(probe())['five-g-pref']).toBe('present');
+	});
+
+	test('an EMPTY decoded catalog is unknown, never absent', () => {
+		expect(detectCapabilityModules(probe({ supportedRats: new Set() }))['five-g-pref']).toBe(
+			'unknown',
+		);
+	});
+
+	test('a caller that decoded no catalog keeps the byte-identical property-name answer', () => {
+		expect(detectCapabilityModules(probe({ supportedRats: undefined }))['five-g-pref']).toBe(
+			'present',
+		);
+		expect(
+			detectCapabilityModules(probe({ properties: new Set(), supportedRats: undefined }))[
+				'five-g-pref'
+			],
+		).toBe('unknown');
+	});
+
+	test('narrowing touches ONLY this module', () => {
+		const narrowed = detectCapabilityModules(probe({ supportedRats: new Set(['lte']) }));
+		const base = detectCapabilityModules(probe());
+		for (const module of ['band-lock', 'sms', 'ussd', 'gps', 'esim', 'fcc-auto-unlock'] as const) {
+			expect(narrowed[module]).toBe(base[module]);
+		}
 	});
 });

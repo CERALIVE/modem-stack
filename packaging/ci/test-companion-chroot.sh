@@ -162,11 +162,18 @@ if [ ! -e "$RULES_ETC" ]; then ok "known-stale generated override removed"; else
 grep -q 'removed stale generated override' /tmp/stale.log && ok "removal was announced" || bad "no removal announcement"
 
 echo "== 6. FCC reconcile =="
-mkdir -p /usr/share/ModemManager/fcc-unlock.d
-printf '#!/bin/sh\nexit 0\n' > /usr/share/ModemManager/fcc-unlock.d/2c7c
-chmod +x /usr/share/ModemManager/fcc-unlock.d/2c7c
-MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo x86_64-linux-gnu)"
-ACTIVE="/usr/lib/$MULTIARCH/ModemManager/fcc-unlock.d"
+# ModemManager's tiers, spelled the way Debian's packaging actually installs them:
+# the shipped-but-inert AVAILABLE tier is `fcc-unlock.available.d` under /usr/share,
+# and the tier the dispatcher consults first is the ADMIN one under /etc. The
+# available tier holds one real script per VENDOR plus a `<vid>:<pid>` symlink onto
+# it per covered model — the dispatcher only ever opens the `<vid>:<pid>` name.
+AVAILABLE=/usr/share/ModemManager/fcc-unlock.available.d
+ACTIVE=/etc/ModemManager/fcc-unlock.d
+mkdir -p "$AVAILABLE"
+printf '#!/bin/sh\nexit 0\n' > "$AVAILABLE/2c7c"
+chmod +x "$AVAILABLE/2c7c"
+ln -sfn 2c7c "$AVAILABLE/2c7c:0801"
+ln -sfn 2c7c "$AVAILABLE/2c7c:0313"
 rm -rf "$ACTIVE"
 
 echo "-- 6a. absent policy exits 0 and creates NO active symlink --"
@@ -177,18 +184,35 @@ else
 fi
 if [ -z "$(find "$ACTIVE" -type l 2>/dev/null)" ]; then ok "no active FCC symlink created without a policy"; else bad "an active FCC symlink appeared without a policy"; fi
 
-echo "-- 6b. an enabling policy activates exactly the enabled vendor --"
+echo "-- 6b. an enabling policy activates exactly the enabled MODEL --"
 mkdir -p /data/ceralive
-printf '{"version":1,"unlock":{"2c7c":true,"1e0e":false}}\n' > /data/ceralive/fcc-unlock-policy.json
+printf '{"schemaVersion":1,"savedAtMs":1,"unlock":{"2c7c:0801":true,"2c7c:0313":false}}\n' > /data/ceralive/fcc-unlock-policy.json
 /usr/lib/ceralive-modem-support/ceralive-fcc-reconcile >/tmp/fcc-on.log 2>&1
-if [ -L "$ACTIVE/2c7c" ]; then ok "policy-enabled 2c7c activated"; else bad "2c7c not activated"; cat /tmp/fcc-on.log; fi
-if [ -e "$ACTIVE/1e0e" ]; then bad "policy-disabled 1e0e was activated"; else ok "policy-disabled 1e0e stayed inactive"; fi
+if [ -L "$ACTIVE/2c7c:0801" ]; then ok "policy-enabled 2c7c:0801 activated in the ADMIN tier"; else bad "2c7c:0801 not activated"; cat /tmp/fcc-on.log; fi
+if [ -e "$ACTIVE/2c7c:0313" ]; then bad "policy-disabled 2c7c:0313 was activated"; else ok "policy-disabled 2c7c:0313 stayed inactive"; fi
+# The vendor-only name is NOT what the dispatcher opens, so it must never be linked.
+if [ -e "$ACTIVE/2c7c" ]; then bad "a vendor-only name was linked (the dispatcher never opens it)"; else ok "no vendor-only link created"; fi
 
-echo "-- 6c. a MALFORMED policy is treated as absent (fail-safe, never fail-open) --"
-printf '{"version":1,"unlock":{"2c7c":yes}}\n' > /data/ceralive/fcc-unlock-policy.json
+echo "-- 6c. an opt-out removes the link the previous run created --"
+printf '{"schemaVersion":1,"savedAtMs":2,"unlock":{"2c7c:0801":false}}\n' > /data/ceralive/fcc-unlock-policy.json
+/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile >/tmp/fcc-off.log 2>&1
+if [ -e "$ACTIVE/2c7c:0801" ]; then bad "an opt-out left the active symlink behind"; else ok "opt-out deactivated the model"; fi
+
+echo "-- 6d. a MALFORMED policy is treated as absent (fail-safe, never fail-open) --"
+printf '{"schemaVersion":1,"savedAtMs":1,"unlock":{"2c7c:0801":true}}\n' > /data/ceralive/fcc-unlock-policy.json
+/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile >/dev/null 2>&1
+printf '{"schemaVersion":1,"savedAtMs":1,"unlock":{"2c7c:0801":yes}}\n' > /data/ceralive/fcc-unlock-policy.json
 /usr/lib/ceralive-modem-support/ceralive-fcc-reconcile >/tmp/fcc-bad.log 2>&1
-if [ -e "$ACTIVE/2c7c" ]; then bad "a malformed policy left an active FCC symlink"; else ok "malformed policy deactivated everything"; fi
+if [ -e "$ACTIVE/2c7c:0801" ]; then bad "a malformed policy left an active FCC symlink"; else ok "malformed policy deactivated everything"; fi
 grep -q 'malformed' /tmp/fcc-bad.log && ok "malformed policy was announced" || bad "no malformed announcement"
+
+echo "-- 6e. a real file in the ADMIN tier is somebody else's property --"
+mkdir -p "$ACTIVE"
+printf '#!/bin/sh\nexit 0\n' > "$ACTIVE/2c7c:0801"
+printf '{"schemaVersion":1,"savedAtMs":3,"unlock":{"2c7c:0801":true}}\n' > /data/ceralive/fcc-unlock-policy.json
+/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile >/tmp/fcc-foreign.log 2>&1
+if [ -L "$ACTIVE/2c7c:0801" ]; then bad "a foreign REAL file was replaced by our symlink"; else ok "a foreign real file was left alone"; fi
+rm -f "$ACTIVE/2c7c:0801"
 rm -rf /data
 
 echo "== 7. upgrade path (0.9.0 -> 1.1.0), no conffile prompt =="
