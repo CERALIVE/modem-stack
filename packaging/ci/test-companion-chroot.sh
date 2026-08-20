@@ -237,8 +237,8 @@ if apt-get install -y -qq --allow-downgrades "$OLD" >/tmp/down.log 2>&1; then ok
 [ "$(dpkg-query -W -f='${Version}' ceralive-modem-support)" = "0.9.0" ] && ok "downgraded to 0.9.0" || bad "downgrade did not take"
 
 echo "== 9. purge leaves zero leftovers =="
-mkdir -p "$ACTIVE"; ln -sfn /usr/share/ModemManager/fcc-unlock.d/2c7c "$ACTIVE/2c7c"
-printf 'not ours\n' > /usr/share/ModemManager/fcc-unlock.d/keepme
+mkdir -p "$ACTIVE"; ln -sfn /usr/share/ModemManager/fcc-unlock.available.d/2c7c "$ACTIVE/2c7c"
+printf 'not ours\n' > "$ACTIVE/keepme"
 if dpkg -P ceralive-modem-support >/tmp/purge.log 2>&1; then ok "dpkg -P exit 0"; else bad "purge failed"; cat /tmp/purge.log; fi
 if dpkg -L ceralive-modem-support >/dev/null 2>&1; then bad "dpkg -L still resolves after purge"; else ok "dpkg -L errors after purge"; fi
 left=0
@@ -249,7 +249,7 @@ for d in /usr/lib/ceralive-modem-support /usr/share/ceralive-modem-support; do
   [ -e "$d" ] && { bad "leftover directory after purge: $d"; left=1; }
 done
 [ -L "$ACTIVE/2c7c" ] && { bad "purge left an active FCC symlink behind"; left=1; }
-[ -f /usr/share/ModemManager/fcc-unlock.d/keepme ] || { bad "purge deleted a file that was not ours"; left=1; }
+[ -f "$ACTIVE/keepme" ] || { bad "purge deleted a file that was not ours"; left=1; }
 [ "$left" -eq 0 ] && ok "zero leftovers over every declared path; foreign files untouched"
 
 echo
