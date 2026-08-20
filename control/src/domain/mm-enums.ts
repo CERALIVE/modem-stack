@@ -62,6 +62,35 @@ export function decodeRegistrationState(state: number | undefined): string {
 	return state === 11 ? 'emergency-only' : 'unknown';
 }
 
+/**
+ * `MMModemStateFailedReason` → its mmcli spelling.
+ *
+ * This decoder is what makes "there is no SIM" an EXPLICIT reading rather than an
+ * inference. `Modem.StateFailedReason` is a `u` on D-Bus, so a provider that copies
+ * the property verbatim holds a NUMBER, while the migrated SIM-presence rule
+ * (`deriveSimPresence`) matches the mmcli STRING `sim-missing` that CeraUI has always
+ * read. Without this decoder the D-Bus path can never produce the one fact that
+ * proves absence, and a modem with no SIM reads `unknown` forever — or, worse,
+ * invites a consumer to infer absence from the blank `Sim` object path, which is
+ * exactly the guess this package refuses to make.
+ *
+ * An unrecognized value answers `undefined`: a reason this build cannot place says
+ * nothing, and must not be laundered into one that does.
+ */
+const STATE_FAILED_REASONS = new Map<number, string>([
+	[0, 'none'],
+	// MM's own `UNKNOWN` member. Spelled distinctly so it is never confused with the
+	// `'unknown'` sentinel the label decoders use to mean "this build could not place it".
+	[1, 'unknown-reason'],
+	[2, 'sim-missing'],
+	[3, 'sim-error'],
+	[4, 'unknown-capabilities'],
+	[5, 'esim-without-profiles'],
+]);
+export function decodeStateFailedReason(value: number | undefined): string | undefined {
+	return value === undefined ? undefined : STATE_FAILED_REASONS.get(value);
+}
+
 export function decodeUnlockRequired(lock: number | undefined): string | undefined {
 	return lock === 1
 		? 'none'

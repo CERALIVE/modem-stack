@@ -9,10 +9,13 @@
 
 export * from './location';
 export * from './modem-manager';
+export * from './mutation-admission';
 export * from './network-manager';
 export * from './observation';
 export * from './ops';
 export * from './receipts';
 export * from './reconcile';
+export * from './resource-ownership';
 export * from './router';
 export * from './sms';
+export * from './uhubctl';

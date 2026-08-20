@@ -52,3 +52,46 @@ or composition change changes the cache signature. Each case re-runs the complet
 the internal `control/test-support/provider-conformance-fixture.ts` fixture. It covers unsupported,
 selected, weak, tied/read-only, colliding writable-provider, auth ordering and generation
 re-evaluation paths without registering a real vendor implementation.
+
+### The conformance matrix — every real provider, registered at once
+
+The skeleton above uses a synthetic provider, and each concrete provider's own suite runs with
+only itself in the registry. Neither shape can answer the question a fleet poses: with
+ModemManager, Huawei HiLink, ZTE goform and UFI/HIMI **all registered**, does every device reach
+exactly the provider and profile it is entitled to — and does no device reach one it is not?
+
+`control/src/providers/conformance-matrix.test.ts` is that matrix. **20 cases**: nine fleet
+profiles (MM-managed Quectel / SIMCom / FM350-on-USB-carrier, both HiLink firmwares, MF79U,
+MF266, and both UFI USB ids) plus eleven safety cases — ambiguous collision, cross-profile
+refusal, three malformed-response cases, auth-expired, lockout-unknown, two unknown-firmware
+cases, wrong-interface and wrong-transport. Every case registers all four providers and scripts
+the three the device does not belong to as devices that answer nothing they understand. The
+expectation is the exact decision — provider, profile, writability and evidence score.
+
+Three invariants hold across the whole matrix and are asserted as such:
+
+- **No case outside `fleet-profile` is ever writable.** Ambiguity, malformed input, an expired
+  session, a lockout and a misrouted request all resolve read-only or unresolved.
+- **An unresolved decision carries no provider, no profile and no operations surface**, and its
+  evidence ledger is never empty.
+- **No matcher result carries the credential the wire carried**, even though the transcript does.
+
+Two companion suites sit beside it:
+
+- `conformance-transcripts.test.ts` asserts the exact per-firmware wire — method, path, query,
+  form/JSON/XML body, the header ARRAY in order, and the cookie — rebuilt from the protocol in
+  `control/test-support/conformance/transcripts.ts` rather than read back from the provider. A
+  whole-array `toEqual` additionally pins the request COUNT, so a second login or a stray probe
+  fails even when the decision is unchanged.
+- `conformance-scale.test.ts` is a **software upper-bound fixture at 16 concurrently attached
+  modems** — subscriptions stay fleet-wide, `Signal.Setup` is issued once per (epoch, modem) and
+  re-applied to every survivor on a new epoch, a burst of attachments is coalesced, and sixteen
+  concurrent matches each answer about their own modem. **The hardware-verified fleet size
+  remains 8**; 16 is a fixture result and must never be reported as a bench measurement.
+
+The corpus lives in `control/test-support/conformance/` (repo-local, unpublished) and reuses the
+payload fixtures from `observation-fixtures.ts` rather than minting a second set. Sanitization is
+structural: every credential is a declared literal that says it is not real, and any 14+ digit run
+in the corpus or in a recorded request fails the suite unless it is a declared member of
+`SANITIZED_SUBSCRIBER_IDENTIFIERS`. The matrix summary artifact is written to the gitignored
+`test-results/provider-conformance-matrix.{md,json}`.

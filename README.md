@@ -15,7 +15,7 @@ straight from CI artifacts; nothing is published to `apt.ceralive.tv` yet.
 
 | Directory | Artifact | What it is |
 |-----------|----------|------------|
-| [`control/`](control/) | **`@ceralive/modem-control`** (npm package) | The TypeScript control library: the [frozen v1.1 domain contracts](docs/DOMAIN-CONTRACTS.md), [provider registry and evidence-scored matcher](docs/PROVIDER-MATCHING.md), ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (`control/src/backend/uhubctl-power-hook.ts`, config-mapped port map, disabled by default), USB composition-mode model + the [evidence-bundle ingestion seam](docs/CATALOG-INGESTION.md), data-usage sampler plus its `setUsagePolicy` write surface (`control/src/backend/usage/policy-write.ts` — a local 0600 policy file, because ModemManager exposes no data-usage API at all), and the **read-only SMS port** (`control/src/ports/sms.ts` + `control/src/sms/` — LIST/READ plus `Added`/`Deleted` observation, never a send or a delete, locked by `sms/readonly-gate.test.ts`). Published to the public npm registry under the `@ceralive` scope as **built ESM + `.d.ts`** across seven entry points — see [`control/README.md`](control/README.md). |
+| [`control/`](control/) | **`@ceralive/modem-control`** (npm package) | The TypeScript control library: the [frozen v1.1 domain contracts](docs/DOMAIN-CONTRACTS.md), [provider registry and evidence-scored matcher](docs/PROVIDER-MATCHING.md), concrete typed-D-Bus [`ModemManagerProvider`](docs/MODEMMANAGER-PROVIDER.md) (runtime-discovered generic controls; no CLI subprocess), NetworkManager adapter, desired-state reconciler, injected mutation-admission and exclusive-ownership ports, USB composition-mode model + the [evidence-bundle ingestion seam](docs/CATALOG-INGESTION.md), data-usage sampler plus its `setUsagePolicy` write surface (`control/src/backend/usage/policy-write.ts` — a local 0600 policy file, because ModemManager exposes no data-usage API at all), and the **read-only SMS port** (`control/src/ports/sms.ts` + `control/src/sms/` — LIST/READ plus `Added`/`Deleted` observation, never a send or a delete, locked by `sms/readonly-gate.test.ts`). The USB-hub actuator is port-only here; the bench CLI owns its HIL adapter. Published to the public npm registry under the `@ceralive` scope as **built ESM + `.d.ts`** across seven entry points — see [`control/README.md`](control/README.md). |
 | [`cli/`](cli/) | **`modem-control`** (bench CLI) | The iteration surface: `probe`, `watch`, `apply`, `set-usb-mode`, `usage`, `certify`, `hil-cycle`. Compiled for `arm64` + `amd64` and run against real modems on a bench device to mature the package, capture per-SKU certification bundles, and prove hub VBUS port-cycling ([RB-10](docs/BENCH.md#rb-10--hub-vbus-verification-partial)). |
 | [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork, zero source patches** (see [`POLICY.md`](POLICY.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
 
@@ -72,3 +72,59 @@ the repo is self-contained (see [`AGENTS.md`](AGENTS.md) → Rule D).
 ## License
 
 AGPL-3.0
+
+## Huawei HiLink provider (Todo 24)
+
+`control/src/providers/huawei-hilink/` implements two exact firmware profiles: E3372H `22.200.05.00.1080` with password type 3 and E3372H `22.333.01.00.00` with password type 4. Firmware and `SesTokInfo` evidence select one profile; `state-login` must confirm its password type before one bounded login attempt, and a mismatch never falls through to another algorithm. Requests are interface-bound and redirect-disabled. Mode and data writes are independently capability-gated, acquire `router-session`, serialize by physical modem, and require a newly authenticated readback session before `applied`. Wi-Fi writes are absent. Credentials, derived hashes, cookies, and tokens remain memory-only and never enter errors or contract fixtures. See [`docs/HUAWEI-HILINK-PROVIDER.md`](docs/HUAWEI-HILINK-PROVIDER.md).
+
+## ZTE goform provider (Todo 25)
+
+`control/src/providers/zte-goform/` keeps MF79U legacy and MF266 salted authentication in
+separate evidence-selected profiles with one bounded attempt and an in-memory-only `stok`
+session. Unknown ZTE firmware retains read-only telemetry; no ZTE profile exposes a Wi-Fi
+write. The executable MF79U one-attempt diagnosis is documented in
+[`docs/MF79U-DIAGNOSIS.md`](docs/MF79U-DIAGNOSIS.md).
+
+## UFI / HIMI provider (Todo 26)
+
+`control/src/providers/ufi-himi/` is the Qualcomm UFI/HIMI provider: **read-only by
+construction**. The HIMI command vocabulary is a frozen union of seven `get*` reads plus
+`login`, so a write command cannot be expressed; `operations()` exposes zero write
+descriptors; and the prohibited operations (NV/EFS/identity/calibration writes, firmware
+flashing, EDL automation, blind driver/interface retries, DIAG writes, shell transport
+fallback) are inert table entries with no implementation anywhere, each answering a typed
+refusal before any transport call. `05c6:9024` proves an RNDIS+ADB composition and
+`05c6:9091` proves nothing at all — only a DIAG interface descriptor does, and even then
+production access stays prohibited. The supervised, read-only, bench-only DIAG info probe
+is documented in [`docs/UFI-DIAG-PROBE.md`](docs/UFI-DIAG-PROBE.md).
+
+## Radio capability truth + SIM evidence (Todo 28)
+
+`control/src/radio/` carries ModemManager's mode and band answers to a consumer without
+editing them. A combination whose preferred mask is 0 reads `preferred: 'none'` — the
+bench Fibocom FM350-GL's actual answer — and survives verbatim into the mode-write
+descriptor's allowed values; a mode bit this build cannot name round-trips as
+`mode-bit-<n>` and stays **offered** rather than being coerced to unsupported; a catalog
+member that is not a `(uu)` pair is retained rather than dropped. Mode and band writes are
+readback-gated, and a band write additionally carries `mutationImpact: 'disruptive'` plus
+the per-SKU certification gate from `control/src/band/` — whose catalog ships empty, so
+band writes are refused on every fleet device today.
+
+On the observation layer, SIM absence is EXPLICIT evidence: `absent` comes only from
+ModemManager's own `StateFailedReason: sim-missing`, never from a blank `Sim` object path
+(which MM also reports while a modem initializes and while a slot switch is in flight).
+`Modem.CurrentModes` and `Modem.SignalQuality` are retained as their D-Bus structs, so the
+preferred mode and the measurement-recency flag survive normalization.
+
+## Provider-matching conformance matrix (Todo 27)
+
+`control/src/providers/conformance-matrix.test.ts` registers all four providers at once and
+runs 20 cases — nine fleet profiles (MM-managed Quectel / SIMCom / FM350-on-USB-carrier, both
+HiLink firmwares, MF79U, MF266, both UFI USB ids) plus ambiguous-collision, cross-profile
+refusal, malformed-response, auth-expired, lockout-unknown, unknown-firmware, wrong-interface
+and wrong-transport cases — asserting the exact provider, profile, writability and evidence
+score each device is entitled to. A tie between two write-capable providers resolves read-only
+with both claimants in the evidence ledger and neither credential spent. Companion suites
+assert the exact sanitized per-firmware HTTP transcript and a **software upper-bound fixture at
+16 concurrently attached modems** (a fixture result — the hardware-verified fleet size remains
+8). See [`docs/PROVIDER-MATCHING.md`](docs/PROVIDER-MATCHING.md).

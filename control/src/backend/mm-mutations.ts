@@ -106,6 +106,41 @@ export class MmMutations {
 		});
 	}
 
+	/**
+	 * `SetCurrentModes` over the RAW `(uu)` masks the modem itself advertised.
+	 *
+	 * `setRadioModes` above speaks the reconciler's vocabulary — an ordered RAT
+	 * preference — and structurally cannot express `MM_MODEM_MODE_NONE`: its preferred
+	 * mask is derived from `preferenceOrdered[0]`, so "allow this set and prefer
+	 * nothing within it" has no spelling. That is the combination the bench FM350-GL
+	 * actually advertises, so a caller selecting an advertised combination verbatim
+	 * needs this entry point. It quiesces for the same reason `setRadioModes` does: a
+	 * mode change re-registers the radio and drops the bearer underneath NM.
+	 *
+	 * An `allowed` mask of 0 is refused — that is not a selection, it is a radio with
+	 * nothing switched on — while a `preferred` mask of 0 is passed through untouched.
+	 */
+	setModeCombination(modem: ModemRef, allowed: number, preferred: number): Promise<Receipt> {
+		if (allowed === 0) {
+			return Promise.resolve(receipt('radio', 'failed', 'no radio modes were requested'));
+		}
+		return this.#actor.runQuiesced({ stableKey: this.#resolveStableKey(modem) }, async () => {
+			try {
+				await this.#transport.callMethod({
+					destination: this.#destination,
+					path: modem,
+					interface: MODEM_IFACE,
+					member: 'SetCurrentModes',
+					signature: '(uu)',
+					args: [[allowed, preferred]],
+				});
+				return receipt('radio', 'applied', 'radio mode combination applied');
+			} catch (error) {
+				return receipt('radio', 'failed', `SetCurrentModes failed: ${describe(error)}`);
+			}
+		});
+	}
+
 	async readBands(modem: ModemRef): Promise<BandReadResult> {
 		try {
 			const tree = await fetchManagedObjects(this.#transport, this.#destination);

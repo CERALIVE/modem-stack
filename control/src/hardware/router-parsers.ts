@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { parseHilinkXmlValue } from './hilink-protocol';
+
+export * from './hilink-protocol';
 
 export type SimPresence = 'present' | 'absent' | 'unknown';
 export type SimPresenceFacts = {
@@ -9,10 +12,74 @@ export type SimPresenceFacts = {
 
 const SIM_OBJECT_PATH = /^\/org\/freedesktop\/ModemManager1\/SIM\/\d+$/;
 
+/** The mmcli spelling of `MM_MODEM_STATE_FAILED_REASON_SIM_MISSING` — the ONLY proof of absence. */
+export const SIM_MISSING_FAILED_REASON = 'sim-missing';
+
+/** The fields a presence decision may be drawn from, in the order they are inspected. */
+export const SIM_PRESENCE_FIELDS = ['sim', 'simSlots', 'failedReason'] as const;
+export type SimPresenceField = (typeof SIM_PRESENCE_FIELDS)[number];
+
+/**
+ * WHICH FACT decided a SIM presence — the whole point of this type.
+ *
+ * `absent` is reachable through exactly ONE member (`state-failed-reason`), so a
+ * consumer can prove that no code path inferred "there is no SIM" from a blank or
+ * missing field. A modem that exports `Sim: '/'` and says nothing else is
+ * `no-evidence`/`unknown`: an empty object path is ModemManager's answer for "no SIM
+ * object is bound right now", which a modem also reports while it is still
+ * initializing, while its SIM is locked out, and while a slot switch is in flight.
+ *
+ * `vendor-code-unclaimed` is the router half. HiLink, goform and HIMI each report
+ * their own presence code with vendor semantics no migrated decoder covers, so the
+ * code is NAMED here and its value stays verbatim in the diagnostics block, rather
+ * than being guessed into a presence.
+ */
+export type SimPresenceEvidence =
+	| { readonly kind: 'sim-object-path'; readonly field: 'sim'; readonly value: string }
+	| { readonly kind: 'sim-slot-object-path'; readonly field: 'simSlots'; readonly value: string }
+	| {
+			readonly kind: 'state-failed-reason';
+			readonly field: 'failedReason';
+			readonly value: typeof SIM_MISSING_FAILED_REASON;
+	  }
+	| { readonly kind: 'no-evidence'; readonly inspected: readonly SimPresenceField[] }
+	| { readonly kind: 'vendor-code-unclaimed'; readonly field: string };
+
+export type SimPresenceReading = {
+	readonly presence: SimPresence;
+	readonly evidence: SimPresenceEvidence;
+};
+
+/** The presence decision together with the fact that produced it. */
+export function readSimPresence(facts: SimPresenceFacts): SimPresenceReading {
+	const sim = facts.sim?.trim() ?? '';
+	if (SIM_OBJECT_PATH.test(sim)) {
+		return { presence: 'present', evidence: { kind: 'sim-object-path', field: 'sim', value: sim } };
+	}
+	const slot = facts.simSlots
+		?.map((each) => each.trim())
+		.find((each) => SIM_OBJECT_PATH.test(each));
+	if (slot !== undefined) {
+		return {
+			presence: 'present',
+			evidence: { kind: 'sim-slot-object-path', field: 'simSlots', value: slot },
+		};
+	}
+	if (facts.failedReason === SIM_MISSING_FAILED_REASON) {
+		return {
+			presence: 'absent',
+			evidence: {
+				kind: 'state-failed-reason',
+				field: 'failedReason',
+				value: SIM_MISSING_FAILED_REASON,
+			},
+		};
+	}
+	return { presence: 'unknown', evidence: { kind: 'no-evidence', inspected: SIM_PRESENCE_FIELDS } };
+}
+
 export function deriveSimPresence(facts: SimPresenceFacts): SimPresence {
-	if (SIM_OBJECT_PATH.test(facts.sim?.trim() ?? '')) return 'present';
-	if (facts.simSlots?.some((slot) => SIM_OBJECT_PATH.test(slot.trim()))) return 'present';
-	return facts.failedReason === 'sim-missing' ? 'absent' : 'unknown';
+	return readSimPresence(facts).presence;
 }
 
 export type RouterSignalUnknownReason =
@@ -46,11 +113,6 @@ function numericMetric(value: string | number | undefined): RouterSignalMetric {
 	if (value === undefined || String(value).trim() === '') return unknown('not-reported');
 	const parsed = Number.parseFloat(String(value));
 	return Number.isFinite(parsed) ? known(parsed) : unknown('malformed');
-}
-
-function xmlValue(body: string, tag: string): string | undefined {
-	const match = body.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
-	return match?.[1]?.trim();
 }
 
 const flatRecordSchema = z.record(z.string(), z.union([z.string(), z.number()]));
@@ -97,19 +159,21 @@ export function parseHilinkSignal(input: {
 	readonly status: string;
 	readonly signal: string;
 }): RouterSignalModel {
-	const authStatus = xmlValue(input.status, 'code') === '125002';
-	const authSignal = xmlValue(input.signal, 'code') === '125002';
+	const authStatus = parseHilinkXmlValue(input.status, 'code') === '125002';
+	const authSignal = parseHilinkXmlValue(input.signal, 'code') === '125002';
 	const statusReason = authStatus ? 'auth-expired' : 'not-reported';
 	const signalReason = authSignal ? 'auth-expired' : 'not-reported';
 	const metric = (tag: string): RouterSignalMetric =>
-		authSignal ? unknown(signalReason) : numericMetric(xmlValue(input.signal, tag));
+		authSignal ? unknown(signalReason) : numericMetric(parseHilinkXmlValue(input.signal, tag));
 	return {
 		provenance: 'hilink-admin-api',
 		freshness: authStatus && authSignal ? 'unknown' : 'live',
-		bars: authStatus ? unknown(statusReason) : numericMetric(xmlValue(input.status, 'SignalIcon')),
+		bars: authStatus
+			? unknown(statusReason)
+			: numericMetric(parseHilinkXmlValue(input.status, 'SignalIcon')),
 		max_bars: authStatus
 			? unknown(statusReason)
-			: numericMetric(xmlValue(input.status, 'maxsignal')),
+			: numericMetric(parseHilinkXmlValue(input.status, 'maxsignal')),
 		dbm: metric('rssi'),
 		rsrp: metric('rsrp'),
 		rsrq: metric('rsrq'),
@@ -223,42 +287,4 @@ export function parseUfiDetails(input: {
 		['wifi_clients', stated(sysinfo?.wifinum)],
 		['eth_clients', stated(sysinfo?.ethnum)],
 	]);
-}
-
-export type HilinkNetModeCapability =
-	| {
-			readonly state: 'reported';
-			readonly modes: readonly { readonly id: string; readonly name?: string }[];
-			readonly current?: string;
-	  }
-	| {
-			readonly state: 'unavailable';
-			readonly reason: RouterSignalUnknownReason | 'refused';
-			readonly code?: string;
-	  };
-
-export function parseHilinkCapabilities(input: {
-	readonly netModeList: string;
-	readonly netMode?: string;
-}): { readonly net_mode: HilinkNetModeCapability } {
-	const code = xmlValue(input.netModeList, 'code');
-	if (code === '125002') return { net_mode: { state: 'unavailable', reason: 'auth-expired' } };
-	if (code !== undefined) return { net_mode: { state: 'unavailable', reason: 'refused', code } };
-	if (input.netModeList === '')
-		return { net_mode: { state: 'unavailable', reason: 'unreachable' } };
-	if (!/<NetworkModeList>/i.test(input.netModeList))
-		return { net_mode: { state: 'unavailable', reason: 'malformed' } };
-	const modes = [...input.netModeList.matchAll(/<NetworkMode>([\s\S]*?)<\/NetworkMode>/gi)].flatMap(
-		(match) => {
-			const id = xmlValue(match[1] ?? '', 'Index');
-			if (id === undefined || id === '') return [];
-			const name = xmlValue(match[1] ?? '', 'Name');
-			return name === undefined || name === '' ? [{ id }] : [{ id, name }];
-		},
-	);
-	if (modes.length === 0) return { net_mode: { state: 'unavailable', reason: 'not-reported' } };
-	const current = xmlValue(input.netMode ?? '', 'NetworkMode');
-	return current === undefined || current === ''
-		? { net_mode: { state: 'reported', modes } }
-		: { net_mode: { state: 'reported', modes, current } };
 }

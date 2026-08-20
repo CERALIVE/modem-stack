@@ -15,7 +15,9 @@ import type { BusSession } from './bus-session';
 import {
 	BEARER_IFACE,
 	bearerPath,
+	LOCATION_IFACE,
 	type ManagedObjects,
+	MESSAGING_IFACE,
 	MM_MANAGER_IFACE,
 	MODEM_IFACE,
 	MODEM3GPP_IFACE,
@@ -27,6 +29,7 @@ import {
 	SIM_IFACE,
 	SIMPLE_IFACE,
 	simPath,
+	USSD_IFACE,
 } from './object-model';
 
 const MANAGED_OBJECTS_SIG = 'a{oa{sa{sv}}}';
@@ -40,6 +43,11 @@ export interface HandlerContext {
 	submitPin(modemIndex: number, simObjectPath: string, pin: unknown): null;
 	submitPuk(modemIndex: number, simObjectPath: string, puk: unknown, newPin: unknown): null;
 	recordSignalSetup(modemIndex: number, rate: unknown): void;
+	setupLocation(modemIndex: number, sources: unknown, signalLocation: unknown): null;
+	locationReply(modemIndex: number): unknown;
+	ussdReply(modemIndex: number, member: 'Initiate' | 'Respond'): string;
+	ussdState(modemIndex: number): number;
+	maybeFail(member: string, modemIndex: number): void;
 	tripwire(iface: string, member: string): never;
 	delay<T>(value: T): T | Promise<T>;
 	/** Record a call-log event, then run `produce` after the reply delay. */
@@ -68,7 +76,11 @@ export function registerModemHandlers(
 		path,
 		MODEM_IFACE,
 		'SetCurrentModes',
-		() => ctx.traced('SetCurrentModes', i, () => null),
+		() =>
+			ctx.traced('SetCurrentModes', i, () => {
+				ctx.maybeFail('SetCurrentModes', i);
+				return null;
+			}),
 		'',
 	);
 	session.handle(
@@ -97,6 +109,34 @@ export function registerModemHandlers(
 				return ctx.delay(null);
 			},
 			'',
+		);
+	}
+	if (spec.location !== undefined) {
+		session.handle(
+			path,
+			LOCATION_IFACE,
+			'Setup',
+			(sources, signalLocation) => ctx.setupLocation(i, sources, signalLocation),
+			'',
+		);
+		session.handle(path, LOCATION_IFACE, 'GetLocation', () => ctx.locationReply(i), 'a{uv}');
+	}
+	if (spec.messaging === true) {
+		session.handle(path, MESSAGING_IFACE, 'List', () => [], 'ao');
+	}
+	if (spec.ussd !== undefined) {
+		session.handle(path, USSD_IFACE, 'Initiate', () => ctx.ussdReply(i, 'Initiate'), 's');
+		session.handle(path, USSD_IFACE, 'Respond', () => ctx.ussdReply(i, 'Respond'), 's');
+		session.handle(path, USSD_IFACE, 'Cancel', () => null, '');
+		session.handle(
+			path,
+			'org.freedesktop.DBus.Properties',
+			'Get',
+			(iface, property) => {
+				if (iface === USSD_IFACE && property === 'State') return ['u', ctx.ussdState(i)];
+				return ['u', 0];
+			},
+			'v',
 		);
 	}
 	session.handle(path, SIMPLE_IFACE, 'Connect', () => ctx.tripwire(SIMPLE_IFACE, 'Connect'), '');

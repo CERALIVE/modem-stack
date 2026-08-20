@@ -45,9 +45,38 @@ A real ModemManager object model served on a private session bus (built on the s
   reflects exactly what was written — **real readback**, no canned strings.
 - `FakeNetworkManagerPort` fulfils the `NetworkManagerPort` contract over that runner.
 
-Neither is the shipping adapter. A4.1's `NmcliNmPort` owns the full nine-field GSM write
-parity and the atomic Auto-APN transitions; this harness is what A4.1 injects to assert
-them.
+Neither is the shipping adapter. `NmcliNmPort` (`control/src/backend/nmcli-nm-port.ts`) owns
+the full nine-field GSM write parity and the atomic Auto-APN transitions; this harness is
+what its suite injects to assert them. `NetworkManagerAdapter`
+(`control/src/providers/network-manager/`) sits one level up on the same harness — the
+runner's real readback is what lets its tests tell "the desired slot echoed the request"
+apart from "the desired slot was seeded from the readback".
+
+## `conformance/` — the provider-matching matrix harness
+
+The corpus and harness behind `control/src/providers/conformance-{matrix,transcripts,scale}.test.ts`.
+It is the only place all four real providers (ModemManager, Huawei HiLink, ZTE goform,
+UFI/HIMI) are registered at once, so it is where a provider claiming a neighbour's
+hardware is visible at all.
+
+- `exchange.ts` — ONE normalized `RecordedExchange` shape for three transports that agree
+  about nothing (HiLink posts XML to a path, goform posts a form and carries its verb in
+  `goformId`, HIMI posts JSON to one endpoint and carries its verb in `cmdid`). Bodies are
+  decoded into the vendor's own encoding rather than flattened to a string, headers are kept
+  verbatim **in order**, and the cookie is lifted out because that is where the three diverge.
+- `corpus.ts` — the sanitized per-firmware documents. It **reuses** `observation-fixtures.ts`
+  for every telemetry payload; what is new is only the session / login / challenge documents
+  those fixtures do not carry. Devices are ROUTE TABLES, not ordered reply queues, so a case
+  cannot break just because another provider's probe interleaved.
+- `transcripts.ts` — expected transcripts rebuilt **from the protocol**, so a `toEqual`
+  against a recording is a comparison and not an echo.
+- `cases.ts` — the 20-case table with each case's entitled decision.
+- `mm-transport.ts` — an in-memory `DbusTransport` over the SAME `fake-mm/object-model.ts`
+  tree. `fake-mm/service.ts` remains the right harness for codec and epoch proof (only a real
+  bus proves those); this one exists because a matrix whose ModemManager rows SKIP wherever
+  there is no session bus is a matrix with holes in it, and it makes the 16-modem scale
+  fixture's resource counts deterministic.
+- `matrix-report.ts` — writes the summary artifact to the gitignored `test-results/`.
 
 ## Running
 

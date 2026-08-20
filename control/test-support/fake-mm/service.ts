@@ -40,6 +40,12 @@ export interface SignalSetupCall {
 	readonly owner: string | undefined;
 }
 
+export interface LocationSetupCall {
+	readonly modemIndex: number;
+	readonly sources: number;
+	readonly signalLocation: boolean;
+}
+
 import { makePreviousEpoch, type PreviousEpoch } from './previous-epoch';
 import { emitInterfacesAdded, emitInterfacesRemoved, emitPropertiesChanged } from './signals';
 
@@ -67,6 +73,8 @@ export class FakeModemManager {
 	readonly #expectedPuks = new Map<string, string>();
 	readonly #callLog: string[] = [];
 	readonly #signalSetupLog: SignalSetupCall[] = [];
+	readonly #locationSetupLog: LocationSetupCall[] = [];
+	readonly #failures = new Map<string, string>();
 	readonly #ctx: HandlerContext;
 	#session: BusSession;
 	#replyDelayMs = 0;
@@ -82,6 +90,12 @@ export class FakeModemManager {
 			submitPin: (index, sp, pin) => this.#submitPin(index, sp, pin),
 			submitPuk: (index, sp, puk, newPin) => this.#submitPuk(index, sp, puk, newPin),
 			recordSignalSetup: (index, rate) => this.#recordSignalSetup(index, rate),
+			setupLocation: (index, sources, signalLocation) =>
+				this.#setupLocation(index, sources, signalLocation),
+			locationReply: (index) => this.#specs.get(index)?.location?.fix ?? [],
+			ussdReply: (index, member) => this.#ussdReply(index, member),
+			ussdState: (index) => this.#specs.get(index)?.ussd?.state ?? 1,
+			maybeFail: (member, index) => this.#maybeFail(member, index),
 			tripwire: (iface, member) => this.#tripwire(iface, member),
 			delay: (value) => this.#delay(value),
 			traced: (member, index, produce) => this.#traced(member, index, produce),
@@ -171,6 +185,11 @@ export class FakeModemManager {
 		this.#cells.set(modemIndex, cells);
 	}
 
+	configureLocation(modemIndex: number, location: NonNullable<ModemSpec['location']>): void {
+		const spec = this.#specs.get(modemIndex);
+		if (spec !== undefined) this.#specs.set(modemIndex, { ...spec, location });
+	}
+
 	/** The ordered disruptive-op call log (`member:start:<idx>` / `member:end:<idx>`). */
 	get callLog(): readonly string[] {
 		return [...this.#callLog];
@@ -181,10 +200,19 @@ export class FakeModemManager {
 		return [...this.#signalSetupLog];
 	}
 
+	get locationSetupCalls(): readonly LocationSetupCall[] {
+		return [...this.#locationSetupLog];
+	}
+
+	failNext(member: string, errorName: string): void {
+		this.#failures.set(member, errorName);
+	}
+
 	/** Reset the call + Signal.Setup logs (use between scenario phases). */
 	clearLogs(): void {
 		this.#callLog.length = 0;
 		this.#signalSetupLog.length = 0;
+		this.#locationSetupLog.length = 0;
 	}
 
 	/** Delay every subsequent method reply by `ms` (0 disables) — late-reply scenarios. */
@@ -284,6 +312,36 @@ export class FakeModemManager {
 			rate: typeof rate === 'number' ? rate : Number(rate),
 			owner: this.#session.uniqueName,
 		});
+	}
+
+	#setupLocation(index: number, sources: unknown, signalLocation: unknown): null {
+		this.#maybeFail('Setup', index);
+		const spec = this.#specs.get(index);
+		const mask = typeof sources === 'number' ? sources : Number(sources);
+		this.#locationSetupLog.push({
+			modemIndex: index,
+			sources: mask,
+			signalLocation: signalLocation === true,
+		});
+		if (spec?.location !== undefined) {
+			this.#specs.set(index, { ...spec, location: { ...spec.location, enabled: mask } });
+		}
+		return null;
+	}
+
+	#ussdReply(index: number, member: 'Initiate' | 'Respond'): string {
+		this.#maybeFail(member, index);
+		const ussd = this.#specs.get(index)?.ussd;
+		return member === 'Initiate' ? (ussd?.initiateReply ?? '') : (ussd?.respondReply ?? '');
+	}
+
+	#maybeFail(member: string, _index: number): void {
+		const name = this.#failures.get(member);
+		if (name === undefined) return;
+		this.#failures.delete(member);
+		const error = new Error(name);
+		Object.defineProperty(error, 'dbusName', { value: name });
+		throw error;
 	}
 
 	#traced<T>(member: string, index: number, produce: () => T): T | Promise<T> {

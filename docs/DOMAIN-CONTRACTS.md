@@ -28,6 +28,12 @@ it started under; `isCurrentGeneration()` identifies stale work.
 typed value. Unavailable observations are a separate discriminated state with `value: null`;
 they cannot be confused with stale data or with a boolean freshness flag.
 
+The layer that PRODUCES these envelopes — normalization, per-metric provenance, freshness
+evaluation, and the desired/applied/observed split — is `control/src/observations/`,
+documented in `AGENTS.md` § "OBSERVATIONS". It builds on this contract and does not redefine
+it: `ObservationEnvelope<T>`, `SourceEpoch`, `DeviceGeneration` and `StableKey` stay frozen
+exactly as described above.
+
 ## Operations
 
 `OperationDescriptor<I, O>` records independent read/write support, provider authority,
@@ -42,3 +48,36 @@ write reply is also `unknown-outcome`, even when the generation is current. Ever
 outcome has `requiresReconciliation: true`; callers must reconcile that modem before another
 mutation. `canAutoRetry()` returns true only for a failed, supported, explicitly idempotent
 read.
+
+`createOperationEngine()` is the executable form of those contracts. It receives a composition
+root, a live generation reader, and an `OperationPreconditionPort`. Mutations enter the root's
+shared physical-modem actor before the engine re-reads preconditions and admission, so a queued
+write cannot act on an earlier check. Unsupported, unavailable, out-of-constraint, or missing
+required-hook requests are typed refusals and never reach the provider.
+
+The engine keeps a reconciliation-required gate per `PhysicalModemId`. Any classified
+`unknown-outcome` closes that modem's mutation gate; later writes return
+`reconciliation-required` without calling their executor. `engine.reconcile()` runs through the
+same actor and clears the gate only after reconciliation succeeds without a generation change.
+Reads remain outside the write queue, and only a failed descriptor-classified idempotent read gets
+one automatic retry. Required journal, readback, and rollback hooks are invoked from the
+descriptor-defined lifecycle; rollback is never guessed after an unknown outcome.
+
+## Admission, ownership, and actors
+
+`MutationAdmissionPort` consumes the descriptor's `admission` requirement without adding a
+second policy vocabulary. Required admission with no injected authority is the typed refusal
+`admission-port-missing`. The interface contains no stream concept; the embedding controller
+owns whatever policy backs its decision and releases the returned lease.
+
+`ResourceOwnershipPort` is acquire-or-refuse, never queued. File-backed stores, router
+sessions, and USB-hub access require it. `createFlockResourceOwnershipPort({ lockPath })`
+provides the Linux default with non-blocking `flock` and holder PID/start-time metadata; the
+path is mandatory input and the exported `/run/ceralive/modem-control.lock` value is a caller
+convention, not an implementation hardcode. Kernel lock lifetime and PID liveness make a
+dead holder recoverable without stealing from a live process.
+
+`createModemControlCompositionRoot()` enforces one live root per process and owns a
+per-`PhysicalModemId` actor registry. Repeated `actorFor()` calls for the same physical modem
+return one shared `ModemActor`. `ModemManagerInhibitPort` narrows MM maintenance inhibition;
+`UhubctlPort` is an injected contract with no implementation in the v1.1 control package.

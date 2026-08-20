@@ -3,7 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import {
 	deriveSimPresence,
 	parseHilinkCapabilities,
+	parseHilinkDataCapability,
+	parseHilinkSession,
 	parseHilinkSignal,
+	parseHilinkUserState,
 	parseUfiDetails,
 	parseUfiSignal,
 	parseZteDetails,
@@ -81,6 +84,27 @@ describe('transport-free router response parsers', () => {
 		});
 		expect(parseHilinkCapabilities({ netModeList: '<error><code>112008</code></error>' })).toEqual({
 			net_mode: { state: 'unavailable', reason: 'refused', code: '112008' },
+		});
+	});
+
+	test('parses Huawei session, login-profile, and data capability documents centrally', () => {
+		expect(
+			parseHilinkSession(
+				'<response><SesInfo>SessionID=fixture</SesInfo><TokInfo>fixture-token</TokInfo></response>',
+			),
+		).toEqual({ cookie: 'SessionID=fixture', token: 'fixture-token' });
+		expect(
+			parseHilinkUserState(
+				'<response><State>-1</State><Username>admin</Username><password_type>4</password_type></response>',
+			),
+		).toEqual({ state: '-1', passwordType: 4 });
+		expect(parseHilinkDataCapability('<response><dataswitch>1</dataswitch></response>')).toEqual({
+			state: 'reported',
+			enabled: true,
+		});
+		expect(parseHilinkDataCapability('<response><code>125002</code></response>')).toEqual({
+			state: 'unavailable',
+			reason: 'auth-expired',
 		});
 	});
 });

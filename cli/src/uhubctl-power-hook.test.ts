@@ -7,9 +7,14 @@
 //     fires zero cycles
 
 import { describe, expect, test } from 'bun:test';
-import { epochMillis, runtimePath } from '../domain';
-import { ModemActor } from './modem-actor';
-import { RecoveryLadder, type RecoveryRequest, type RecoverySteps } from './recovery-ladder';
+import {
+	epochMillis,
+	ModemActor,
+	RecoveryLadder,
+	type RecoveryRequest,
+	type RecoverySteps,
+	runtimePath,
+} from '@ceralive/modem-control';
 import {
 	createUhubctlPowerHook,
 	parseUhubctlPortMap,

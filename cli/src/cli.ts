@@ -7,12 +7,11 @@
 
 import { parseArgs } from 'node:util';
 import {
-	createUhubctlPowerHook,
+	createFlockResourceOwnershipPort,
 	createUsbEnumerator,
+	DEFAULT_MODEM_CONTROL_LOCK_PATH,
 	MM_USB_MODES,
 	type MmUsbMode,
-	readUhubctlPortMap,
-	SpawnUhubctlRunner,
 } from '@ceralive/modem-control';
 import { SpawnCommandRunner } from './certify/command-runner';
 import { runApply } from './commands/apply';
@@ -27,6 +26,11 @@ import { createStackContext, type GlobalOptions, type StackContext } from './con
 import { mmcliSlots, sysfsUsbSweep, usbIdPathPoller } from './hil-probe';
 import type { CliIo } from './io';
 import { readPolicyFile } from './policy-file';
+import {
+	createUhubctlPowerHook,
+	readUhubctlPortMap,
+	SpawnUhubctlRunner,
+} from './uhubctl-power-hook';
 import { buildRequestResolver, buildUsageInputs, buildUsbModeTransition } from './wiring';
 
 const HELP = `modem-control — bench CLI for the CeraLive modem stack
@@ -162,6 +166,13 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 			const commandRunner = new SpawnCommandRunner();
 			const enumerator = createUsbEnumerator();
 			const poller = usbIdPathPoller(() => enumerator.enumerate());
+			const ownership = await createFlockResourceOwnershipPort({
+				lockPath: DEFAULT_MODEM_CONTROL_LOCK_PATH,
+			}).acquire({ resource: 'usb-hub' });
+			if (ownership.status === 'refused') {
+				io.err('hil-cycle: modem control is owned by another process');
+				return 1;
+			}
 			try {
 				return await runHilCycle(
 					io,
@@ -182,6 +193,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
 			} catch (error) {
 				io.err(`error: ${error instanceof Error ? error.message : String(error)}`);
 				return 1;
+			} finally {
+				await ownership.lease.release();
 			}
 		}
 		case 'usage':

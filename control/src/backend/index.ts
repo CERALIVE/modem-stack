@@ -228,21 +228,6 @@ export {
 	type UsbModeTransitionOutcome,
 	type UsbModeTransitionRequest,
 } from './transition-preconditions';
-export {
-	createUhubctlPowerHook,
-	parseUhubctlPortMap,
-	readUhubctlPortMap,
-	SpawnUhubctlRunner,
-	type UhubctlPortMap,
-	type UhubctlPortMapping,
-	type UhubctlPowerHookDeps,
-	type UhubctlResult,
-	type UhubctlRunner,
-	type UsbEnumerationPoller,
-	uhubctlCycleArgv,
-	uhubctlPortMappingSchema,
-	uhubctlPortMapSchema,
-} from './uhubctl-power-hook';
 export * from './usage';
 export {
 	createUsbEnumerator,

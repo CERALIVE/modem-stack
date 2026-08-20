@@ -72,15 +72,15 @@
 // hub reporting that id may need `-f`, which this hook never passes.
 // -----------------------------------------------------------------------------------
 
+import {
+	ModemActor,
+	type PowerCapability,
+	type PowerCycleContext,
+	type PowerCycleResult,
+	type PowerHook,
+	type PreferredUsbMode,
+} from '@ceralive/modem-control';
 import { z } from 'zod';
-import { ModemActor } from './modem-actor';
-import type {
-	PowerCapability,
-	PowerCycleContext,
-	PowerCycleResult,
-	PowerHook,
-	PreferredUsbMode,
-} from './power-contract';
 
 /**
  * A uhubctl hub location: `<bus>-<port>[.<port>…]` (e.g. `1-1`, `2-1.4`), or a bare

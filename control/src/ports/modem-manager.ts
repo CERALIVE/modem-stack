@@ -72,7 +72,14 @@ export interface InhibitLease {
  * network scan, and inhibit / uninhibit. It owns NO bearer / connection lifecycle;
  * bearers and activation belong to `NetworkManagerPort`.
  */
-export interface ModemManagerPort extends ModemObservationPort {
+export interface ModemManagerInhibitPort {
+	/** Inhibit MM from managing a device (for a maintenance lease), keyed by UID. */
+	inhibit(uid: string): Promise<InhibitLease>;
+	/** Release a previously-taken inhibition. */
+	uninhibit(lease: InhibitLease): Promise<void>;
+}
+
+export interface ModemManagerPort extends ModemObservationPort, ModemManagerInhibitPort {
 	/** Set the modem's radio access-technology preference. */
 	setRadioModes(modem: ModemRef, preference: DesiredRadio): Promise<Receipt>;
 	/** Read the modem's supported and currently-selected bands. */
@@ -90,8 +97,4 @@ export interface ModemManagerPort extends ModemObservationPort {
 	sendPuk(modem: ModemRef, puk: string, newPin: string): Promise<SimPukUnlockResult>;
 	/** Scan for visible networks (long-running). */
 	scanNetworks(modem: ModemRef): Promise<NetworkScanResult>;
-	/** Inhibit MM from managing a device (for a maintenance lease), keyed by UID. */
-	inhibit(uid: string): Promise<InhibitLease>;
-	/** Release a previously-taken inhibition. */
-	uninhibit(lease: InhibitLease): Promise<void>;
 }

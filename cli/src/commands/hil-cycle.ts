@@ -39,13 +39,9 @@
 // with `no-vbus-drop` rather than passing on a cycle it could not prove — and RB-10's
 // manual two-phase `-a off` / sweep / `-a on` proof is the fallback that settles it.
 
-import {
-	epochMillis,
-	type PowerHook,
-	type UhubctlPortMap,
-	type UsbEnumerationPoller,
-} from '@ceralive/modem-control';
+import { epochMillis, type PowerHook } from '@ceralive/modem-control';
 import type { CliIo } from '../io';
+import type { UhubctlPortMap, UsbEnumerationPoller } from '../uhubctl-power-hook';
 
 /** The ordered phases of one harness run — the call-order contract the tests pin. */
 export const HIL_CYCLE_PHASES = [
