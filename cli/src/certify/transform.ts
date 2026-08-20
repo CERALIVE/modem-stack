@@ -120,17 +120,19 @@ export function descriptorsOf(device: UsbDeviceSnapshot): ExpectedDescriptors {
 }
 
 /**
- * Build the SKU discriminator (VID:PID + model + firmware prefix) from a device, or
- * `undefined` when the device lacks a model or firmware string — the three parts the
- * certified catalog matches on. A partial SKU is not a certified device.
+ * Build the SKU discriminator from USB identity plus ModemManager's firmware revision.
+ * A partial SKU is not a certified device.
  */
-export function skuOf(device: UsbDeviceSnapshot): SkuDiscriminator | undefined {
-	if (device.model === undefined || device.firmwareRevision === undefined) {
+export function skuOf(
+	device: UsbDeviceSnapshot,
+	firmwareRevision: string | undefined,
+): SkuDiscriminator | undefined {
+	if (device.model === undefined || firmwareRevision === undefined) {
 		return undefined;
 	}
 	return {
 		vidPid: `${device.vendorId}:${device.productId}`,
 		model: device.model,
-		firmwarePrefix: device.firmwareRevision,
+		firmwarePrefix: firmwareRevision,
 	};
 }

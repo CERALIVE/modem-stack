@@ -7,10 +7,11 @@
 // broken bundle. The subscriber secrets live in the `mmcli -K` keyfile and the managed
 // objects, both captured as OBJECTS so the shared key-based redactor can mask them.
 
-import type {
-	DecodedManagedObjects,
-	SkuDiscriminator,
-	UsbDeviceSnapshot,
+import {
+	type DecodedManagedObjects,
+	readRevision,
+	type SkuDiscriminator,
+	type UsbDeviceSnapshot,
 } from '@ceralive/modem-control';
 import type { SignalRecord } from './bundle-schema';
 import type { CommandResult } from './command-runner';
@@ -35,7 +36,6 @@ export interface BaseCaptureParts {
 /** The injectable seams the base capture reads from (fakes drive the synthetic tests). */
 export interface BaseCaptureDeps {
 	run(command: string, args: readonly string[]): Promise<CommandResult>;
-	fetchManagedObjects(): Promise<DecodedManagedObjects>;
 	captureSignalWindow(): Promise<readonly SignalRecord[]>;
 }
 
@@ -43,6 +43,8 @@ export interface BaseCaptureDeps {
 export interface BaseCaptureInput {
 	/** The matched target USB device — source of the slot's udev properties and SKU. */
 	readonly device?: UsbDeviceSnapshot;
+	readonly managedObjects: DecodedManagedObjects;
+	readonly modemPath: string;
 	/** The `mmcli -m <target>` modem selector (a modem index or D-Bus path). */
 	readonly mmcliTarget: string;
 }
@@ -110,10 +112,11 @@ export async function captureBase(
 	const lsusb = await captureLsusb(deps);
 	const usbDevices = await captureUsbDevices(deps);
 	const mmcliKeyfile = await captureMmcli(deps, input.mmcliTarget);
-	const managedObjects = objectifyManagedObjects(await deps.fetchManagedObjects());
+	const managedObjects = objectifyManagedObjects(input.managedObjects);
 	const signalWindow = await deps.captureSignalWindow();
 	const udevProperties = { ...(input.device?.udevProperties ?? {}) };
-	const sku = input.device !== undefined ? skuOf(input.device) : undefined;
+	const firmwareRevision = readRevision(input.managedObjects, input.modemPath);
+	const sku = input.device !== undefined ? skuOf(input.device, firmwareRevision) : undefined;
 
 	return {
 		...(sku !== undefined ? { sku } : {}),
