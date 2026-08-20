@@ -147,6 +147,27 @@ describe('transport-free router response parsers', () => {
 		});
 	});
 
+	test('separates a document this API did not answer from one that listed no mode', () => {
+		// `malformed` means something OTHER than this API replied (a login page, a proxy
+		// error document); `not-reported` means this API replied and listed nothing.
+		// Keying `malformed` on `<NetworkModeList>` folds the second into the first and
+		// calls a dongle unreadable when it answered perfectly well.
+		expect(parseHilinkCapabilities({ netModeList: '<response></response>' })).toEqual({
+			net_mode: { state: 'unavailable', reason: 'not-reported' },
+		});
+		expect(
+			parseHilinkCapabilities({
+				netModeList: '<response><NetworkModeList></NetworkModeList></response>',
+			}),
+		).toEqual({ net_mode: { state: 'unavailable', reason: 'not-reported' } });
+		expect(parseHilinkCapabilities({ netModeList: '<html><body>Login</body></html>' })).toEqual({
+			net_mode: { state: 'unavailable', reason: 'malformed' },
+		});
+		expect(parseHilinkCapabilities({ netModeList: '   \n' })).toEqual({
+			net_mode: { state: 'unavailable', reason: 'unreachable' },
+		});
+	});
+
 	test('parses Huawei session, login-profile, and data capability documents centrally', () => {
 		expect(
 			parseHilinkSession(

@@ -72,9 +72,12 @@ export function parseHilinkCapabilities(input: {
 	const code = parseHilinkXmlValue(input.netModeList, 'code');
 	if (code === '125002') return { net_mode: { state: 'unavailable', reason: 'auth-expired' } };
 	if (code !== undefined) return { net_mode: { state: 'unavailable', reason: 'refused', code } };
-	if (input.netModeList === '')
+	if (input.netModeList.trim() === '')
 		return { net_mode: { state: 'unavailable', reason: 'unreachable' } };
-	if (!/<NetworkModeList>/i.test(input.netModeList))
+	// `malformed` is a statement about the BODY — something that is not this API
+	// answered. A `<response>` carrying no mode list IS this API, saying nothing,
+	// which is `not-reported` below.
+	if (!/<response>/i.test(input.netModeList))
 		return { net_mode: { state: 'unavailable', reason: 'malformed' } };
 	const modes = [...input.netModeList.matchAll(/<NetworkMode>([\s\S]*?)<\/NetworkMode>/gi)].flatMap(
 		(match) => {
