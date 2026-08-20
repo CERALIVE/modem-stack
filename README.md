@@ -29,11 +29,11 @@ no discovery or transport and leave CeraUI integration to a separate cutover.
 
 ## Versioning at a glance
 
-ONE unified **SemVer** tag `vX.Y.Z` releases **both** artifacts together: `v0.2.0` publishes
-`@ceralive/modem-control@0.2.0` to npm **and** the `.deb` artifact set in the same release.
+ONE unified **SemVer** tag `vX.Y.Z` releases **both** artifacts together: `v1.1.0` publishes
+`@ceralive/modem-control@1.1.0` to npm **and** the `.deb` artifact set in the same release.
 This repo deliberately does **not** use the CeraLive CalVer scheme. The `.deb` internal
 `Version:` fields encode the tag as `<upstream>-<rev>~ceralive<X.Y.Z>` (e.g.
-`1.24.2-2~ceralive0.2.0`) so apt ordering stays correct. Full contract:
+`1.24.2-2~ceralive1.1.0`) so apt ordering stays correct. Full contract:
 [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Layout
