@@ -39,6 +39,38 @@ require "ci/build-bookworm.sh"
 require "ci/test-package-contract.sh"
 require "ci/daemon-smoke.sh"
 require "ci/generate-release-manifest.sh"
+require "ci/build-companion.sh"
+require "ci/test-companion-chroot.sh"
+require "ci/companion-inventory.txt"
+require "ceralive-modem-support/debian/control"
+require "ceralive-modem-support/debian/rules"
+require "ceralive-modem-support/debian/legacy-etc-overrides.sha256"
+require "ceralive-modem-support/assets/udev/60-ceralive-modem.rules"
+require "ceralive-modem-support/assets/systemd/ceralive-fcc-reconcile.service"
+require "ceralive-modem-support/assets/fcc/ceralive-fcc-reconcile"
+
+# The companion's udev rules file may never carry a device MUTATION. This is a text contract
+# because the failure it prevents — a generic package writing device permissions or running a
+# command from udev — is invisible to every other gate in this repo.
+echo "  running companion udev no-mutation contract..."
+if grep -nE '^[^#]*(RUN\+?=|MODE=|OWNER=|GROUP=|SYMLINK\+?=|ATTR\{[^}]+\}=[^=])' \
+     "$PKG_ROOT/ceralive-modem-support/assets/udev/60-ceralive-modem.rules"; then
+	echo "  MUTATION FOUND in 60-ceralive-modem.rules — the companion tags devices, it never mutates them"
+	fail=1
+else
+	echo "  ok: companion udev rules are identification/tagging only"
+fi
+
+# The packaged basename must not collide with an image-owned /etc/udev/rules.d basename: udev
+# resolves by basename and an /etc file shadows the packaged one in a way dpkg -S cannot see.
+echo "  running companion udev basename contract..."
+for reserved in 99-ceralive-hardware.rules 78-mm-ceralive-slot-uid.rules; do
+	if [ -e "$PKG_ROOT/ceralive-modem-support/assets/udev/$reserved" ]; then
+		echo "  RESERVED BASENAME: the companion must not ship $reserved (image-owned)"
+		fail=1
+	fi
+done
+echo "  ok: companion ships no image-owned udev basename"
 
 # The tag-guard contract must hold.
 echo "  running tag-guard contract..."

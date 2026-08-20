@@ -1,0 +1,52 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+%:
+	dh $@
+
+override_dh_auto_build:
+override_dh_auto_test:
+
+# EXPLICIT PER-ASSET INSTALLATION TABLE.
+#
+# There is deliberately no blanket "/usr/lib for everything" rule here: each asset goes to
+# the destination ITS OWN CONSUMER canonically reads, and the admin-override tier for each
+# is a different directory that this package never writes.
+#
+#   asset                       | packaged destination                      | admin override
+#   ----------------------------+-------------------------------------------+-----------------------------
+#   udev rules                  | /usr/lib/udev/rules.d/                    | /etc/udev/rules.d/
+#   usb-modeswitch device data  | /usr/share/usb_modeswitch/                | /etc/usb_modeswitch.d/
+#   FCC reconcile helper        | /usr/lib/ceralive-modem-support/          | (none — executable)
+#   FCC reconcile unit          | /usr/lib/systemd/system/                  | /etc/systemd/system/
+#   legacy-override hash list   | /usr/share/ceralive-modem-support/        | (none — package data)
+#
+# The udev BASENAME is modem-only (`60-ceralive-modem.rules`) and is shared with NO
+# image-owned /etc/udev/rules.d file. See the header of that file for why that matters.
+#
+# ModemManager 1.24 exposes NO vendor conf.d tier — verified against the pinned Debian
+# packaging, whose only /etc surface is the D-Bus policy file. Its documented per-device
+# configuration mechanism is udev properties, which is why CeraLive's MM-directed
+# configuration rides the packaged rules file above rather than a conf snippet. The
+# available FCC-unlock tier (/usr/share/ModemManager/fcc-unlock.d) is ModemManager's own
+# and receives nothing from this package.
+override_dh_auto_install:
+	install -D -m 0644 assets/udev/60-ceralive-modem.rules \
+		debian/ceralive-modem-support/usr/lib/udev/rules.d/60-ceralive-modem.rules
+	install -d -m 0755 debian/ceralive-modem-support/usr/share/usb_modeswitch
+	install -m 0644 assets/usb_modeswitch/19d2:1225 assets/usb_modeswitch/12d1:1f01 \
+		debian/ceralive-modem-support/usr/share/usb_modeswitch/
+	install -D -m 0755 assets/fcc/ceralive-fcc-reconcile \
+		debian/ceralive-modem-support/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile
+	install -D -m 0644 assets/legacy/60-ceralive-modem.rules.legacy-v1 \
+		debian/ceralive-modem-support/usr/share/ceralive-modem-support/legacy/60-ceralive-modem.rules.legacy-v1
+	install -D -m 0644 debian/legacy-etc-overrides.sha256 \
+		debian/ceralive-modem-support/usr/share/ceralive-modem-support/legacy-etc-overrides.sha256
+	install -D -m 0644 assets/systemd/ceralive-fcc-reconcile.service \
+		debian/ceralive-modem-support/usr/lib/systemd/system/ceralive-fcc-reconcile.service
+
+# dh_installsystemd finds the unit already staged under usr/lib/systemd/system by the
+# installation table above, so the unit's canonical home stays assets/systemd/.
+override_dh_installsystemd:
+	dh_installsystemd --name=ceralive-fcc-reconcile --no-restart-after-upgrade

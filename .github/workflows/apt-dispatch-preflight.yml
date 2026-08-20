@@ -1,0 +1,74 @@
+name: APT dispatch preflight
+
+# Proves that THIS REPOSITORY can trigger apt-worker's closure publisher, without publishing
+# anything.
+#
+# WHY IT LIVES HERE AND NOT IN AN OPERATOR'S TERMINAL
+#   An operator running `gh api repos/CERALIVE/apt-worker/dispatches` by hand tests THEIR OWN
+#   CLI token. It proves nothing about `secrets.CERALIVE_DISPATCH_TOKEN` on CERALIVE/modem-stack,
+#   which is the credential the release workflow will actually use. This job performs the real
+#   dispatch with the real repository secret, which is the only thing that answers the question.
+#
+# WHY IT IS SAFE AGAINST A NOT-YET-EXISTING RELEASE
+#   It sends `client_payload.preflight=true`. apt-worker's reindex-modem-closure.yml has a
+#   dedicated preflight branch that forces DRY_RUN regardless of its live default, and exits
+#   cleanly BEFORE manifest resolution when no tag is supplied — so preflighting ahead of the
+#   v1.1.0 release can never make the publisher error on an unpublished manifest.
+#
+#   The default tag is therefore EMPTY (resolve-nothing). Supply an already-published tag to
+#   additionally exercise manifest resolution and validation in dry-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'An ALREADY-PUBLISHED modem-stack tag to dry-run against. Leave empty to test credentials + reachability only.'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-dispatch-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Dispatch a dry-run closure publish with the real repository secret
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse a tag that does not exist as a release
+        if: inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::'$RELEASE_TAG' is not a published release of $GITHUB_REPOSITORY."
+            echo "Preflight must target an EXISTING manifest, or run with an empty tag."
+            exit 1
+          fi
+          echo "'$RELEASE_TAG' is published — its release-manifest.txt is resolvable."
+
+      - name: Dispatch (preflight, forced dry-run)
+        env:
+          GH_TOKEN: ${{ secrets.CERALIVE_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::CERALIVE_DISPATCH_TOKEN is not provisioned on this repository."
+            echo "Provision a fine-grained PAT with **Contents: read/write** on CERALIVE/apt-worker."
+            echo "Note: repository-dispatch is gated on Contents, NOT on 'Actions: write'."
+            exit 1
+          fi
+          gh api repos/CERALIVE/apt-worker/dispatches \
+            -f event_type=apt-modem-closure \
+            -F 'client_payload[preflight]=true' \
+            -F "client_payload[tag]=$RELEASE_TAG" \
+            -F 'client_payload[channel]=stable'
+          echo "preflight dispatch accepted (tag='${RELEASE_TAG:-<none>}', forced dry-run)."
+          echo "Confirm the run at https://github.com/CERALIVE/apt-worker/actions/workflows/reindex-modem-closure.yml"

@@ -1,0 +1,17 @@
+# legacy-etc-overrides.sha256 — the CLOSED list of /etc override payloads this package is
+# permitted to remove on upgrade.
+#
+# WHY A LIST AND NOT A HEURISTIC
+#   udev resolves rules by BASENAME, and /etc/udev/rules.d shadows /usr/lib/udev/rules.d
+#   completely. A stale generated file at the packaged basename would therefore silently
+#   replace this package's rules while `dpkg -S` still names this package as the owner of
+#   the /usr/lib path — the substitution is undetectable from package metadata alone.
+#   So the postinst removes such a file, but ONLY when it is provably a KNOWN GENERATED
+#   payload: it must carry the generated-marker header AND its sha256 must appear below.
+#   Anything else — an operator's own file, an operator's EDIT of a generated file, a
+#   payload from a version not listed here — is PRESERVED. Debian admin-override semantics
+#   are not negotiable, and "it looked generated" is not proof that nobody edited it.
+#
+# FORMAT: <sha256>  <absolute path>   (comments and blank lines ignored)
+
+cd54e952af9ebe0b0d56f47ec296aeab48a9cbf7383c9dbefc16eef7d177558f  /etc/udev/rules.d/60-ceralive-modem.rules

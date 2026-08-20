@@ -1,0 +1,40 @@
+[Unit]
+Description=Reconcile CeraLive ModemManager FCC-unlock policy
+Documentation=file:/usr/share/doc/ceralive-modem-support/README.md
+
+# ORDERING CONTRACT (todo 33). All three edges are deliberately SOFT on a host that has
+# none of the CeraLive layout, so this unit is a clean no-op on generic Debian:
+#   * Before=ModemManager.service — the active fcc-unlock.d set must be settled before MM
+#     probes a radio. If ModemManager is not installed this edge is simply inert.
+#   * RequiresMountsFor=/data — systemd only synthesises a dependency when /data is an
+#     actual mount point; on a host where it is an ordinary directory (or absent) this
+#     adds nothing and blocks nothing.
+#   * After=ceralive-migrate-data.service — the image unit that seeds /data. An ordering
+#     edge to a unit that does not exist is a no-op, never a failure.
+Before=ModemManager.service
+RequiresMountsFor=/data
+After=ceralive-migrate-data.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile
+
+# The reconciler answers 0 for every "cannot act" case (absent policy, malformed policy,
+# no ModemManager, unresolvable multiarch dir) precisely so a device without the CeraLive
+# partition layout boots clean. A non-zero exit therefore means a genuine internal error
+# and is surfaced rather than swallowed.
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

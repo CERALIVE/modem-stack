@@ -1,0 +1,34 @@
+Source: ceralive-modem-support
+Section: net
+Priority: optional
+Maintainer: CeraLive <dev@ceralive.tv>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/CERALIVE/modem-stack
+
+Package: ceralive-modem-support
+Architecture: all
+Depends: ${misc:Depends},
+         udev
+Recommends: modemmanager,
+            usb-modeswitch
+Description: CeraLive generic modem system assets
+ First-party companion package for the CeraLive ModemManager stack. It carries the
+ UNCONDITIONAL, generic, board-independent system assets that the upstream
+ ModemManager / libqmi / libmbim / libqrtr rebuilds must not absorb — those four
+ sources are byte-faithful, zero-patch rebuilds and stay that way.
+ .
+ Contents:
+  * /usr/lib/udev/rules.d/60-ceralive-modem.rules — identification/tagging only
+    (exact VID:PID and interface predicates; no RUN+=, no permission or node
+    mutation of any kind).
+  * /usr/share/usb_modeswitch/ — Zero-CD mode-switch device data only.
+  * /usr/lib/ceralive-modem-support/ceralive-fcc-reconcile plus its oneshot unit,
+    which reconciles ModemManager's active fcc-unlock.d against an operator policy
+    at /data/ceralive/fcc-unlock-policy.json. No active FCC-unlock script ships
+    here; an absent policy activates nothing and exits 0.
+ .
+ Board-gated generated assets — M.2 SIM quirk rows and per-slot modem UID rules —
+ are deliberately NOT here. They consume build-time board facts a generic package
+ cannot know and remain owned by the device-image generators.

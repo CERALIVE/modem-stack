@@ -1,0 +1,50 @@
+#!/bin/sh
+# postrm for ceralive-modem-support.
+#
+# On PURGE, retire the runtime state this package's helper creates but does not own as
+# packaged files: the ACTIVE fcc-unlock symlinks it wrote into ModemManager's multiarch
+# directory. Those are symlinks into /usr/share/ModemManager/fcc-unlock.d, so removing
+# them removes nothing of ModemManager's own — but leaving them behind would let a purged
+# package keep a radio's FCC-unlock script active, which is exactly the state todo 33
+# forbids by default.
+#
+# Anything that is not a symlink, and any symlink pointing outside the available tier,
+# is left strictly alone: it is not ours.
+set -e
+
+AVAILABLE_DIR=/usr/share/ModemManager/fcc-unlock.d
+
+purge_active_fcc_symlinks() {
+    for dir in /usr/lib/*/ModemManager/fcc-unlock.d; do
+        [ -d "$dir" ] || continue
+        for link in "$dir"/*; do
+            [ -L "$link" ] || continue
+            target="$(readlink -f "$link" 2>/dev/null || true)"
+            case "$target" in
+                "$AVAILABLE_DIR"/*)
+                    rm -f "$link"
+                    echo "ceralive-modem-support: purge removed active FCC-unlock symlink $link"
+                    ;;
+            esac
+        done
+        rmdir "$dir" 2>/dev/null || true
+    done
+}
+
+case "$1" in
+    purge)
+        purge_active_fcc_symlinks
+        rm -rf /usr/share/ceralive-modem-support
+        rm -rf /usr/lib/ceralive-modem-support
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

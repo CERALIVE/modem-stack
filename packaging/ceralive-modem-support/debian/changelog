@@ -1,0 +1,7 @@
+ceralive-modem-support (0.0.0~dev) UNRELEASED; urgency=medium
+
+  * Initial first-party companion package: CeraLive generic modem system assets.
+    Version is rewritten to the release tag by packaging/ci/inject-companion-version.sh
+    at release time; a non-tag build keeps 0.0.0~dev.
+
+ -- CeraLive <dev@ceralive.tv>  Mon, 17 Aug 2026 00:00:00 +0000

@@ -1,0 +1,11 @@
+# CERALIVE-GENERATED: modem-udev v1 — DO NOT EDIT
+# Superseded by /usr/lib/udev/rules.d/60-ceralive-modem.rules from the
+# ceralive-modem-support package. A copy of THIS EXACT payload under
+# /etc/udev/rules.d/ shadows the packaged file by basename, so the package's
+# postinst removes it — and ONLY it, matched by marker line AND by the sha256
+# recorded in legacy-etc-overrides.sha256.
+#
+# Any other content at that /etc path — including an operator's edit of this
+# file — is PRESERVED. Debian admin-override semantics stand.
+ACTION!="add|bind|change", GOTO="ceralive_modem_end"
+LABEL="ceralive_modem_end"

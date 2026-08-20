@@ -1,0 +1,79 @@
+#!/bin/sh
+# postinst for ceralive-modem-support.
+#
+# Two jobs, both idempotent and both safe inside a build chroot:
+#   1. Remove a KNOWN-STALE /etc override that would shadow the packaged udev rules
+#      by basename (marker + sha256 gated; anything else is preserved).
+#   2. Reload udev and fire a NARROW trigger — only when a live udev is present.
+set -e
+
+PKGDATA=/usr/share/ceralive-modem-support
+HASHLIST="$PKGDATA/legacy-etc-overrides.sha256"
+GENERATED_MARKER='# CERALIVE-GENERATED: modem-udev'
+
+# ── 1. Marker+hash-gated removal of a stale generated /etc override ──────────
+# The gate is a CONJUNCTION on purpose. The marker alone proves only that the file
+# STARTED life generated; an operator who edited it must keep their edit. The hash alone
+# would be enough, but requiring the marker too keeps a hash collision with an unrelated
+# operator file from ever mattering.
+remove_known_stale_overrides() {
+    [ -r "$HASHLIST" ] || return 0
+    command -v sha256sum >/dev/null 2>&1 || return 0
+
+    while read -r want path; do
+        case "$want" in ''|'#'*) continue ;; esac
+        [ -n "$path" ] || continue
+        [ -f "$path" ] || continue
+        # Never touch a symlink: following one could delete something outside /etc.
+        [ -L "$path" ] && continue
+
+        if ! head -n 1 "$path" | grep -qF "$GENERATED_MARKER"; then
+            echo "ceralive-modem-support: preserving operator-owned $path (no generated marker)"
+            continue
+        fi
+        have="$(sha256sum "$path" | awk '{print $1}')"
+        if [ "$have" != "$want" ]; then
+            echo "ceralive-modem-support: preserving modified $path (sha256 not a known generated payload)"
+            continue
+        fi
+        rm -f "$path"
+        echo "ceralive-modem-support: removed stale generated override $path (superseded by the packaged rules)"
+    done < "$HASHLIST"
+}
+
+# ── 2. Chroot-guarded udev reload + narrow trigger ──────────────────────────
+# /run/udev is created by a RUNNING systemd-udevd. Inside a build chroot, a container
+# image build or a piuparts run it does not exist, and `udevadm control` would fail (or
+# worse, talk to the host's udev through a shared /run). Guarding on it is the documented
+# Debian idiom and is what makes this postinst safe in every non-booted context.
+#
+# The trigger is NARROW — usb + net + usbmisc, action=change — never a bare
+# `udevadm trigger`, which would re-run every rule for every device on the system.
+refresh_udev() {
+    [ -d /run/udev ] || {
+        echo "ceralive-modem-support: no /run/udev (chroot/container) — skipping udev reload+trigger"
+        return 0
+    }
+    command -v udevadm >/dev/null 2>&1 || return 0
+    udevadm control --reload-rules || true
+    udevadm trigger --action=change --subsystem-match=usb || true
+    udevadm trigger --action=change --subsystem-match=usbmisc || true
+    udevadm trigger --action=change --subsystem-match=net || true
+}
+
+case "$1" in
+    configure)
+        remove_known_stale_overrides
+        refresh_udev
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
