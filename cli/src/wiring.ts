@@ -26,6 +26,7 @@ import {
 import type { RequestResolver, UsbModeArgs } from './commands/set-usb-mode';
 import type { StackContext } from './context';
 import { selectModem } from './select';
+import { matchUsbDevice } from './usb-device-match';
 
 /** Where per-slot usage state is persisted on device. */
 const USAGE_STORE_PATH =
@@ -70,8 +71,7 @@ export function buildRequestResolver(ctx: StackContext): RequestResolver {
 		const index = paths.indexOf(String(modem.identity.runtimePath));
 		const stableKey = resolved[index]?.stableKey ?? String(modem.identity.runtimePath);
 		const devices = await ctx.enumerate().catch(() => []);
-		const ifname = modem.dataInterface.present ? modem.dataInterface.name : undefined;
-		const device = devices.find((d) => d.ifname !== undefined && d.ifname === ifname);
+		const device = matchUsbDevice(tree, String(modem.identity.runtimePath), devices);
 		if (device === undefined || device.physicalUid === undefined) {
 			return {
 				ok: false,
