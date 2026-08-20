@@ -28,6 +28,45 @@ test('redacts every sensitive class at the top level, keeping non-secret sibling
 	expect(out.username).toBe('operator-user');
 });
 
+test('redacts modem equipment identifiers while preserving model, vendor, and SKU facts', () => {
+	// Given
+	const input = {
+		EquipmentIdentifier: '867978050016855',
+		equipmentIdentifier: '867978050016855',
+		equipment_identifier: '867978050016855',
+		imei: '867978050016855',
+		'modem.generic.equipment-identifier': '867978050016855',
+		'modem.3gpp.imei': '867978050016855',
+		model: 'RM530N-GL',
+		vendorId: '2c7c',
+		sku: {
+			vidPid: '2c7c:0801',
+			model: 'RM530N-GL',
+			firmwarePrefix: 'RM530NGLAAR05A01M4G',
+		},
+	};
+
+	// When
+	const out = redact(input);
+
+	// Then
+	expect(out).toEqual({
+		EquipmentIdentifier: REDACTED,
+		equipmentIdentifier: REDACTED,
+		equipment_identifier: REDACTED,
+		imei: REDACTED,
+		'modem.generic.equipment-identifier': REDACTED,
+		'modem.3gpp.imei': REDACTED,
+		model: 'RM530N-GL',
+		vendorId: '2c7c',
+		sku: {
+			vidPid: '2c7c:0801',
+			model: 'RM530N-GL',
+			firmwarePrefix: 'RM530NGLAAR05A01M4G',
+		},
+	});
+});
+
 test('redacts an APN password nested three levels deep', () => {
 	const policy = { connection: { auth: { username: 'u', password: 'hunter2' } } };
 	const out = redact(policy) as { connection: { auth: { username: string; password: string } } };
