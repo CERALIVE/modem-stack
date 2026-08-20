@@ -72,6 +72,66 @@ describe('transport-free router response parsers', () => {
 		});
 	});
 
+	test('keeps the serving band and the WAN leg band as two separate readings', () => {
+		// Folding them onto one key reports a band the device never claimed for that
+		// leg — and the two genuinely disagree once carrier aggregation is up.
+		expect(parseZteDetails('{"lte_band":"B4","wan_active_band":"LTE BAND 7"}')).toEqual({
+			band: 'B4',
+			network_band: 'LTE BAND 7',
+		});
+		expect(parseZteDetails('{"band":"B28"}')).toEqual({ band: 'B28' });
+		expect(parseZteDetails('{"lte_band":"B4"}')).toEqual({ band: 'B4' });
+		expect(parseZteDetails('{"wan_active_band":"LTE BAND 7"}')).toEqual({
+			network_band: 'LTE BAND 7',
+		});
+	});
+
+	test('carries the carrier composition and the dongle-owned counters', () => {
+		expect(
+			parseZteDetails(
+				JSON.stringify({
+					lte_ca_pcell_arfcn: '2000',
+					lte_ca_pcell_band: '4',
+					lte_ca_pcell_bandwidth: '20',
+					lte_ca_scell_arfcn: '5230',
+					lte_ca_scell_band: '7',
+					lte_ca_scell_bandwidth: '15',
+					monthly_tx_bytes: '12884901888',
+					monthly_rx_bytes: '96636764160',
+					monthly_time: '184320',
+					date_month: '2026-08',
+					realtime_tx_bytes: '1048576',
+					realtime_rx_bytes: '8388608',
+					realtime_tx_thrpt: '131072',
+					realtime_rx_thrpt: '1048576',
+					realtime_time: '3600',
+				}),
+			),
+		).toEqual({
+			pcell_arfcn: '2000',
+			pcell_band: '4',
+			pcell_bandwidth: '20',
+			scell_arfcn: '5230',
+			scell_band: '7',
+			scell_bandwidth: '15',
+			monthly_tx_bytes: '12884901888',
+			monthly_rx_bytes: '96636764160',
+			monthly_time: '184320',
+			monthly_period: '2026-08',
+			session_tx_bytes: '1048576',
+			session_rx_bytes: '8388608',
+			session_tx_rate: '131072',
+			session_rx_rate: '1048576',
+			session_time: '3600',
+		});
+	});
+
+	test('drops every vendor placeholder, not only the single dash', () => {
+		expect(
+			parseZteDetails('{"lte_band":"--","cell_id":"n/a","network_type":"N/A","provider":"  "}'),
+		).toBeUndefined();
+	});
+
 	test('reports Huawei network-mode capability and refusal distinctly', () => {
 		expect(
 			parseHilinkCapabilities({

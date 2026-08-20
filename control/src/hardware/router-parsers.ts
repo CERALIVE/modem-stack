@@ -231,10 +231,18 @@ export function parseUfiSignal(input: {
 
 export type RouterDetails = Readonly<Record<string, string>>;
 
+/**
+ * The vendor's own "unset" placeholders. A UFI answers `-` for a WAN address, an
+ * IMSI and an ICCID it does not have, and the ZTE builds answer `--` / `N/A` for
+ * an unpopulated counter — publishing any of those as a reading puts a value on
+ * screen that reads like a real one.
+ */
+const PLACEHOLDERS: ReadonlySet<string> = new Set(['-', '--', 'n/a', 'N/A']);
+
 function stated(value: string | number | undefined): string | undefined {
 	if (value === undefined) return undefined;
 	const normalized = String(value).trim();
-	return normalized === '' || normalized === '-' ? undefined : normalized;
+	return normalized === '' || PLACEHOLDERS.has(normalized) ? undefined : normalized;
 }
 
 function compact(
@@ -261,8 +269,32 @@ export function parseZteDetails(body: string): RouterDetails | undefined {
 		['mcc', stated(value.rmcc)],
 		['mnc', stated(value.rmnc)],
 		['pci', stated(value.lte_pci)],
-		['network_band', stated(value.wan_active_band) ?? stated(value.lte_band) ?? stated(value.band)],
+		// `band` and `network_band` are two DIFFERENT readings and must not be
+		// folded onto one key: `lte_band` is the serving cell's band, while
+		// `wan_active_band` is the band the WAN leg is active on, and the two
+		// disagree the moment carrier aggregation is up. Publishing either under
+		// the other's name reports a band the device never claimed for that leg.
+		['band', stated(value.lte_band) ?? stated(value.band)],
+		['network_band', stated(value.wan_active_band)],
 		['carrier_aggregation', stated(value.wan_lte_ca)],
+		['pcell_arfcn', stated(value.lte_ca_pcell_arfcn)],
+		['pcell_band', stated(value.lte_ca_pcell_band)],
+		['pcell_bandwidth', stated(value.lte_ca_pcell_bandwidth)],
+		['scell_arfcn', stated(value.lte_ca_scell_arfcn)],
+		['scell_band', stated(value.lte_ca_scell_band)],
+		['scell_bandwidth', stated(value.lte_ca_scell_bandwidth)],
+		['monthly_tx_bytes', stated(value.monthly_tx_bytes)],
+		['monthly_rx_bytes', stated(value.monthly_rx_bytes)],
+		['monthly_time', stated(value.monthly_time)],
+		['monthly_period', stated(value.date_month)],
+		// Named `session_*` rather than `realtime_*`: these are cumulative counters
+		// and a throughput, and the vendor's own prefix reads as "live rate" for
+		// all five.
+		['session_tx_bytes', stated(value.realtime_tx_bytes)],
+		['session_rx_bytes', stated(value.realtime_rx_bytes)],
+		['session_tx_rate', stated(value.realtime_tx_thrpt)],
+		['session_rx_rate', stated(value.realtime_rx_thrpt)],
+		['session_time', stated(value.realtime_time)],
 	]);
 }
 

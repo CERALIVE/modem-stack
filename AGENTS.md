@@ -592,6 +592,35 @@ values, or already-normalized records and return deterministic values only. They
 udev, invoke ModemManager, persist state, or alter CeraUI; CeraUI keeps its local adapters and
 copies until the explicit consumer cutover.
 
+### `parseZteDetails` MUST stay a superset of the consumer it replaces
+
+The seam only works if adopting a packaged parser is a no-op for the shipped
+consumer. It was not: an overlay of the 1.1 candidate over CeraUI's own tree found
+this parser both NARROWER than the reader it is meant to retire and in disagreement
+with it about one key name. Both are fixed here, and both are pinned by tests:
+
+- **`band` and `network_band` are two readings, not one key.** `lte_band` is the
+  SERVING cell's band and `wan_active_band` is the band the WAN leg is active on;
+  they disagree the moment carrier aggregation is up. This parser previously folded
+  all three spellings onto `network_band`, so a consumer rendering the serving band
+  got the WAN leg's — or nothing. They are now separate and neither falls back to
+  the other.
+- **The carrier composition and the dongle's own counters are carried.**
+  `lte_ca_{p,s}cell_{arfcn,band,bandwidth}`, `monthly_{tx_bytes,rx_bytes,time}` +
+  `date_month`, and the five `realtime_*` counters now emit as `pcell_*` / `scell_*`
+  / `monthly_*` (with `monthly_period`) / `session_*`. The `realtime_*` → `session_*`
+  rename is deliberate: three of those five are cumulative counters, and the vendor's
+  own prefix reads as "live rate" for all five.
+- **`stated()` drops every vendor placeholder**, not only the single dash — `--`,
+  `n/a` and `N/A` are unset markers on these firmwares too, and echoing one puts a
+  value on screen that reads like a reading. This widening applies to
+  `parseUfiDetails` as well, which shares the helper.
+
+**`parseUfiDetails` is still NARROWER than CeraUI's UFI reader and takes a different
+input shape** (three bodies here, five there — no `status`/`networkMode`). No
+consumer probes for it today, so nothing is broken; a future cutover must reconcile
+it before pointing CeraUI's UFI path at this one.
+
 ## OBSERVATIONS — NORMALIZATION THAT NARROWS WITHOUT DISCARDING
 
 `control/src/observations/` sits directly on top of the parsers above and turns a raw
@@ -1126,7 +1155,7 @@ D-Bus calls (`calls.ts`), and the adapter that drives them (`mm-ussd.ts`).
 
 **LEASE-ONLY, never journaled.** A USSD session cannot re-register the radio, so it takes
 the per-modem mutation lease and carries no pre-state and no rollback — the split todo 29's
-`withCapabilityModuleMutation` enforces in the TYPE SYSTEM, so this classification is not a
+`MutationAdmissionPort` enforces in the TYPE SYSTEM, so this classification is not a
 convention that can drift.
 
 **USSD is a SESSION protocol, not request/response, and that is why the machine exists.**
