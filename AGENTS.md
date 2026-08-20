@@ -12,11 +12,45 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 
 | Directory | Artifact | Role |
 |-----------|----------|------|
-| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (see § below), USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface** (see § below). Published to public npm under `@ceralive`. |
+| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (see § below), USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface**, capability-module **support-claim taxonomy + detection** (see §§ below). Published to public npm under `@ceralive`. |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
-| `packaging/` | ModemManager stack `.deb`s | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`). Bench installs from CI artifacts. |
+| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets so those four never absorb one. |
 
 `control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a bookworm container.
+
+## FIRST-PARTY COMPANION — `ceralive-modem-support`
+
+The four upstream sources are byte-faithful, zero-patch rebuilds. `ceralive-modem-support`
+(`packaging/ceralive-modem-support/`, `Architecture: all`) is the first-party package that
+keeps them that way: it owns the UNCONDITIONAL, generic modem system assets — CeraLive's
+identification-only udev rules, Zero-CD usb-modeswitch device data, and the FCC
+policy-reconciliation helper plus its oneshot unit. It ships **no active FCC-unlock script**;
+an absent `/data/ceralive/fcc-unlock-policy.json` exits 0 and activates nothing, which is
+also the correct behaviour on generic Debian with no CeraLive partition layout.
+
+**Board-gated generated assets stay image-owned** — M.2 SIM quirk rows and per-slot modem UID
+rules consume build-time board facts a generic package cannot know. Do not move them here.
+
+**The udev basename is load-bearing.** udev resolves rules by BASENAME, and an
+`/etc/udev/rules.d` file SHADOWS a same-basename `/usr/lib/udev/rules.d` file completely
+while `dpkg -S` keeps naming the package as owner of the `/usr/lib` path — the substitution
+is invisible to package tooling. The companion therefore uses the modem-only basename
+`60-ceralive-modem.rules`, which no image-owned `/etc` file shares (the image owns
+`99-ceralive-hardware.rules` and `78-mm-ceralive-slot-uid.rules`). Never rename it onto an
+image-owned basename, and never ship an `/etc` copy from this package. A stale same-basename
+`/etc` override is removed on upgrade ONLY when marker AND sha256 identify a known generated
+payload; anything unknown or operator-modified is preserved.
+
+QA is two-stage and the split is deliberate: `packaging/ci/test-companion-chroot.sh` proves
+packaging SHAPE in a clean `debian:trixie` container, while the consumer proofs (`udevadm
+test` against a real modem, `usb_modeswitch -c`, unit ordering against a real boot journal)
+are BENCH-GATED and must not be faked in a container. Full detail: `packaging/README.md`.
+
+The release manifest emits **`closure_version: 2`**, which adds this one `Architecture: all`
+asset to the frozen 9 × 2 closure as a single row with `build_arch` `all`. It is ONE
+immutable release asset with TWO index memberships; apt-worker's publisher indexes it into
+both per-arch indexes. A per-arch build is forbidden — two byte-different files under one
+package/version key break the immutable-key rule.
 
 ## RULE D — SELF-CONTAINED (load-bearing)
 
@@ -203,6 +237,44 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
   hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
   per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe.
 
+## CAPABILITY MODULES — TAXONOMY AND DETECTION, NOT IMPLEMENTATION
+
+`control/src/capability/` carries the FIVE-STATE support-claim taxonomy and the
+per-modem capability detection the seven gated capability modules (band-lock, SMS,
+5G-pref, FCC-auto-unlock, GPS, USSD, eSIM) resolve against. **No module is
+implemented here**, and none may be surfaced or claimed until its own change lands
+with its probe and its evidence.
+
+The taxonomy exists because "supported" was one word doing four jobs — the code
+exists, an operator turned it on, the modem advertises it, and somebody proved it
+on this firmware. `resolveSupportClaim` answers with the highest rung reached:
+`unavailable` (not shipped, or the modem positively lacks it) → `implemented`
+(gate OFF, the default everywhere) → `enabled` (gate ON, capability UNKNOWN) →
+`capable` (gate ON, modem advertises it — the floor for offering a control) →
+`certified` (proven on this exact model+firmware — the ONLY rung a support matrix
+may claim).
+
+**It is a Rule-D MIRROR of CeraUI's `@ceraui/rpc` ladder, never a shared import**
+— the same relationship `usb-net-classifier.ts` has with `device-classifier.ts` in
+the other direction. The two halves are kept honest by their tests, not by a path.
+
+`detect.ts` follows `backend/features.ts` exactly: it PROBES the observed surface
+rather than matching a version whitelist, never throws, and treats `unknown` as a
+first-class result — a property set nobody observed says nothing about the device,
+and the ladder stops at `enabled` for it. Two facts are worth knowing before
+extending it:
+
+- **SMS / USSD / GPS are advertised as INTERFACES, not properties**, so
+  `MmPropertyProbe` alone cannot see them; `ModuleCapabilityProbe` adds the modem
+  object's interface set. The `Location` interface being exported is separately NOT
+  a GNSS claim — MM exports it for 3GPP-LAC/CID-only devices too, so a GNSS source
+  must appear in `Location.Capabilities`.
+- **`fcc-auto-unlock` is always `unknown`, deliberately.** FCC unlock is carried out
+  by a ModemManager PLUGIN keyed on the device, and nothing on the modem's own
+  D-Bus surface says whether one applies. `absent` would hide the module on
+  supported hardware; `present` would promise a plugin that may not be installed.
+  Evidence for it comes from the catalog instead.
+
 ## eSIM (investigate-only, implementation deferred)
 
 `docs/ESIM-DECISION.md` records the full eSIM investigation: SGP.22 profile-binding makes
@@ -277,7 +349,9 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
      (test-before-publish).
   3. **build-deb** (needs [tag-guard, test]) — injects `<upstream>-<rev>~ceralive<X.Y.Z>`
      (non-tag runs `~ceralive0.0.0~dev`) via `packaging/ci/inject-deb-version.sh`, builds both
-     arches, runs the package contract suite + daemon smoke, generates the manifest-complete
+     arches, runs the package contract suite + daemon smoke, builds the `Architecture: all`
+     companion ONCE (`packaging/ci/build-companion.sh`) and runs its clean-chroot contract
+     (`packaging/ci/test-companion-chroot.sh`), generates the manifest-complete
      release manifest (`packaging/ci/generate-release-manifest.sh`), and uploads the `.deb`
      artifacts + manifest.
   4. **publish-npm** (needs [tag-guard, build-deb]) — OIDC trusted publishing
@@ -289,7 +363,18 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
      pre-create moved-tag re-check, downloads the `.deb` + manifest artifact, assembles a flat
      asset dir, and reconciles it immutably via `packaging/ci/reconcile-release-assets.sh`
      (manifest-complete, staged sanitized `~`→`.` names, collision-rejected, existing assets
-     integrity-compared and never overwritten).
+     integrity-compared and never overwritten). The flat assembly additionally REFUSES a
+     duplicate RAW basename before any sanitization can mask it. It then **dispatches
+     `apt-modem-closure` to `CERALIVE/apt-worker`** — last, so the manifest the publisher
+     fetches already exists on the release. `CERALIVE_DISPATCH_TOKEN` must be a fine-grained
+     PAT with **`Contents: read/write`** on the target repo; the repository-dispatch endpoint
+     is gated on Contents, NOT on `Actions: write`.
+- **`.github/workflows/apt-dispatch-preflight.yml`** — proves this repository's
+  `CERALIVE_DISPATCH_TOKEN` can reach apt-worker's publisher without publishing anything. It
+  sends `client_payload.preflight=true`, which apt-worker forces to DRY_RUN regardless of its
+  live default; with no tag it exits before manifest resolution, so it is safe to run BEFORE
+  the release exists. An operator's own `gh api` call would test the operator's CLI token and
+  prove nothing about the repository secret — which is exactly why this lives here.
   `cancel-in-progress: false` (never cancel a release/publish mid-run).
 
 Action pins track the latest stable **major** (resolved via the `gh api` releases/latest
