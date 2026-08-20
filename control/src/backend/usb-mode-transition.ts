@@ -5,9 +5,11 @@
 // through A3.3's shared per-modem `ModemActor` (keyed on stableKey, so it serialises
 // behind every other disruptive op) in a FIXED order:
 //
-//   1 NM-quiesce → 2 inhibit-by-cached-UID → 3 AT command → 4 expected port-drop →
-//   5 uninhibit → 6 await SAME physical UID → 7 POSTCONDITION → 8 resolve new ifname →
-//   9 reactivate (uuid, newIfname) → 10 release interlock (finally, always).
+//   1 NM-quiesce → 2 inhibit-by-cached-UID → 3 AT command → 3b catalog `applyCommand`
+//   (only for a SKU whose AT command writes NV without re-enumerating) → 4 expected
+//   port-drop → 5 uninhibit → 6 await SAME physical UID → 7 POSTCONDITION →
+//   8 resolve new ifname → 9 reactivate (uuid, newIfname) → 10 release interlock
+//   (finally, always).
 //
 // THE POSTCONDITION IS THE ONLY PROOF OF SUCCESS. An AT `OK` proves nothing — only a
 // re-enumerated device whose descriptors AND observed mode equal the catalog target
@@ -147,7 +149,11 @@ export class UsbModeTransition {
 		};
 		const lease = new AtCommandLease({
 			sender: this.#atSender,
-			allowlist: computeAtAllowlist(allCommands.map((t) => t.atCommand)),
+			allowlist: computeAtAllowlist(
+				allCommands.flatMap((t) =>
+					t.applyCommand === undefined ? [t.atCommand] : [t.atCommand, t.applyCommand],
+				),
+			),
 			timeoutMs: this.#watchdogMs,
 			onWatchdog: forceUninhibit,
 			...(this.#audit !== undefined ? { audit: this.#audit } : {}),
@@ -162,6 +168,11 @@ export class UsbModeTransition {
 			// AT `OK` is IGNORED for success — only the postcondition below decides.
 			steps.push('at-command');
 			await lease.run(transition.atCommand, { inhibitUid: request.inhibitUid });
+
+			if (transition.applyCommand !== undefined) {
+				steps.push('apply-command');
+				await lease.run(transition.applyCommand, { inhibitUid: request.inhibitUid });
+			}
 
 			steps.push('await-port-drop');
 			await this.#awaitPortDrop(request.cachedPhysicalUid);

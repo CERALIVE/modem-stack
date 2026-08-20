@@ -61,6 +61,18 @@ export const permittedTransitionSchema = z
 		to: mmMode,
 		/** The EXACT AT command that performs the switch (allowlisted at send time). */
 		atCommand: z.string().min(1),
+		/**
+		 * The EXACT AT command that COMMITS the switch on a SKU whose `atCommand` only
+		 * writes non-volatile configuration; omitted for a SKU that re-enumerates on
+		 * `atCommand` alone. Sent through the SAME allowlisted lease.
+		 *
+		 * Declaring it is a per-SKU hardware FACT, not a retry. Measured on the bench
+		 * RM530N-GL: `AT+QCFG="usbnet",<n>` answers `OK`, reads back the new value, and
+		 * leaves the device in the OLD composition for the whole port-drop budget — having
+		 * already committed to NV. Undeclared, such a SKU fails on a timeout AFTER it was
+		 * silently changed, then lands in the new composition at the next unrelated reboot.
+		 */
+		applyCommand: z.string().min(1).optional(),
 		/** The AT response expected on success (e.g. `OK`) — never proof on its own. */
 		expectedResponse: z.string().min(1),
 		/** Whether the control port is expected to drop after the command is written. */

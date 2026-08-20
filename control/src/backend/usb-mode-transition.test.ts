@@ -11,6 +11,7 @@
 import { describe, expect, test } from 'bun:test';
 import { epochMillis } from '../domain';
 import { connectionId, deviceIfname, type NetworkManagerPort, receipt } from '../ports';
+import type { CertifiedCatalog } from '../usb-mode';
 import type { UsbDeviceSnapshot } from './device-classifier';
 import { ModemActor } from './modem-actor';
 import type { TransitionInterlock, UsbModeTransitionRequest } from './transition-preconditions';
@@ -318,6 +319,175 @@ describe('UsbModeTransition — crash mid-transaction trips the watchdog', () =>
 		// The watchdog force-uninhibited the modem and released the interlock.
 		expect(outcome.steps).toContain('force-uninhibit');
 		expect(outcome.steps).toContain('release-interlock');
+		expect(log.calls).toContain('mm.uninhibit');
+	});
+});
+
+/**
+ * A LOCAL fixture SKU, deliberately not a shipped-catalog entry.
+ *
+ * What is under test here is the ENGINE's behaviour when a catalog entry declares an
+ * `applyCommand` — the send order, the allowlist, and the refusal — not whether any
+ * particular device is certified. Driving it through the shipped catalog would make this
+ * suite a certification claim, and would couple an engine test to a review decision.
+ */
+const NV_ONLY_SKU = {
+	vidPid: '2c7c:0801',
+	model: 'CERALIVE-NV-ONLY-TEST-SKU',
+	firmwarePrefix: 'NVONLYFW01',
+};
+
+/** The transition shape this engine behaviour exists for: the switch only writes NV. */
+const NV_ONLY_CATALOG: CertifiedCatalog = {
+	schemaVersion: 1,
+	entries: [
+		{
+			...NV_ONLY_SKU,
+			canonicalMode: 'qmi',
+			permittedTransitions: [
+				{
+					from: 'qmi',
+					to: 'mbim',
+					atCommand: 'AT+QCFG="usbnet",2',
+					applyCommand: 'AT+CFUN=1,1',
+					expectedResponse: 'OK',
+					expectsPortDrop: true,
+					expectedDescriptors: {
+						deviceClass: 0,
+						interfaces: [
+							{ interfaceClass: 0x02, interfaceSubClass: 0x0e, interfaceProtocol: 0x00 },
+							{ interfaceClass: 0x0a, interfaceSubClass: 0x00, interfaceProtocol: 0x02 },
+						],
+					},
+				},
+				{
+					from: 'mbim',
+					to: 'qmi',
+					atCommand: 'AT+QCFG="usbnet",0',
+					applyCommand: 'AT+CFUN=1,1',
+					expectedResponse: 'OK',
+					expectsPortDrop: true,
+					expectedDescriptors: {
+						deviceClass: 0,
+						interfaces: [
+							{ interfaceClass: 0xff, interfaceSubClass: 0xff, interfaceProtocol: 0xff },
+						],
+					},
+				},
+			],
+		},
+	],
+};
+
+/** Descriptors transcribed from the 2026-08-19 bench capture of `4-1.4.4` on usbnet=0. */
+const NV_ONLY_QMI: UsbDeviceSnapshot = {
+	vendorId: '2c7c',
+	productId: '0801',
+	bDeviceClass: 0,
+	physicalUid: CACHED_UID,
+	ifname: 'wwan2',
+	interfaces: [
+		{ interfaceClass: 0xff, interfaceSubClass: 0xff, interfaceProtocol: 0x30, driver: 'option' },
+		{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x40, driver: 'option' },
+		{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x00, driver: 'option' },
+		{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x00, driver: 'option' },
+		{ interfaceClass: 0xff, interfaceSubClass: 0xff, interfaceProtocol: 0xff, driver: 'qmi_wwan' },
+	],
+};
+
+/** From the same capture on usbnet=2 — the PID is UNCHANGED across the switch. */
+const NV_ONLY_MBIM: UsbDeviceSnapshot = {
+	...NV_ONLY_QMI,
+	ifname: 'wwan3',
+	interfaces: [
+		{ interfaceClass: 0xff, interfaceSubClass: 0xff, interfaceProtocol: 0x30, driver: 'option' },
+		{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x40, driver: 'option' },
+		{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x00, driver: 'option' },
+		{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x00, driver: 'option' },
+		{ interfaceClass: 0x02, interfaceSubClass: 0x0e, interfaceProtocol: 0x00, driver: 'cdc_mbim' },
+		{ interfaceClass: 0x0a, interfaceSubClass: 0x00, interfaceProtocol: 0x02, driver: 'cdc_mbim' },
+	],
+};
+
+function nvOnlyRequest(fromMode: 'qmi' | 'mbim', toMode: 'qmi' | 'mbim'): UsbModeTransitionRequest {
+	return makeRequest({ sku: NV_ONLY_SKU, fromMode, toMode, deviceIfname: deviceIfname('wwan2') });
+}
+
+describe('UsbModeTransition — a SKU whose AT command only writes NV also sends applyCommand', () => {
+	test('qmi→mbim sends the switch THEN the commit, in that order', async () => {
+		const log: SpyLog = { calls: [] };
+		const transition = makeTransition(log, {
+			catalog: NV_ONLY_CATALOG,
+			enumerate: scriptedEnumerate([[NV_ONLY_QMI], [], [NV_ONLY_MBIM]]),
+		});
+
+		const outcome = await transition.execute(nvOnlyRequest('qmi', 'mbim'));
+
+		expect(outcome.status).toBe('succeeded');
+		expect(log.calls.filter((c) => c.startsWith('at.send:'))).toEqual([
+			'at.send:AT+QCFG="usbnet",2',
+			'at.send:AT+CFUN=1,1',
+		]);
+		// The commit is its OWN step, so a transcript distinguishes it from a retry.
+		expect(outcome.steps.indexOf('apply-command')).toBeGreaterThan(
+			outcome.steps.indexOf('at-command'),
+		);
+		expect(outcome.steps.indexOf('await-port-drop')).toBeGreaterThan(
+			outcome.steps.indexOf('apply-command'),
+		);
+	});
+
+	test('mbim→qmi sends the reverse switch and the SAME commit', async () => {
+		const log: SpyLog = { calls: [] };
+		const transition = makeTransition(log, {
+			catalog: NV_ONLY_CATALOG,
+			enumerate: scriptedEnumerate([[NV_ONLY_MBIM], [], [NV_ONLY_QMI]]),
+		});
+
+		const outcome = await transition.execute(nvOnlyRequest('mbim', 'qmi'));
+
+		expect(outcome.status).toBe('succeeded');
+		expect(log.calls.filter((c) => c.startsWith('at.send:'))).toEqual([
+			'at.send:AT+QCFG="usbnet",0',
+			'at.send:AT+CFUN=1,1',
+		]);
+	});
+
+	test('a SKU that declares NO applyCommand still sends exactly one command', async () => {
+		const log: SpyLog = { calls: [] };
+		const transition = makeTransition(log);
+
+		const outcome = await transition.execute(makeRequest());
+
+		expect(outcome.status).toBe('succeeded');
+		expect(log.calls.filter((c) => c.startsWith('at.send:'))).toHaveLength(1);
+		expect(outcome.steps).not.toContain('apply-command');
+	});
+
+	test('a commit command that the AT layer REJECTS fails the transaction, never a silent skip', async () => {
+		const log: SpyLog = { calls: [] };
+		const rejectingSender: UsbModeTransitionDeps['atSender'] = {
+			send: (command) => {
+				log.calls.push(`at.send:${command}`);
+				return command === 'AT+CFUN=1,1'
+					? Promise.reject(new Error('commit refused by module'))
+					: Promise.resolve({ ok: true, raw: 'OK' });
+			},
+		};
+		const transition = makeTransition(log, {
+			atSender: rejectingSender,
+			catalog: NV_ONLY_CATALOG,
+			enumerate: scriptedEnumerate([[NV_ONLY_QMI], [], [NV_ONLY_MBIM]]),
+		});
+
+		const outcome = await transition.execute(nvOnlyRequest('qmi', 'mbim'));
+
+		expect(outcome.status).toBe('failed');
+		if (outcome.status === 'failed') {
+			expect(outcome.degraded).toBe(true);
+			expect(outcome.reason).toContain('commit refused by module');
+		}
+		expect(log.calls.some((c) => c.startsWith('nm.activate:'))).toBe(false);
 		expect(log.calls).toContain('mm.uninhibit');
 	});
 });
