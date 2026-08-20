@@ -810,27 +810,28 @@ a SKU that is not already in the catalog (`cli/src/certify/transition-evidence.t
 Stage 2 is only reachable for a SKU whose stage-1 entry is already merged. Both stages feed
 the same reviewed ingestion path: [`CATALOG-INGESTION.md`](CATALOG-INGESTION.md).
 
-### Blockers that make every RB-11…RB-15 row `[PARTIAL]` today
+### Status ledger that keeps every RB-11…RB-15 row `[PARTIAL]` today
 
 Originally verified on `ceralive2` (192.168.78.132) on 2026-08-16 and **re-verified on the
 same board on 2026-08-18** by a non-mutating capture pass against the SIMCom SIM7600G-H and
-the Fibocom FM350-GL. The re-run **cleared B1, downgraded B3, promoted B2 from a code read
-to a hardware-proven failure, and found two new blockers (B5, B6).** None is "not run yet";
-each is a named obligation with a code or packaging fix behind it.
+the Fibocom FM350-GL. That pass cleared B1, downgraded B3, proved B2 on hardware, and found
+B5/B6. B2, B5, and B6 were fixed in software on 2026-08-20 with realistic RM530N fixtures;
+the fixed build has **not** been rerun on the board, so this ledger does not claim hardware
+closure.
 
 | # | Blocker | State | Verified how | Consequence |
 |---|---------|-------|--------------|-------------|
 | **B1** | `usbutils` absent from the board and its apt archive | **CLEARED (2026-08-18)** | live `command -v` sweep: `/usr/bin/lsusb`, `/usr/bin/usb-devices` both present | `certify` now completes its base capture; two real `CERTIFY OK … synthetic=false` bundles were captured on 2026-08-18 |
-| **B2** | The production USB enumerator never populates `ifname` (`control/src/backend/usb-enumerator.ts`, `buildSnapshot`), but `certify` matches its target device **by** `ifname` (`cli/src/commands/certify.ts`) | **OPEN — now hardware-proven** | two live `certify` runs | the matched device is always `undefined`, so both real bundles came out with **no `sku` and empty `udevProperties`**; the ingestion seam correctly refuses them `sku-missing`, so **no bundle this pipeline produces can currently be promoted**. Pinned by `control/src/usb-mode/ingestion.hardware.test.ts` |
+| **B2** | Historical defect: the enumerator discarded the USB-device sysfs path while `certify` tried to match a USB device by `ifname` | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 live failure plus `usb-enumerator.test.ts` and realistic `usb-device-match.test.ts` regressions | snapshots now retain the udev `P:` path under `/sys`, and `certify` correlates MM `Device`/`Physdev` to the most-specific USB parent without `ifname`. A new real bundle must still prove populated `sku` and `udevProperties` |
 | **B3** | No AT transport | **PARTIALLY CLEARED (2026-08-18)** | live: `socat` **is** present at `/usr/bin/socat`; a query-only AT session over `/dev/ttyUSB2` (SIMCom) and `/dev/ttyUSB12` (FM350) succeeded | a **manual** AT session is now possible on the bench. The CLI half is unchanged: `benchAtSender` still rejects every send, so `certify --transition` still cannot execute an AT command. `picocom` / `minicom` remain absent; ModemManager's `--command` passthrough remains unavailable (MM is not run with `--debug`, so `mmcli --command` answers `Operation only allowed in debug mode`) |
 | **B4** | The shipped `certified-catalog.json` holds exactly one entry, `CERALIVE-SYNTHETIC-TEST-SKU` | OPEN | repo read | stage 2 is unreachable for every real SKU until that SKU's stage-1 entry is merged |
-| **B5** | The shared redactor does **not** mask `imei` / `equipment-identifier` / `device-identifier` (`control/src/redact.ts` `SENSITIVE_KEYS` covers ICCID / IMSI / EID / PIN / PUK / passwords only) | **OPEN — new** | inspected both real bundles | every real bundle's `modemManager` half carries the IMEI of **every** modem on the bench (`GetManagedObjects` is fleet-wide, not slot-scoped). A bundle therefore **must not be committed to this repo or pasted into a PR** as-is — which directly conflicts with the review workflow in [`CATALOG-INGESTION.md`](CATALOG-INGESTION.md). The `usb.lsusb` / `usb.usbDevices` halves are IMEI-free and safe to quote |
-| **B6** | `skuOf` (`cli/src/certify/transform.ts`) derives `firmwarePrefix` from udev `ID_REVISION`, which is the USB **bcdDevice** — not the modem firmware revision | **OPEN — new** | compared udev against `mmcli` and AT `AT+CGMR` for both units | for the bench SIMCom, `ID_REVISION` is `0318` while the firmware is `LE20B04SIM7600G22`; for the FM350, `0001` vs `81600.0000.00.19.17.10`. A catalog entry keyed on `ID_REVISION` would **not** be firmware-keyed, so it could not distinguish two firmware builds of one SKU. Pinned by `ingestion.hardware.test.ts` |
+| **B5** | Historical defect: the shared redactor omitted `imei` and `EquipmentIdentifier` spellings used by MM and `mmcli -K` | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 unsafe bundles plus shared-redactor and realistic bundle regressions | MM `EquipmentIdentifier`, bare/camel/separator IMEI keys, and dotted `equipment-identifier` / `imei` keyfile fields are masked while model/vendor/SKU facts remain visible. The destroyed pre-fix bundles remain unsafe and must not be restored |
+| **B6** | Historical defect: `skuOf` derived `firmwarePrefix` from udev `ID_REVISION`, the USB **bcdDevice** | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 udev/MM comparison plus an RM530N regression (`0504` versus `RM530NGLAAR05A01M4G`) | `captureBase` now derives the discriminator from MM `Modem.Revision` in the same managed-object snapshot used for target correlation. A new real bundle must still prove the value on hardware |
 
-**B2 and B6 gate stage 1. B3 and B4 additionally gate stage 2. B5 gates the review step for
-every stage.** A run that reports a `CERTIFY OK` line with `synthetic=true`, or with an empty
-`sku`, is **not** a passing RB-11…RB-15 — the gate is the `synthetic=false` line *and* a
-bundle whose `sku` is populated.
+**B2, B5, and B6 are no longer software blockers, but their post-fix board proof is still
+outstanding. B3 and B4 gate stage 2.** A run that reports a `CERTIFY OK` line with
+`synthetic=true`, with an empty `sku`, with a firmware prefix equal to USB `ID_REVISION`, or
+with a raw IMEI is **not** a passing RB-11…RB-15.
 
 > **Query-only AT sessions are safe; SET forms are not.** The 2026-08-18 pass established
 > that a read-only AT survey needs no ModemManager inhibit on this bench: MM held only the
@@ -883,7 +884,7 @@ schema-representable within-ModemManager mode switch.
 
 **Preconditions**
 
-- The shared contract above, including blockers **B1–B4**.
+- The shared status ledger above, including the outstanding post-fix stage-1 re-capture.
 - The Quectel enumerated and MM-managed. Live values on this bench (2026-08-16):
   USB `4-1.4.4`, VID:PID `2c7c:0801`, `ID_PATH=platform-xhci-hcd.0.auto-usb-0:1.4.4:1.4`,
   MM `/org/freedesktop/ModemManager1/Modem/2`, plugin `quectel`, drivers `qmi_wwan` +
@@ -944,11 +945,11 @@ grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=
   && echo "RB-11 PASS" || echo "RB-11 FAIL"
 ```
 
-The `vidPid` clause is not decoration: it is what fails when blocker **B2** is still live,
-because an unmatched device yields a bundle with no `sku` at all.
+The `vidPid` clause guards the historical B2 failure: an unmatched device yields a bundle
+with no `sku` at all.
 
-**Status:** `[PARTIAL]` — no capture. Blockers B1 (no `usbutils`) and B2 (no `ifname` on
-enumerated devices) both stop stage 1; B3 and B4 additionally stop stage 2.
+**Status:** `[PARTIAL]` — the pre-fix real capture was unpromotable (no `sku`, empty udev
+properties, raw IMEI). The fixed code has not been rerun on the board; B3 and B4 stop stage 2.
 
 **Evidence:** `test-results/modem-phase-b/08/quectel-rm530n-gl/{certify.txt,bundle.json,qmi-facts.txt,transition-candidate.txt}`
 
@@ -1023,8 +1024,8 @@ grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=
   && echo "RB-12 PASS" || echo "RB-12 FAIL"
 ```
 
-**Status:** `[PARTIAL]` — **fully** unrun, and unrunnable: no EM75xx exists on this bench, on
-top of blockers B1–B4. No capture directory is created; no value above was observed.
+**Status:** `[PARTIAL]` — **fully** unrun and unrunnable because no EM75xx exists on this
+bench. No capture directory is created; no value above was observed.
 
 **Evidence:** `test-results/modem-phase-b/08/sierra-em75xx/{certify.txt,bundle.json,fcc-locked-state.txt,fcc-policy.txt}`
 
@@ -1105,9 +1106,9 @@ grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=
 The raw-IP clause asserts the flag was **captured**, not that it holds a particular value —
 `N` is a legitimate observation and a legitimate finding. Recording it is the gate.
 
-**Status:** `[PARTIAL]` — no capture; blockers B1/B2 stop stage 1, and this unit has no SIM.
-The raw-IP flag value (`Y`) and the transport facts above are RB-9-class live observations
-already captured on 2026-08-16; they are **not** a certification bundle.
+**Status:** `[PARTIAL]` — the pre-fix real capture was unpromotable and the fixed code has not
+been rerun on the board; this unit also has no SIM. The raw-IP flag value (`Y`) and the
+transport facts above are RB-9-class live observations, not a certification bundle.
 
 **Evidence:** `test-results/modem-phase-b/08/simcom-sim7600g-h/{certify.txt,bundle.json,raw-ip-state.txt,rndis-observation.txt}`
 
