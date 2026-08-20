@@ -1,0 +1,15 @@
+# ZTE MF79U-class dongle — Zero-CD (USB mass storage) personality.
+#
+# ZERO-CD ONLY. This file exists to flip a mass-storage "driver CD" personality into the
+# unit's real modem/router composition. It carries NO runtime modem behaviour, no APN, no
+# bearer policy and no board-specific data — that is the whole reason a generic package may
+# own it. Anything board-gated stays with the image.
+#
+# Admin override tier: /etc/usb_modeswitch.d/19d2:1225 (an operator file there wins and is
+# never touched by this package).
+#
+# 19d2:1225 (mass storage)  ->  19d2:1405 (router/RNDIS composition)
+
+TargetVendor=0x19d2
+TargetProductList="1405,1403,1408,0016"
+StandardEject=1

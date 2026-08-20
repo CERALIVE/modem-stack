@@ -16,6 +16,7 @@
 import type { DesiredRadio } from '../domain';
 import { epochMillis } from '../domain';
 import type {
+	BandReadResult,
 	InhibitLease,
 	ModemManagerPort,
 	ModemRef,
@@ -41,6 +42,7 @@ import { type SignalCadence, SignalSetupManager } from './signal-setup';
 export interface MmDbusBackendOptions {
 	readonly transport: DbusTransport;
 	readonly destination?: string;
+	readonly actor?: ModemActor;
 	/** NM quiesce hook for disruptive mode/slot changes (A3.3 default: no-op). */
 	readonly quiesce?: QuiesceHook;
 	/** Signal.Setup reporting interval in seconds. */
@@ -64,7 +66,7 @@ export class MmDbusBackend implements ModemManagerPort {
 		this.#transport = options.transport;
 		this.#destination = options.destination ?? MM_BUS_NAME;
 		this.#now = options.now ?? Date.now;
-		const actor = new ModemActor(options.quiesce);
+		const actor = options.actor ?? new ModemActor(options.quiesce);
 		this.#signalSetup = new SignalSetupManager({
 			transport: this.#transport,
 			destination: this.#destination,
@@ -107,8 +109,20 @@ export class MmDbusBackend implements ModemManagerPort {
 		return this.#mutations.setRadioModes(modem, preference);
 	}
 
+	setModeCombination(modem: ModemRef, allowed: number, preferred: number): Promise<Receipt> {
+		return this.#mutations.setModeCombination(modem, allowed, preferred);
+	}
+
 	setPrimarySimSlot(modem: ModemRef, slotIndex: number): Promise<Receipt> {
 		return this.#mutations.setPrimarySimSlot(modem, slotIndex);
+	}
+
+	readBands(modem: ModemRef): Promise<BandReadResult> {
+		return this.#mutations.readBands(modem);
+	}
+
+	setCurrentBands(modem: ModemRef, bands: readonly string[]): Promise<Receipt> {
+		return this.#mutations.setCurrentBands(modem, bands);
 	}
 
 	sendPin(modem: ModemRef, pin: string): Promise<SimUnlockResult> {

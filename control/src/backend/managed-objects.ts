@@ -96,6 +96,19 @@ export function numberProp(props: DecodedProps | undefined, name: string): numbe
 	return typeof value === 'number' ? value : undefined;
 }
 
+/**
+ * A string-array (`as`) property, or `undefined` if absent / not an array. An
+ * EMPTY array answers `[]` — the device saying "none", a different fact from an
+ * absent property. Non-string members are dropped, never coerced.
+ */
+export function stringArrayProp(
+	props: DecodedProps | undefined,
+	name: string,
+): readonly string[] | undefined {
+	const value = propValue(props, name);
+	return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : undefined;
+}
+
 /** Resolve an object-path property (e.g. a modem's `Sim`) to that object's props. */
 export function followObjectPath(
 	tree: DecodedManagedObjects,

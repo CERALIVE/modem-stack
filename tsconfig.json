@@ -14,7 +14,30 @@
 		"noFallthroughCasesInSwitch": true,
 		"verbatimModuleSyntax": true,
 		"skipLibCheck": true,
-		"resolveJsonModule": true
+		"resolveJsonModule": true,
+
+		// The workspace develops against `control/src`, never against `control/dist`.
+		//
+		// `@ceralive/modem-control` publishes BUILT output, so its exports map points at
+		// `dist`. Left alone, the workspace `cli` would resolve the package through that
+		// map while `control/test-support` resolves the same modules relatively — two
+		// type identities for one module, which `Brand`'s `unique symbol` turns into hard
+		// errors the moment a branded value crosses between them. It would also mean the
+		// whole workspace could not typecheck or test until `dist` existed.
+		//
+		// These mappings are DEV-ONLY: they live in the repo's tsconfig, never in the
+		// published package, whose exports map still resolves to `dist` for consumers.
+		// The built artifact is proven separately by the standalone consumer fixtures in
+		// `control/fixtures/`, which install the real tarball and know nothing of this file.
+		"paths": {
+			"@ceralive/modem-control": ["./control/src/index.ts"],
+			"@ceralive/modem-control/transport": ["./control/src/transport/index.ts"],
+			"@ceralive/modem-control/domain": ["./control/src/domain/index.ts"],
+			"@ceralive/modem-control/providers": ["./control/src/providers/index.ts"],
+			"@ceralive/modem-control/capabilities": ["./control/src/capability/index.ts"],
+			"@ceralive/modem-control/hardware": ["./control/src/hardware/index.ts"],
+			"@ceralive/modem-control/testing": ["./control/src/testing/index.ts"]
+		}
 	},
-	"include": ["control/src", "control/test-support", "cli/src", "cli/smoke"]
+	"include": ["control/src", "control/scripts", "control/test-support", "cli/src", "cli/smoke"]
 }

@@ -24,6 +24,9 @@ export const MODEM_IFACE = 'org.freedesktop.ModemManager1.Modem';
 export const MODEM3GPP_IFACE = 'org.freedesktop.ModemManager1.Modem.Modem3gpp';
 export const SIMPLE_IFACE = 'org.freedesktop.ModemManager1.Modem.Simple';
 export const SIGNAL_IFACE = 'org.freedesktop.ModemManager1.Modem.Signal';
+export const LOCATION_IFACE = 'org.freedesktop.ModemManager1.Modem.Location';
+export const MESSAGING_IFACE = 'org.freedesktop.ModemManager1.Modem.Messaging';
+export const USSD_IFACE = 'org.freedesktop.ModemManager1.Modem.Modem3gpp.Ussd';
 export const SIM_IFACE = 'org.freedesktop.ModemManager1.Sim';
 export const BEARER_IFACE = 'org.freedesktop.ModemManager1.Bearer';
 
@@ -87,6 +90,8 @@ export interface ModemSpec {
 	readonly physdev?: string;
 	/** MMModemState (e.g. 8 registered, 11 connected). */
 	readonly state?: number;
+	/** MMModemStateFailedReason (`u`, e.g. 2 = SIM_MISSING). Absent unless set. */
+	readonly stateFailedReason?: number;
 	/** Signal quality percent (0-100) for the `(ub)` SignalQuality struct. */
 	readonly signalQuality?: number;
 	/** MMModem3gppRegistrationState (1 home, 5 roaming). */
@@ -101,6 +106,21 @@ export interface ModemSpec {
 	readonly unlockRequired?: number;
 	/** Remaining attempts per lock (`Modem.UnlockRetries`, `a(uu)`). */
 	readonly unlockRetries?: readonly (readonly [number, number])[];
+	readonly supportedModes?: readonly (readonly [number, number])[];
+	readonly currentModes?: readonly [number, number];
+	readonly supportedBands?: readonly number[];
+	readonly currentBands?: readonly number[];
+	readonly location?: {
+		readonly capabilities: number;
+		readonly enabled?: number;
+		readonly fix?: unknown;
+	};
+	readonly messaging?: boolean;
+	readonly ussd?: {
+		readonly state?: number;
+		readonly initiateReply?: string;
+		readonly respondReply?: string;
+	};
 }
 
 export const modemPath = (index: number): string => `${ROOT_PATH}/Modem/${index}`;
@@ -132,10 +152,19 @@ export function modemProps(spec: ModemSpec, shape: MmShape): readonly PropEntry[
 		['Bearers', ['ao', [bearerPath(modemBearerIndex(spec))]]],
 		['SupportedCapabilities', ['au', [4, 8]]],
 		['CurrentCapabilities', ['u', 4]],
-		['CurrentModes', ['(uu)', [7, 0]]],
+		['SupportedModes', ['a(uu)', (spec.supportedModes ?? [[7, 0]]).map((pair) => [...pair])]],
+		['CurrentModes', ['(uu)', [...(spec.currentModes ?? [7, 0])]]],
+		['SupportedBands', ['au', [...(spec.supportedBands ?? [])]]],
+		['CurrentBands', ['au', [...(spec.currentBands ?? [])]]],
 		['UnlockRequired', ['u', spec.unlockRequired ?? MM_LOCK_NONE]],
 		['UnlockRetries', ['a(uu)', (spec.unlockRetries ?? []).map(([lock, left]) => [lock, left])]],
 	];
+	// Absent unless the scenario sets it: an ABSENT failure reason is what a healthy
+	// modem reports, and the SIM-presence evidence rule turns on presence-vs-absence
+	// of this exact property.
+	if (spec.stateFailedReason !== undefined) {
+		props.push(['StateFailedReason', ['u', spec.stateFailedReason]]);
+	}
 	// `Physdev` (physical path) exists from 1.22+ — present on 1.22 and 1.24, absent on 1.20.
 	if (shape === '1.22' || shape === '1.24') {
 		props.push(['Physdev', ['s', spec.physdev ?? `/sys/devices/fake/usb${spec.index}`]]);
@@ -180,6 +209,17 @@ export function signalProps(): readonly PropEntry[] {
 	return [['Rate', ['u', 0]]];
 }
 
+export function locationProps(spec: ModemSpec): readonly PropEntry[] {
+	return [
+		['Capabilities', ['u', spec.location?.capabilities ?? 0]],
+		['Enabled', ['u', spec.location?.enabled ?? 0]],
+	];
+}
+
+export function ussdProps(spec: ModemSpec): readonly PropEntry[] {
+	return [['State', ['u', spec.ussd?.state ?? 1]]];
+}
+
 /** A bearer object's property set — observable, but every connect method throws. */
 export function bearerProps(): readonly PropEntry[] {
 	return [
@@ -199,6 +239,9 @@ export function modemObject(spec: ModemSpec, shape: MmShape): ManagedObject {
 	if (spec.hasSignal !== false) {
 		interfaces.push([SIGNAL_IFACE, signalProps()]);
 	}
+	if (spec.location !== undefined) interfaces.push([LOCATION_IFACE, locationProps(spec)]);
+	if (spec.messaging === true) interfaces.push([MESSAGING_IFACE, []]);
+	if (spec.ussd !== undefined) interfaces.push([USSD_IFACE, ussdProps(spec)]);
 	return [modemPath(spec.index), interfaces];
 }
 

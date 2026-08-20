@@ -179,3 +179,21 @@ describe('the shipped certified catalog', () => {
 		expect(entry).toBeUndefined();
 	});
 });
+
+describe('permittedTransition.applyCommand — optional, but never empty', () => {
+	test('a transition with NO applyCommand parses (the SKU re-enumerates on its own)', () => {
+		expect(certifiedCatalogSchema.safeParse(validCatalog()).success).toBe(true);
+	});
+
+	test('a declared applyCommand parses', () => {
+		const catalog = validCatalog();
+		firstTransition(catalog).applyCommand = 'AT+CFUN=1,1';
+		expect(certifiedCatalogSchema.safeParse(catalog).success).toBe(true);
+	});
+
+	test('an EMPTY applyCommand is refused — an unsendable command is not "no command"', () => {
+		const catalog = validCatalog();
+		firstTransition(catalog).applyCommand = '';
+		expect(certifiedCatalogSchema.safeParse(catalog).success).toBe(false);
+	});
+});

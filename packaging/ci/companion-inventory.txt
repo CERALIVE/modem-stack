@@ -1,0 +1,16 @@
+# companion-inventory.txt — the EXACT declared file inventory of ceralive-modem-support.
+#
+# `dpkg -L ceralive-modem-support` after a fresh install must list exactly these paths
+# (directories excluded; docs excluded — changelog/copyright are debhelper's, not ours).
+# The QA harness compares this list for EQUALITY, so an added, dropped or relocated asset
+# fails the gate naming itself rather than silently shipping.
+#
+# Each line is a packaged path. The destination of each is a per-asset decision documented
+# in debian/rules' installation table, not a blanket /usr/lib placement.
+/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile
+/usr/lib/systemd/system/ceralive-fcc-reconcile.service
+/usr/lib/udev/rules.d/60-ceralive-modem.rules
+/usr/share/ceralive-modem-support/legacy-etc-overrides.sha256
+/usr/share/ceralive-modem-support/legacy/60-ceralive-modem.rules.legacy-v1
+/usr/share/usb_modeswitch/12d1:1f01
+/usr/share/usb_modeswitch/19d2:1225

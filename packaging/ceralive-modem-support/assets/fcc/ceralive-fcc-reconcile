@@ -1,0 +1,152 @@
+#!/bin/sh
+# ceralive-fcc-reconcile — reconcile ModemManager's ACTIVE fcc-unlock.d directory
+# against the operator's persisted policy.
+#
+# CONTRACT (todo 33):
+#   * This package ships NO FCC-unlock scripts, active or otherwise. ModemManager's
+#     own AVAILABLE tier (/usr/share/ModemManager/fcc-unlock.available.d) is
+#     populated by ModemManager itself; a script becomes ACTIVE only when a link to
+#     it exists in one of the two ENABLED tiers the dispatcher consults, in order:
+#       1. ${sysconfdir}/ModemManager/fcc-unlock.d   (/etc/… — the ADMIN tier)
+#       2. ${libdir}/ModemManager/fcc-unlock.d       (the PACKAGE tier)
+#     This reconciler owns tier 1 and only tier 1. Creating a link there is an
+#     OPT-IN act; nothing in this package ever writes tier 2.
+#   * The opt-in lives in /data/ceralive/fcc-unlock-policy.json. /etc does NOT
+#     survive a RAUC slot swap and /data does, which is the whole reason this unit
+#     exists: the policy is the record, and the symlink is re-derived from it on
+#     every boot before ModemManager probes a radio.
+#   * An ABSENT policy — the state on generic Debian with no CeraLive partition
+#     layout — exits 0 and creates NO active links. That is the only safe default:
+#     an FCC-unlock script talks to a regulatory-locked radio, so "we could not read
+#     the policy" must never mean "enable it".
+#   * An UNPARSEABLE or malformed policy is treated exactly like an absent one: log,
+#     exit 0, activate nothing. Fail-safe, not fail-open.
+#   * The reconciler only ever creates, keeps or removes SYMLINKS whose target
+#     resolves under the available tier. A real file in the active directory is
+#     somebody else's property and is left strictly alone.
+#
+# Policy format (schema version 1):
+#   { "schemaVersion": 1, "unlock": { "2c7c:0801": true, "1199:9079": false } }
+#
+#   Keys are `<vid>:<pid>`, 4 lowercase hex digits each — the EXACT filename
+#   ModemManager's dispatcher looks for. mm-dispatcher-fcc-unlock.c builds it as
+#   `g_strdup_printf("%04x:%04x", vid, pid)` and consults NOTHING else, so a
+#   vendor-only key (`2c7c`) would name a file the dispatcher never opens. The
+#   available tier ships one real script per VENDOR plus a `<vid>:<pid>` symlink
+#   onto it for every model the vendor script covers; we link the model name.
+#
+#   A trailing `"savedAtMs": <n>` (and any other sibling key) is accepted and
+#   ignored — only the `"unlock"` object is read.
+#
+# Deliberately dependency-free: /bin/sh + coreutils only. The CeraLive production
+# image ships neither jq nor python3 (python3 is in the debug-only package delta),
+# so a JSON library dependency here would make the unit fail on exactly the images
+# it is for.
+#
+# Exit codes: 0 always, except for an internal error the operator must see.
+
+set -eu
+
+POLICY_FILE="${CERALIVE_FCC_POLICY_FILE:-/data/ceralive/fcc-unlock-policy.json}"
+AVAILABLE_DIR="${CERALIVE_FCC_AVAILABLE_DIR:-/usr/share/ModemManager/fcc-unlock.available.d}"
+ACTIVE_DIR="${CERALIVE_FCC_ACTIVE_DIR:-/etc/ModemManager/fcc-unlock.d}"
+
+log() { printf 'ceralive-fcc-reconcile: %s\n' "$*"; }
+
+# ── Parse the policy into a newline-separated list of ENABLED vid:pid keys ───
+# Rejects the whole document on any token that is not `"<4hex>:<4hex>": true|false`,
+# so a hand-mangled or truncated file can never be half-applied.
+parse_enabled() {
+    file="$1"
+    body="$(tr -d ' \t\n\r' <"$file")" || return 1
+    case "$body" in
+        *'"unlock":{'*) ;;
+        *) return 1 ;;
+    esac
+    inner="${body#*\"unlock\":\{}"
+    inner="${inner%%\}*}"
+    [ -n "$inner" ] || return 0
+
+    # Every comma-separated token must match the strict pair shape.
+    # The trailing newline is load-bearing: `read` returns non-zero on a final line
+    # with no newline, so `printf '%s'` here would silently skip a single-entry
+    # policy entirely — a one-model document would parse as "nothing enabled"
+    # instead of as itself.
+    hex='[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+    printf '%s\n' "$inner" | tr ',' '\n' | while IFS= read -r tok; do
+        [ -n "$tok" ] || continue
+        case "$tok" in
+            '"'$hex:$hex'":true')  printf '%s\n' "$(printf '%s' "$tok" | cut -c2-10)" ;;
+            '"'$hex:$hex'":false') ;;
+            *) printf 'MALFORMED\n' ;;
+        esac
+    done
+}
+
+# Remove symlinks we own (target resolves under the available tier) that the policy
+# no longer authorizes. Real files and foreign symlinks are never touched.
+prune_unauthorized() {
+    keep="$1"
+    [ -d "$ACTIVE_DIR" ] || return 0
+    for link in "$ACTIVE_DIR"/*; do
+        [ -L "$link" ] || continue
+        target="$(readlink -f "$link" 2>/dev/null || true)"
+        case "$target" in
+            "$AVAILABLE_DIR"/*) ;;
+            *) continue ;;
+        esac
+        name="$(basename "$link")"
+        wanted=0
+        for key in $keep; do
+            [ "$key" = "$name" ] && wanted=1
+        done
+        if [ "$wanted" -eq 0 ]; then
+            rm -f "$link"
+            log "deactivated FCC-unlock '$name' (not authorized by policy)"
+        fi
+    done
+}
+
+main() {
+    if [ ! -d "$AVAILABLE_DIR" ]; then
+        log "ModemManager available fcc-unlock dir '$AVAILABLE_DIR' absent — nothing to reconcile"
+        return 0
+    fi
+
+    if [ ! -e "$POLICY_FILE" ]; then
+        log "no policy at '$POLICY_FILE' — no active FCC-unlock scripts (this is the default and safe state)"
+        prune_unauthorized ""
+        return 0
+    fi
+
+    enabled="$(parse_enabled "$POLICY_FILE" 2>/dev/null || printf 'MALFORMED\n')"
+    case "$enabled" in
+        *MALFORMED*)
+            log "policy at '$POLICY_FILE' is malformed — treating as absent; no active FCC-unlock scripts"
+            prune_unauthorized ""
+            return 0
+            ;;
+    esac
+
+    mkdir -p "$ACTIVE_DIR"
+
+    for key in $enabled; do
+        src="$AVAILABLE_DIR/$key"
+        if [ ! -f "$src" ]; then
+            log "policy enables '$key' but ModemManager ships no '$src' — skipped"
+            continue
+        fi
+        dst="$ACTIVE_DIR/$key"
+        if [ -e "$dst" ] && [ ! -L "$dst" ]; then
+            log "'$dst' exists and is NOT a symlink — leaving it alone (not ours)"
+            continue
+        fi
+        ln -sfn "$src" "$dst"
+        log "activated FCC-unlock '$key' -> $src"
+    done
+
+    prune_unauthorized "$enabled"
+    return 0
+}
+
+main "$@"

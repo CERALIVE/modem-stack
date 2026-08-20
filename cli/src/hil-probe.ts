@@ -11,9 +11,10 @@
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { UsbDeviceSnapshot, UsbEnumerationPoller } from '@ceralive/modem-control';
+import type { UsbDeviceSnapshot } from '@ceralive/modem-control';
 import type { CommandRunner } from './certify/command-runner';
 import type { MmSlotRecord } from './commands/hil-cycle';
+import type { UsbEnumerationPoller } from './uhubctl-power-hook';
 
 /** Where the kernel exposes the USB device tree. */
 const SYSFS_USB_DEVICES = '/sys/bus/usb/devices';

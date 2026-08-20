@@ -121,7 +121,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "26"
 
       - name: Cache bun install store
         uses: actions/cache@v6
@@ -198,6 +198,22 @@ jobs:
       - name: Daemon smoke (amd64)
         run: packaging/ci/daemon-smoke.sh amd64
 
+      # The first-party companion is Architecture: all, so it is built EXACTLY ONCE into
+      # packaging/build/all/. Building it per-arch would produce two byte-different files
+      # claiming the same package/version key, which the APT publisher's immutable-key rule
+      # would (correctly) refuse. It shares nothing with the four zero-patch upstream sources.
+      - name: "Build the first-party companion .deb (Architecture: all)"
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.tag }}
+        run: packaging/ci/build-companion.sh
+
+      # Chroot-stage packaging contract for the companion: install / upgrade / downgrade /
+      # purge, /etc override precedence, the chroot guard, both /etc-override maintscript
+      # branches, the absent-policy no-op and single-owner. The consumer stage (udevadm test,
+      # usb_modeswitch -c, unit ordering against a real boot) is bench-gated, not run here.
+      - name: Companion package contract (clean Debian chroot)
+        run: packaging/ci/test-companion-chroot.sh
+
       # Manifest-complete per-release manifest: a checksum row for EVERY built deb (both arches),
       # runtime closure marked; fails closed if the produced set != the frozen all-artifact sets.
       - name: Generate release manifest
@@ -215,6 +231,7 @@ jobs:
             dist/release-manifest.txt
             packaging/build/amd64/*.deb
             packaging/build/arm64/*.deb
+            packaging/build/all/*.deb
           if-no-files-found: error
 
   publish-npm:
@@ -247,7 +264,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "26"
           registry-url: https://registry.npmjs.org/
 
       # OIDC trusted publishing needs npm >= 11.5.1 (house pattern pins 11.18.0).
@@ -425,9 +442,22 @@ jobs:
       # Assemble a FLAT dir of the raw assets (every deb + the manifest). Sanitization,
       # collision detection, immutable reconciliation, and the final manifest-complete verify
       # all live in the shared reconcile-release-assets.sh (never inlined here).
+      # DEDUP/COLLISION RULE for the flat assembly. `find ... -exec cp` flattens by basename,
+      # so two files sharing one basename would silently overwrite each other and the release
+      # would ship whichever landed last. The Architecture: all companion is built once, so a
+      # duplicate basename here means a real defect (a per-arch companion build, or a genuine
+      # name clash) — it is REFUSED rather than flattened. reconcile-release-assets.sh performs
+      # its own sanitized-name collision check downstream; this one catches the raw-name case
+      # before any sanitization can mask it.
       - name: Assemble flat assets dir (all debs + manifest)
         run: |
           mkdir -p staged-assets
+          dupes="$(find artifact -name '*.deb' -type f -printf '%f\n' | sort | uniq -d)"
+          if [ -n "$dupes" ]; then
+            echo "::error::duplicate .deb basenames in the artifact — refusing to flatten:"
+            printf '  %s\n' $dupes
+            exit 1
+          fi
           find artifact -name '*.deb' -type f -exec cp {} staged-assets/ \;
           manifest="$(find artifact -name release-manifest.txt -type f | head -n1)"
           if [ -z "$manifest" ]; then
@@ -442,3 +472,30 @@ jobs:
           RELEASE_TAG: ${{ github.event.inputs.tag }}
           GH_TOKEN: ${{ github.token }}
         run: bash packaging/ci/reconcile-release-assets.sh "$RELEASE_TAG" staged-assets
+
+      # RELEASE -> APT PUBLICATION TRIGGER (chosen path: automatic repository-dispatch).
+      # apt-worker's reindex-modem-closure.yml treats an `apt-modem-closure` dispatch as a LIVE
+      # publish, so this step runs LAST — only after the release assets have been reconciled and
+      # the manifest the publisher will fetch actually exists on the release. The documented
+      # fallback is a guarded manual run:
+      #   gh workflow run reindex-modem-closure.yml --repo CERALIVE/apt-worker \
+      #     -f tag=<tag> -f channel=stable -f dry_run=false -f live_confirm=I-VERIFIED-LIVE
+      #
+      # CERALIVE_DISPATCH_TOKEN must be a fine-grained PAT with **Contents: read/write** on
+      # CERALIVE/apt-worker. GitHub's repository-dispatch endpoint is gated on Contents, NOT on
+      # `Actions: write` — a token scoped the way the older runbooks describe returns 403.
+      - name: Dispatch the APT closure publish to apt-worker
+        env:
+          GH_TOKEN: ${{ secrets.CERALIVE_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::CERALIVE_DISPATCH_TOKEN is not provisioned on this repository — cannot trigger the APT publish."
+            echo "Provision it (fine-grained PAT, Contents: read/write on CERALIVE/apt-worker) or run the documented manual fallback."
+            exit 1
+          fi
+          gh api repos/CERALIVE/apt-worker/dispatches \
+            -f event_type=apt-modem-closure \
+            -F "client_payload[tag]=$RELEASE_TAG" \
+            -F 'client_payload[channel]=stable'
+          echo "dispatched apt-modem-closure for $RELEASE_TAG"

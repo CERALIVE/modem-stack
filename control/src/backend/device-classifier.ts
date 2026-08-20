@@ -35,6 +35,11 @@ export interface UsbDeviceSnapshot {
 	readonly productId: string;
 	readonly model?: string;
 	readonly firmwareRevision?: string;
+	readonly manufacturer?: string;
+	readonly product?: string;
+	readonly databaseVendor?: string;
+	readonly databaseModel?: string;
+	readonly serialNumber?: string;
 	/** The device-descriptor `bDeviceClass` byte (0 ⇒ class is per-interface). */
 	readonly bDeviceClass: number;
 	readonly interfaces: readonly UsbInterface[];
@@ -48,6 +53,7 @@ export interface UsbDeviceSnapshot {
 
 /** The four device classes. `pending-modeswitch` is distinct from `unmanaged`. */
 export type DeviceClass = 'mm-managed' | 'router-mode' | 'unmanaged' | 'pending-modeswitch';
+export type UsbNetClass = 'mm-managed' | 'router-cellular' | 'wired-ethernet' | 'unknown';
 
 /** A classification plus a human-readable reason (always populated). */
 export interface DeviceClassification {
@@ -55,8 +61,14 @@ export interface DeviceClassification {
 	readonly reason: string;
 }
 
+export interface UsbNetClassification {
+	readonly deviceClass: UsbNetClass;
+	readonly reason: string;
+}
+
 // USB-IF class / subclass / protocol codes used below.
 const CLASS_COMM = 0x02; // CDC communications (control interface)
+const CLASS_CDC_DATA = 0x0a;
 const CLASS_MASS_STORAGE = 0x08;
 const CLASS_WIRELESS = 0xe0; // wireless controller (RNDIS lives here)
 const CLASS_VENDOR = 0xff;
@@ -73,6 +85,21 @@ const AT_DRIVERS: ReadonlySet<string> = new Set(['option', 'qcserial', 'cdc_acm'
 const ECM_NCM_DRIVERS: ReadonlySet<string> = new Set(['cdc_ether', 'cdc_ncm']);
 const RNDIS_DRIVERS: ReadonlySet<string> = new Set(['rndis_host']);
 const STORAGE_DRIVERS: ReadonlySet<string> = new Set(['usb-storage', 'uas']);
+
+export const CELLULAR_USB_VENDOR_IDS: ReadonlyMap<string, string> = new Map([
+	['05c6', 'Qualcomm'],
+	['0af0', 'Option'],
+	['1199', 'Sierra Wireless'],
+	['12d1', 'Huawei'],
+	['1546', 'u-blox'],
+	['19d2', 'ZTE'],
+	['1bbb', 'TCL/Alcatel'],
+	['1c9e', 'Longcheer'],
+	['1e0e', 'SIMCom'],
+	['2c7c', 'Quectel'],
+	['2cb7', 'Fibocom'],
+	['413c', 'Dell'],
+]);
 
 function isMbimControl(i: UsbInterface): boolean {
 	return i.interfaceClass === CLASS_COMM && i.interfaceSubClass === SUB_MBIM;
@@ -197,6 +224,84 @@ export function classifyDevice(snapshot: UsbDeviceSnapshot): DeviceClassificatio
 	}
 
 	return { deviceClass: 'unmanaged', reason: unmanagedReason(snapshot, hasStorage) };
+}
+
+export function cellularVendorName(vendorId: string): string | undefined {
+	return CELLULAR_USB_VENDOR_IDS.get(vendorId.toLowerCase());
+}
+
+export function cellularEvidence(device: UsbDeviceSnapshot): string | undefined {
+	const vendor = cellularVendorName(device.vendorId);
+	if (vendor !== undefined)
+		return `USB vendor ${device.vendorId} is ${vendor}, a cellular-module vendor`;
+	const modeswitch = device.udevProperties?.ID_USB_MODESWITCH;
+	if (modeswitch !== undefined && modeswitch !== '' && modeswitch !== '0')
+		return 'device carries a usb_modeswitch trigger — a mode-switching dongle';
+	return device.interfaces.some(isMassStorage)
+		? 'device also presents a mass-storage installer interface — the ZeroCD personality of a router-mode dongle'
+		: undefined;
+}
+
+export function classifyUsbNetDevice(device: UsbDeviceSnapshot): UsbNetClassification {
+	const control = device.interfaces.find(
+		(i) => isMbimControl(i) || isQmiControl(i) || isAtControl(i),
+	);
+	if (control !== undefined)
+		return {
+			deviceClass: 'mm-managed',
+			reason: `recognized ${controlKind(control)} control interface — ModemManager-manageable`,
+		};
+	const tether = device.interfaces.find(
+		(i) => isRndis(i) || isEcmNcmData(i) || i.interfaceClass === CLASS_CDC_DATA,
+	);
+	if (tether !== undefined) {
+		const kind = isRndis(tether) ? 'RNDIS' : 'ECM/NCM';
+		const evidence = cellularEvidence(device);
+		return evidence === undefined
+			? {
+					deviceClass: 'wired-ethernet',
+					reason: `${kind} Ethernet tether with no modem control port and no cellular evidence — a USB network adapter`,
+				}
+			: {
+					deviceClass: 'router-cellular',
+					reason: `${kind} Ethernet tether with no modem control port; ${evidence}`,
+				};
+	}
+	return {
+		deviceClass: 'unknown',
+		reason: unmanagedReason(
+			device,
+			device.interfaces.some(isMassStorage) || device.bDeviceClass === CLASS_MASS_STORAGE,
+		),
+	};
+}
+
+export function publishesGenericIdentity(device: UsbDeviceSnapshot): boolean {
+	const manufacturer = device.manufacturer?.trim();
+	const product = device.product?.trim();
+	return Boolean(manufacturer && product && manufacturer.toLowerCase() === product.toLowerCase());
+}
+
+export function vendorLabel(device: UsbDeviceSnapshot): string {
+	const published = device.manufacturer?.trim();
+	if (published && !publishesGenericIdentity(device)) return published;
+	return cellularVendorName(device.vendorId) ?? device.databaseVendor?.trim() ?? device.vendorId;
+}
+
+export function modelLabel(device: UsbDeviceSnapshot): string {
+	const published = device.product?.trim();
+	if (published && !publishesGenericIdentity(device)) return published;
+	return device.databaseModel?.trim() ?? device.productId;
+}
+
+export function unitDiscriminator(device: UsbDeviceSnapshot): string | undefined {
+	const serial = device.serialNumber?.trim();
+	if (!serial) return undefined;
+	const folded = serial.toLowerCase();
+	return folded === device.manufacturer?.trim().toLowerCase() ||
+		folded === device.product?.trim().toLowerCase()
+		? undefined
+		: serial;
 }
 
 /**

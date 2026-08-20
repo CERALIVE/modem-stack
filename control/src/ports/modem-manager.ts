@@ -41,6 +41,24 @@ export type NetworkScanResult =
 	| { readonly ok: true; readonly networks: readonly ScannedNetwork[] }
 	| { readonly ok: false; readonly reason: string };
 
+/**
+ * What a modem says about its bands, right now.
+ *
+ * `supported` and `current` are BOTH required, and both may legitimately be
+ * empty: a modem that advertises no band control answers an empty `supported`,
+ * which is a real reading and the thing that keeps a control from being offered.
+ * A read that could not happen at all is the `ok: false` arm instead — the same
+ * "unknown is an answer about the READ" split the capability probes follow.
+ */
+export interface ModemBands {
+	readonly supported: readonly string[];
+	readonly current: readonly string[];
+}
+
+export type BandReadResult =
+	| { readonly ok: true; readonly bands: ModemBands }
+	| { readonly ok: false; readonly reason: string };
+
 /** A held inhibition over a modem, released via `uninhibit`. */
 export interface InhibitLease {
 	/** The equipment UID the inhibition is keyed to. */
@@ -54,9 +72,23 @@ export interface InhibitLease {
  * network scan, and inhibit / uninhibit. It owns NO bearer / connection lifecycle;
  * bearers and activation belong to `NetworkManagerPort`.
  */
-export interface ModemManagerPort extends ModemObservationPort {
+export interface ModemManagerInhibitPort {
+	/** Inhibit MM from managing a device (for a maintenance lease), keyed by UID. */
+	inhibit(uid: string): Promise<InhibitLease>;
+	/** Release a previously-taken inhibition. */
+	uninhibit(lease: InhibitLease): Promise<void>;
+}
+
+export interface ModemManagerPort extends ModemObservationPort, ModemManagerInhibitPort {
 	/** Set the modem's radio access-technology preference. */
 	setRadioModes(modem: ModemRef, preference: DesiredRadio): Promise<Receipt>;
+	/** Read the modem's supported and currently-selected bands. */
+	readBands(modem: ModemRef): Promise<BandReadResult>;
+	/**
+	 * Lock the modem to a band selection. Passing exactly `['any']` releases the
+	 * lock — ModemManager has no separate reset verb, so this IS the reset.
+	 */
+	setCurrentBands(modem: ModemRef, bands: readonly string[]): Promise<Receipt>;
 	/** Select the primary SIM slot (multi-slot modems only). */
 	setPrimarySimSlot(modem: ModemRef, slotIndex: number): Promise<Receipt>;
 	/** Submit a SIM PIN (exactly-once; read-before-submit is the adapter's job). */
@@ -65,8 +97,4 @@ export interface ModemManagerPort extends ModemObservationPort {
 	sendPuk(modem: ModemRef, puk: string, newPin: string): Promise<SimPukUnlockResult>;
 	/** Scan for visible networks (long-running). */
 	scanNetworks(modem: ModemRef): Promise<NetworkScanResult>;
-	/** Inhibit MM from managing a device (for a maintenance lease), keyed by UID. */
-	inhibit(uid: string): Promise<InhibitLease>;
-	/** Release a previously-taken inhibition. */
-	uninhibit(lease: InhibitLease): Promise<void>;
 }

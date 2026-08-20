@@ -5,8 +5,15 @@
 
 export * from './brand';
 export * from './errors';
+export * from './generation';
 export * from './guards';
 export * from './identity';
+export * from './mm-enums';
+export * from './modem-presentation';
+export * from './observation';
+export * from './operation';
+export * from './physical-identity';
 export * from './policy';
+export * from './shadow-divergence';
 export * from './snapshot';
 export * from './state';

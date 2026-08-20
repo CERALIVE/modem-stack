@@ -5,7 +5,12 @@ patches** (see `POLICY.md` at the repo root). Bench devices install the resultin
 from CI artifacts; nothing is published to `apt.ceralive.tv` yet — apt publication is part
 of Phase B adoption, authorized from the `v1.0.0` release tag forward (`POLICY.md` §4).
 
-## Sources (4)
+## Sources (4 upstream rebuilds + 1 first-party companion)
+
+The four sources below are **zero-patch upstream rebuilds** and stay that way. The
+first-party [`ceralive-modem-support`](ceralive-modem-support/) companion exists so they
+never have to absorb a CeraLive-specific asset — see [First-party companion](#first-party-companion-ceralive-modem-support).
+
 
 | Source | Provides |
 |--------|----------|
@@ -72,6 +77,103 @@ caller's `~/.gnupg`) and fails closed with a NAMED field on any drift. The curre
 ModemManager 1.24.2, libmbim 1.34.0, libqmi 1.38.0, libqrtr-glib 1.4.0 (salsa
 `debian/1.24.2-2`, `debian/1.34.0-1`, `debian/1.38.0-1`, `debian/1.4.0-1`).
 
+## First-party companion: `ceralive-modem-support`
+
+`ceralive-modem-support` is a **first-party, `Architecture: all`** package built from
+[`ceralive-modem-support/`](ceralive-modem-support/). It owns CeraLive's UNCONDITIONAL,
+generic, board-independent modem system assets. The four upstream sources remain
+byte-faithful zero-patch rebuilds; that is the entire reason this package exists.
+
+### Ownership boundary
+
+| Asset class | Owner | Why |
+|---|---|---|
+| CeraLive modem udev rules (identification/tagging only) | **companion** | generic; exact VID:PID + interface predicates, no device mutation |
+| usb-modeswitch Zero-CD device data | **companion** | generic; mass-storage → modem composition only |
+| FCC policy-reconciliation helper + its oneshot unit | **companion** | generic; reads an operator policy at runtime |
+| Active FCC-unlock scripts | **nobody (none ship)** | todo 33: authored scripts ship inactive and activate only via the opt-in symlink |
+| M.2 SIM quirk rows (`CERALIVE_BOARD_QUIRKS`) | **device image** | consumes build-time board facts a generic package cannot know |
+| Per-slot modem UID rules (`modem_ports.status=verified`) | **device image** | same — hardware-verified per-board `ID_PATH`s |
+| modem node permission/group policy | **device image** | a generic package must not mutate device nodes |
+
+### Installation table (per-asset, NOT a blanket `/usr/lib` rule)
+
+| Asset | Packaged destination | Admin override tier |
+|---|---|---|
+| udev rules | `/usr/lib/udev/rules.d/60-ceralive-modem.rules` | `/etc/udev/rules.d/` |
+| usb-modeswitch device data | `/usr/share/usb_modeswitch/<vid>:<pid>` | `/etc/usb_modeswitch.d/` |
+| FCC reconcile helper | `/usr/lib/ceralive-modem-support/ceralive-fcc-reconcile` | — |
+| FCC reconcile unit | `/usr/lib/systemd/system/ceralive-fcc-reconcile.service` | `/etc/systemd/system/` |
+| legacy-override hash list | `/usr/share/ceralive-modem-support/` | — |
+
+ModemManager 1.24 exposes **no vendor `conf.d` tier** — verified against the pinned Debian
+packaging, whose only `/etc` surface is the D-Bus policy file. Its documented per-device
+configuration mechanism is udev properties, so CeraLive's MM-directed configuration rides
+the packaged rules file rather than a conf snippet. ModemManager's own available FCC-unlock
+tier (`/usr/share/ModemManager/fcc-unlock.available.d`) receives nothing from this package.
+
+### The FCC-unlock tiers, and which one the reconciler owns
+
+ModemManager has THREE fcc-unlock directories and consults only two of them. Getting the
+pair wrong is silent — a link in the wrong place is simply never opened:
+
+| Tier | Path (Debian) | Who owns it |
+|---|---|---|
+| available | `/usr/share/ModemManager/fcc-unlock.available.d/` | ModemManager. Shipped-but-INERT; nothing here ever runs. |
+| enabled — **admin** | `/etc/ModemManager/fcc-unlock.d/` | **this package's reconciler**, and only from an operator opt-in |
+| enabled — package | `${libdir}/ModemManager/fcc-unlock.d/` (multiarch) | a distribution package. **CeraLive writes here never.** |
+
+`src/mm-dispatcher-fcc-unlock.c` builds ONE filename, `g_strdup_printf("%04x:%04x", vid,
+pid)`, and looks for it in the admin tier then the package tier. It opens no other name,
+so a vendor-only file (`2c7c`) is never a dispatcher target — it exists only as what the
+available tier's `<vid>:<pid>` symlinks point AT. The policy therefore keys on
+`<vid>:<pid>` too, and the reconciler refuses a vendor-only key.
+
+Full coverage matrix and the fleet verdicts: [`../docs/FCC-UNLOCK-COVERAGE.md`](../docs/FCC-UNLOCK-COVERAGE.md).
+
+### The udev basename hazard (read before renaming anything)
+
+udev resolves rules by **basename** across its search path, and a file in
+`/etc/udev/rules.d` **shadows** a same-basename file in `/usr/lib/udev/rules.d` completely.
+The shadowing file is owned by whatever wrote it, so `dpkg -S` on the packaged path keeps
+naming this package and **the substitution is undetectable from package metadata**.
+
+The device image owns `/etc/udev/rules.d/99-ceralive-hardware.rules` and
+`78-mm-ceralive-slot-uid.rules`. The companion therefore uses the distinct, modem-only
+basename `60-ceralive-modem.rules`, which no image-owned `/etc` file shares. The chroot QA
+asserts both halves of this: the `/etc` copy wins precedence, and `dpkg -S` cannot see it.
+
+The postinst removes a stale same-basename `/etc` override **only** when it is a KNOWN
+legacy generated payload — marker header **and** a sha256 listed in
+`debian/legacy-etc-overrides.sha256`. Anything unknown, or an operator's edit of a generated
+file, is **preserved**; Debian admin-override semantics stand. Both branches are tested.
+
+### Two-stage QA
+
+A clean chroot has no sysfs devices and no running daemons, so the contract is split:
+
+* **CHROOT stage** — [`ci/test-companion-chroot.sh`](ci/test-companion-chroot.sh), run in a
+  clean `debian:trixie` container: fresh install, declared-inventory equality, chroot guard
+  (with a non-vacuity leg), single-owner `dpkg -S`, `/etc` override precedence, both
+  override-removal branches, the FCC absent/enabled/opt-out/malformed/foreign-file matrix
+  (against the real `/etc` admin tier and `<vid>:<pid>` keys), upgrade with no
+  conffile prompt, downgrade, and purge-with-zero-leftovers.
+* **CONSUMER stage** — bench-board only: `udevadm test` against a real modem's sysfs path,
+  `usb_modeswitch -c`, `systemd-analyze verify` + `systemctl is-enabled` + a real boot's
+  journal proving `ceralive-migrate-data → fcc-reconcile → ModemManager`, and ModemManager's
+  effective configuration listing. Not runnable in a container and deliberately not faked.
+
+### Versioning
+
+The companion is a **native** package versioned with the repo's SemVer tag verbatim
+(`v1.1.0` → `1.1.0`). It does NOT use the upstream rebuilds' `<upstream>-<rev>~ceraliveX.Y.Z`
+form: there is no upstream version to order against, and a bare SemVer sorts correctly on
+its own. Non-tag builds are `0.0.0~dev`.
+
+It is built **exactly once** into `build/all/`. A per-arch build would produce two
+byte-different files under one package/version key, which the APT publisher's immutable-key
+rule refuses.
+
 ## Versioning
 
 `.deb` internal versions encode the repo's SemVer tag as `<upstream>-<rev>~ceralive<X.Y.Z>`
@@ -92,6 +194,10 @@ ModemManager 1.24.2, libmbim 1.34.0, libqmi 1.38.0, libqrtr-glib 1.4.0 (salsa
 | [`ci/contract.sh`](ci/contract.sh) | The packaging **PR lane** (bookworm container) entry point. Lightweight, needs no built `.deb`: asserts the scaffold, the tag-guard contract, that `dch` version-injection runs on a **copy** (the committed changelogs stay pristine), and the real `dpkg --compare-versions` tilde ordering. The deb-consuming contract lives in the two scripts below. |
 | [`ci/test-package-contract.sh`](ci/test-package-contract.sh) | The **package contract suite** over the A5.1 build output. `test-package-contract.sh <amd64\|arm64>` launches a `debian:bookworm` container and runs: metadata/arch over the 9-package closure (revision-exact — every deb's base must equal its `read-pin.sh` `<upstream>-<rev>`); clean-bookworm `apt-get install ./*.deb`; upgrade (stock 1.20.4 → ceralive set) with a **direction-aware** `--allow-downgrades` (computed per-package from real `dpkg --compare-versions` vs `madison` stock — post-bump every source sorts ABOVE stock, so the flag is dropped); rollback (`madison`-derived stock versions + `--allow-downgrades`); coherence (identical `~ceralive` suffix + mismatched-libqmi negative); real ordering proofs; tag-guard negative; piuparts-style install→purge leftover-scan. All version literals are `read-pin.sh`-derived. amd64 = full; arm64 defaults to `metadata` mode (`CONTRACT_MODE=full` forces the apt scenarios under QEMU). |
 | [`ci/daemon-smoke.sh`](ci/daemon-smoke.sh) | The **daemon smoke**. `daemon-smoke.sh <amd64\|arm64>` installs system D-Bus + polkit + NetworkManager (bookworm 1.42.4) and the built MM debs, starts a system `dbus-daemon` + `ModemManager`, then asserts: `busctl introspect` shows the root `ObjectManager`; `mmcli --version` matches the **pinned** ModemManager upstream version (via `ci/read-pin.sh`, never hardcoded); the udev-rules + FCC-unlock dispatcher dirs exist; and — **functional GI validation**, not presence-only (it installs `python3-gi valac build-essential pkg-config`) — the `gir1.2-modemmanager-1.0` typelib **loads** through PyGObject (`gi.require_version('ModemManager','1.0')` + a real `ModemManager.ModemCapability.LTE` enum read) and the `libmm-glib` `.vapi` **compiles+links** via `valac -C` → `cc $(pkg-config --cflags --libs mm-glib)` against a Vala program that genuinely calls a libmm-glib symbol (a broken/absent GI-1.74 adaptation fails closed here). amd64 by default. |
-| [`ci/generate-release-manifest.sh`](ci/generate-release-manifest.sh) | Emits the **manifest-complete per-release manifest** (`generate-release-manifest.sh <tag>` → `dist/release-manifest.txt`): a checksum row for **every** built deb (both arches), the 9-package runtime closure MARKED (`role=runtime`, the rest `role=aux`) — the `arch package source version role filename sha256` matrix Phase-B apt publication AND `create-release` asset reconciliation consume. Fails closed if the produced set (per source, per arch) is not exactly the frozen `[<source> all-artifact]` set in [`ci/expected-packages.txt`](ci/expected-packages.txt). dpkg-free (filename parse + `sha256sum`), so it runs anywhere. |
+| [`ci/build-companion.sh`](ci/build-companion.sh) | Builds the first-party `ceralive-modem-support` companion `.deb` — ONCE, `Architecture: all`, into `build/all/`. Container by default (`debian:bookworm`), `--native` for the local QA loop. `RELEASE_VERSION=vX.Y.Z` → Version `X.Y.Z` (unset → `0.0.0~dev`), injected into a COPY of the changelog. Fails closed if the produced deb's `Architecture` is not `all` or its `Version` is not the requested one. |
+| [`ci/test-fcc-reconcile.sh`](ci/test-fcc-reconcile.sh) | The FCC reconciler's **behaviour** contract, runnable on any host with no container and no root: every path is redirected into a scratch tree via `CERALIVE_FCC_{POLICY_FILE,AVAILABLE_DIR,ACTIVE_DIR}`. Covers absent/malformed/opt-out/idempotence, the one-model policy that must not parse as empty, the refused vendor-only key, an enabled model MM ships no script for, and both foreign-entry cases (a real file and a symlink pointing outside the available tier). Complements — never replaces — the chroot contract, which proves the same logic from the PACKAGED location after a real `dpkg` install. |
+| [`ci/test-companion-chroot.sh`](ci/test-companion-chroot.sh) | The companion's **CHROOT-stage** contract in a clean `debian:trixie` container: install / declared-inventory equality / chroot guard (+ non-vacuity) / single-owner `dpkg -S` / `/etc` override precedence / both override-removal branches / FCC absent-enabled-malformed matrix / upgrade with no conffile prompt / downgrade / purge with zero leftovers. Builds 0.9.0 and 1.1.0 so the upgrade and downgrade legs exercise real dpkg. The consumer stage is bench-gated. |
+| [`ci/companion-inventory.txt`](ci/companion-inventory.txt) | The companion's frozen declared file inventory, compared for EQUALITY by the chroot QA — an added, dropped or relocated asset fails the gate naming itself. |
+| [`ci/generate-release-manifest.sh`](ci/generate-release-manifest.sh) | Emits the **manifest-complete per-release manifest** (`generate-release-manifest.sh <tag>` → `dist/release-manifest.txt`): a checksum row for **every** built deb (both arches), the 9-package runtime closure MARKED (`role=runtime`, the rest `role=aux`) — the `build_arch package source version role filename sha256` matrix Phase-B apt publication AND `create-release` asset reconciliation consume. Emits **`closure_version: 2`** — the versioned contract apt-worker validates against — which adds the `Architecture: all` companion as ONE row with `build_arch` `all`, alongside the unchanged 9 × 2 arch-dependent rows. Build architecture and index membership are separate: `all` enters EVERY index arch, anything else its own. Per-source equality is scoped by `[arch-all sources]` so `build/all` is checked against the companion only and `build/<arch>` against the four upstream sources only. Fails closed on any set drift. dpkg-free (filename parse + `sha256sum`), so it runs anywhere. |
 | [`ci/resolve-tag.sh`](ci/resolve-tag.sh) | The **shared tag → peeled-commit-SHA resolver** used by `release.yml`. `resolve-tag.sh <repo-url> <tag>` asks the remote (`git ls-remote`, no clone) for both `refs/tags/<tag>` and `refs/tags/<tag>^{}`, prefers the **peeled** commit SHA (an annotated tag otherwise resolves to its tag object), prints it, and fails closed if the tag is absent or ambiguous. ONE script, called from tag-guard (pin every checkout), publish-npm (last-instant pre-publish TOCTOU re-check), and create-release (pre-create re-check) — no divergent copies. A caller detects a moved tag by comparing the output against the pinned SHA. |
 | [`ci/reconcile-release-assets.sh`](ci/reconcile-release-assets.sh) | The **immutable, manifest-complete release-asset reconciler** used by `release.yml`'s `create-release`. `reconcile-release-assets.sh <tag> <assets-dir>` takes a flat dir of the raw built debs + the manifest and: verifies the deb set equals the manifest sha256-exactly (missing/extra/corrupt ⇒ fail closed); stages each asset under its **own sanitized basename** (`~` → `.`, never relying on GitHub's upload mapping) and rejects any name **collision**; creates the release if absent; then for each staged asset uploads it if MISSING or integrity-compares (download + sha256) if it already EXISTS — matching ⇒ skip (idempotent), differing ⇒ fail closed (published assets are never overwritten); and finally verifies the live asset set equals the staged set. `RECONCILE_RELEASE_DIR=<dir>` selects a local mock backend for standalone testing. |

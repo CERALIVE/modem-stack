@@ -7,9 +7,11 @@
 // NOT quiesce — they don't touch the bearer. NONE of these methods can reach a bearer
 // or connect verb: the port has none, and the fake's tripwire proves it at test time.
 
+import { decodeBandList, encodeBandList, isResetSelection } from '../band';
 import type { DesiredRadio, RadioAccessTechnology } from '../domain';
 import { epochMillis } from '../domain';
 import type {
+	BandReadResult,
 	InhibitLease,
 	ModemRef,
 	NetworkScanResult,
@@ -100,6 +102,95 @@ export class MmMutations {
 				return receipt('radio', 'applied', 'radio mode preference applied');
 			} catch (error) {
 				return receipt('radio', 'failed', `SetCurrentModes failed: ${describe(error)}`);
+			}
+		});
+	}
+
+	/**
+	 * `SetCurrentModes` over the RAW `(uu)` masks the modem itself advertised.
+	 *
+	 * `setRadioModes` above speaks the reconciler's vocabulary — an ordered RAT
+	 * preference — and structurally cannot express `MM_MODEM_MODE_NONE`: its preferred
+	 * mask is derived from `preferenceOrdered[0]`, so "allow this set and prefer
+	 * nothing within it" has no spelling. That is the combination the bench FM350-GL
+	 * actually advertises, so a caller selecting an advertised combination verbatim
+	 * needs this entry point. It quiesces for the same reason `setRadioModes` does: a
+	 * mode change re-registers the radio and drops the bearer underneath NM.
+	 *
+	 * An `allowed` mask of 0 is refused — that is not a selection, it is a radio with
+	 * nothing switched on — while a `preferred` mask of 0 is passed through untouched.
+	 */
+	setModeCombination(modem: ModemRef, allowed: number, preferred: number): Promise<Receipt> {
+		if (allowed === 0) {
+			return Promise.resolve(receipt('radio', 'failed', 'no radio modes were requested'));
+		}
+		return this.#actor.runQuiesced({ stableKey: this.#resolveStableKey(modem) }, async () => {
+			try {
+				await this.#transport.callMethod({
+					destination: this.#destination,
+					path: modem,
+					interface: MODEM_IFACE,
+					member: 'SetCurrentModes',
+					signature: '(uu)',
+					args: [[allowed, preferred]],
+				});
+				return receipt('radio', 'applied', 'radio mode combination applied');
+			} catch (error) {
+				return receipt('radio', 'failed', `SetCurrentModes failed: ${describe(error)}`);
+			}
+		});
+	}
+
+	async readBands(modem: ModemRef): Promise<BandReadResult> {
+		try {
+			const tree = await fetchManagedObjects(this.#transport, this.#destination);
+			const props = findInterface(tree, modem, MODEM_IFACE);
+			if (props === undefined) {
+				return { ok: false, reason: 'the modem exports no Modem interface' };
+			}
+			return {
+				ok: true,
+				bands: {
+					supported: decodeBandList(propValue(props, 'SupportedBands')),
+					current: decodeBandList(propValue(props, 'CurrentBands')),
+				},
+			};
+		} catch (error) {
+			return { ok: false, reason: `reading bands failed: ${describe(error)}` };
+		}
+	}
+
+	// Quiesced like `setRadioModes`, and for the same reason: a band change
+	// re-registers the radio, so NM must stand down before the bearer drops
+	// underneath it rather than after.
+	setCurrentBands(modem: ModemRef, bands: readonly string[]): Promise<Receipt> {
+		if (bands.length === 0) {
+			return Promise.resolve(receipt('band', 'failed', 'no bands were requested'));
+		}
+		const encoded = encodeBandList(bands);
+		if (!encoded.ok) {
+			return Promise.resolve(
+				receipt('band', 'unsupported', `this build does not know the band "${encoded.unknown}"`),
+			);
+		}
+		const values = encoded.values;
+		return this.#actor.runQuiesced({ stableKey: this.#resolveStableKey(modem) }, async () => {
+			try {
+				await this.#transport.callMethod({
+					destination: this.#destination,
+					path: modem,
+					interface: MODEM_IFACE,
+					member: 'SetCurrentBands',
+					signature: 'au',
+					args: [values],
+				});
+				return receipt(
+					'band',
+					'applied',
+					isResetSelection(bands) ? 'band lock released' : `bands set to ${bands.join(', ')}`,
+				);
+			} catch (error) {
+				return receipt('band', 'failed', `SetCurrentBands failed: ${describe(error)}`);
 			}
 		});
 	}

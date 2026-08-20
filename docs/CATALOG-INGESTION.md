@@ -225,3 +225,25 @@ const comment = renderPromotionReview({
 
 Post `comment` on the PR that proposes the catalog change. A refused promotion still renders
 a comment — a silently-absent comment is indistinguishable from a forgotten run.
+
+---
+
+## Bench reality, 2026-08-18 — this path does not yet reach the catalog
+
+A non-mutating capture pass against the SIMCom SIM7600G-H and the carrier-mounted Fibocom
+FM350-GL ([`COMPOSITION-EVIDENCE.md`](COMPOSITION-EVIDENCE.md)) ran the real
+`modem-control certify` on real hardware. Both runs printed a valid
+`CERTIFY OK … synthetic=false` line, and **neither bundle was promotable**. Three blockers
+sit between `certify` and the seam above; all three are recorded in [`BENCH.md`](BENCH.md)
+and the first two are pinned by
+[`../control/src/usb-mode/ingestion.hardware.test.ts`](../control/src/usb-mode/ingestion.hardware.test.ts):
+
+| Blocker | Effect on this document's flow |
+|---|---|
+| **B2** — `certify` matches its USB device by `ifname`, which `parseUdevDatabase` never populates | the bundle arrives with **no `sku`** and **empty `udevProperties`**, so `buildCatalogEntryCandidate` and `buildClassifierFixture` both refuse `sku-missing`. The refusal is correct; the capture is what is broken |
+| **B5** — the shared redactor masks ICCID / IMSI / EID but **not** `imei` / `equipment-identifier` | a real bundle's `modemManager` half carries the IMEI of every modem on the bench, because `GetManagedObjects` is fleet-wide. **"Post `comment` on the PR" is unsafe for a real bundle today**, and a real bundle must not be committed as a fixture. The `usb.lsusb` / `usb.usbDevices` halves are IMEI-free and safe to quote |
+| **B6** — `skuOf` reads `firmwarePrefix` from udev `ID_REVISION` (the USB `bcdDevice`) | a promoted entry would be keyed on `0318` / `0001` rather than on `LE20B04SIM7600G22` / `81600.0000.00.19.17.10`, so it could not distinguish two firmware builds of one SKU — defeating the point of a firmware-keyed catalog |
+
+None of these is a flaw in the seam itself: the refusals above are exactly the typed,
+loud behaviour this document promises. They are defects in the **capture** step, and until
+they are fixed no SKU can reach `certified-catalog.json` from bench evidence.

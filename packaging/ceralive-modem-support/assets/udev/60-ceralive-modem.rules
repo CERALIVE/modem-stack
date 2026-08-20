@@ -1,0 +1,98 @@
+# 60-ceralive-modem.rules — CeraLive modem IDENTIFICATION rules.
+#
+# OWNED BY: the first-party `ceralive-modem-support` package.
+#
+# BASENAME CONTRACT (load-bearing — read before renaming anything here):
+#   udev resolves rules by BASENAME across its directory search path, and a file in
+#   /etc/udev/rules.d SHADOWS a same-basename file in /usr/lib/udev/rules.d completely.
+#   The shadowing file is still owned by whatever wrote it, so `dpkg -S` on the packaged
+#   path keeps naming this package and the substitution is invisible to package tooling.
+#   The device image separately owns /etc/udev/rules.d/99-ceralive-hardware.rules and
+#   /etc/udev/rules.d/78-mm-ceralive-slot-uid.rules. This file therefore uses a DISTINCT,
+#   MODEM-ONLY basename that no image-owned /etc file shares. Never rename this file to
+#   an image-owned basename, and never add an /etc copy of it from this package.
+#
+# SCOPE (identification/tagging ONLY):
+#   Every rule below assigns ENV{} properties and nothing else. There is deliberately no
+#   RUN+=, no MODE=, no GROUP=, no OWNER=, no SYMLINK+= and no ATTR{}= write anywhere in
+#   this file — a udev rule that MUTATES a device is the image's business (or a service's),
+#   never a generic package's. Permission/group policy for modem nodes stays image-owned.
+#
+# PREDICATE DISCIPLINE:
+#   Device-level rules match an EXACT idVendor + idProduct pair. There is no bare
+#   vendor-wide match (ATTR{idVendor}=="12d1" alone would claim every Huawei device on the
+#   bus, cameras and dongled storage included). Interface-level rules additionally pin
+#   bInterfaceClass/bInterfaceSubClass so a non-modem interface of a matched composition
+#   is not tagged as one.
+#
+# Properties published (consumed by CeraLive userspace, never by udev itself):
+#   ID_CERALIVE_MODEM=1                — this device is a CeraLive-recognised WWAN unit
+#   ID_CERALIVE_MODEM_CLASS=<class>    — cellular | router | zerocd
+#   ID_CERALIVE_MODEM_SKU=<sku>        — stable, human-readable SKU token
+#
+# `zerocd` marks a mass-storage "Zero-CD" personality that usb-modeswitch is expected to
+# flip into a modem composition; see /usr/share/usb_modeswitch/ in this package.
+
+ACTION!="add|bind|change", GOTO="ceralive_modem_end"
+SUBSYSTEM!="usb", GOTO="ceralive_modem_iface"
+
+# ── Cellular modems (native modem compositions) ──────────────────────────────
+# Quectel RM530N-GL (5G, QMI/MBIM)
+ATTR{idVendor}=="2c7c", ATTR{idProduct}=="0801", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="cellular", ENV{ID_CERALIVE_MODEM_SKU}="quectel-rm530n-gl"
+
+# SIMCom SIM7600G-H R2 (LTE Cat-4, QMI)
+ATTR{idVendor}=="1e0e", ATTR{idProduct}=="9001", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="cellular", ENV{ID_CERALIVE_MODEM_SKU}="simcom-sim7600g-h"
+
+# Qualcomm-reference dual-personality stick, QMI personality (qmi_wwan).
+# Its sibling 05c6:9024 personality is RNDIS/router and is tagged `router` below —
+# the two are the SAME physical unit under one USB serial, so both are listed.
+ATTR{idVendor}=="05c6", ATTR{idProduct}=="9091", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="cellular", ENV{ID_CERALIVE_MODEM_SKU}="qualcomm-9091"
+
+# ── Router-class units (own IP stack behind an RNDIS/ECM netdev) ─────────────
+# Huawei HiLink
+ATTR{idVendor}=="12d1", ATTR{idProduct}=="14dc", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="router", ENV{ID_CERALIVE_MODEM_SKU}="huawei-hilink"
+
+# ZTE MF79U (post-modeswitch router personality)
+ATTR{idVendor}=="19d2", ATTR{idProduct}=="1405", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="router", ENV{ID_CERALIVE_MODEM_SKU}="zte-mf79u"
+
+# Qualcomm-reference dual-personality stick, RNDIS/router personality.
+ATTR{idVendor}=="05c6", ATTR{idProduct}=="9024", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="router", ENV{ID_CERALIVE_MODEM_SKU}="qualcomm-9024"
+
+# ── Zero-CD (mass-storage) personalities awaiting usb-modeswitch ─────────────
+ATTR{idVendor}=="19d2", ATTR{idProduct}=="1225", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="zerocd", ENV{ID_CERALIVE_MODEM_SKU}="zte-mf79u"
+
+ATTR{idVendor}=="12d1", ATTR{idProduct}=="1f01", \
+  ENV{ID_CERALIVE_MODEM}="1", ENV{ID_CERALIVE_MODEM_CLASS}="zerocd", ENV{ID_CERALIVE_MODEM_SKU}="huawei-hilink"
+
+LABEL="ceralive_modem_iface"
+
+# ── Interface-level tagging ──────────────────────────────────────────────────
+# CDC (0x02/0x0e vendor-specific WWAN control) interfaces of the SKUs above only.
+# The idVendor/idProduct pair is re-asserted at interface level so a matched
+# composition's audio/storage/HID interfaces are never tagged as modem control.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", \
+  ATTRS{idVendor}=="2c7c", ATTRS{idProduct}=="0801", \
+  ATTR{bInterfaceClass}=="ff", ATTR{bInterfaceSubClass}=="ff", \
+  ENV{ID_CERALIVE_MODEM_IFACE}="control"
+
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", \
+  ATTRS{idVendor}=="1e0e", ATTRS{idProduct}=="9001", \
+  ATTR{bInterfaceClass}=="ff", ATTR{bInterfaceSubClass}=="ff", \
+  ENV{ID_CERALIVE_MODEM_IFACE}="control"
+
+# WWAN control channel character devices belonging to a tagged parent.
+SUBSYSTEM=="usbmisc", KERNEL=="cdc-wdm[0-9]*", ENV{ID_CERALIVE_MODEM}=="1", \
+  ENV{ID_CERALIVE_MODEM_PORT}="wdm"
+
+# WWAN netdevs belonging to a tagged parent.
+SUBSYSTEM=="net", ENV{ID_CERALIVE_MODEM}=="1", \
+  ENV{ID_CERALIVE_MODEM_PORT}="net"
+
+LABEL="ceralive_modem_end"

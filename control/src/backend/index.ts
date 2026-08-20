@@ -29,17 +29,29 @@ export {
 	MM_MANAGER_IFACE,
 	MM_ROOT_PATH,
 	MODEM_IFACE,
+	MODEM_LOCATION_IFACE,
 	MODEM3GPP_IFACE,
+	MODEM3GPP_USSD_IFACE,
 	SIM_IFACE,
 } from './constants';
 export {
+	CELLULAR_USB_VENDOR_IDS,
+	cellularEvidence,
+	cellularVendorName,
 	classifyDevice,
+	classifyUsbNetDevice,
 	type DeviceClass,
 	type DeviceClassification,
 	descriptorsMatch,
 	detectUsbMode,
+	modelLabel,
+	publishesGenericIdentity,
 	type UsbDeviceSnapshot,
 	type UsbInterface,
+	type UsbNetClass,
+	type UsbNetClassification,
+	unitDiscriminator,
+	vendorLabel,
 } from './device-classifier';
 export {
 	buildEnrichment,
@@ -102,6 +114,12 @@ export {
 	MmDbusBackend,
 	type MmDbusBackendOptions,
 } from './mm-backend';
+export {
+	decodeLocationSources,
+	encodeLocationSources,
+	MmLocation,
+	type MmLocationDeps,
+} from './mm-location';
 export { MmMutations, type MmMutationsDeps } from './mm-mutations';
 export {
 	ModemActor,
@@ -210,21 +228,6 @@ export {
 	type UsbModeTransitionOutcome,
 	type UsbModeTransitionRequest,
 } from './transition-preconditions';
-export {
-	createUhubctlPowerHook,
-	parseUhubctlPortMap,
-	readUhubctlPortMap,
-	SpawnUhubctlRunner,
-	type UhubctlPortMap,
-	type UhubctlPortMapping,
-	type UhubctlPowerHookDeps,
-	type UhubctlResult,
-	type UhubctlRunner,
-	type UsbEnumerationPoller,
-	uhubctlCycleArgv,
-	uhubctlPortMappingSchema,
-	uhubctlPortMapSchema,
-} from './uhubctl-power-hook';
 export * from './usage';
 export {
 	createUsbEnumerator,

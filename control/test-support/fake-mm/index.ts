@@ -9,8 +9,10 @@ export {
 	bearerPath,
 	type EncodeVariant,
 	type InterfaceEntry,
+	LOCATION_IFACE,
 	type ManagedObject,
 	type ManagedObjects,
+	MESSAGING_IFACE,
 	MM_LOCK_NONE,
 	MM_LOCK_SIM_PIN,
 	MM_LOCK_SIM_PUK,
@@ -29,11 +31,13 @@ export {
 	SIMPLE_IFACE,
 	type SimSpec,
 	simPath,
+	USSD_IFACE,
 } from './object-model';
 export type { PreviousEpoch } from './previous-epoch';
 export {
 	FakeModemManager,
 	type FakeModemManagerOptions,
+	type LocationSetupCall,
 	type SignalSetupCall,
 	TRIPWIRE_ERROR,
 } from './service';

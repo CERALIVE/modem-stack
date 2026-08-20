@@ -97,3 +97,25 @@ libqrtr-glib0
 libqrtr-glib-dev
 gir1.2-qrtr-1.0
 libqrtr-glib0-dbgsym
+
+# ── FIRST-PARTY COMPANION (Architecture: all) ────────────────────────────────
+# `ceralive-modem-support` is NOT an upstream rebuild. It is the first-party companion that
+# owns CeraLive's generic modem system assets so the four zero-patch sources above never have
+# to absorb one. It is built ONCE (packaging/ci/build-companion.sh -> packaging/build/all/)
+# and is a single immutable release asset with TWO index memberships — see closure_version 2
+# in generate-release-manifest.sh.
+#
+# `[arch-all sources]` names every source whose artifacts are Architecture: all. The manifest
+# generator uses it to scope its per-source EQUALITY check to the right build directory: an
+# arch-all source is asserted only against build/all, and the four arch-dependent sources only
+# against build/<arch>. Without that scoping, build/all would be required to contain
+# modemmanager and every per-arch dir would be required to contain the companion.
+
+[arch-all sources]
+ceralive-modem-support
+
+[ceralive-modem-support declared]
+ceralive-modem-support
+
+[ceralive-modem-support all-artifact]   # no -dbgsym: the package ships no ELF at all
+ceralive-modem-support

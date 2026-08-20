@@ -9,6 +9,23 @@
 # dpkg-free: it parses each `<package>_<version>_<arch>.deb` filename and sha256sums the file,
 # so it runs identically on a CI runner, a bench box, or this dev host.
 #
+# CLOSURE VERSION 2 — the versioned contract apt-worker's publisher validates against.
+#   v1 (legacy, still valid): 9 arch-dependent runtime packages x 2 arches = 18 runtime rows.
+#   v2 (this):                the same 9 x 2, PLUS the first-party `Architecture: all`
+#                             companion `ceralive-modem-support`, emitted as ONE row with
+#                             arch column `all`.
+#
+#   BUILD ARCHITECTURE vs INDEX MEMBERSHIP are different questions and the manifest now says
+#   so. Column 1 is the BUILD architecture of the artifact (`arm64`, `amd64`, or `all`).
+#   Index membership is DERIVED from it: `all` enters BOTH per-arch APT indexes, anything
+#   else enters its own. That is why the companion is ONE immutable release asset with TWO
+#   index memberships rather than two builds — two builds would produce two byte-different
+#   files claiming the same package/version key and break the publisher's immutable-key rule.
+#
+#   The header therefore carries THREE counts rather than one, so a consumer never has to
+#   infer the shape: `runtime_closure_size` (per-arch, arch-dependent), `arch_all_closure_size`,
+#   and `index_arches`.
+#
 # It also FAILS CLOSED if the produced set is not exactly the frozen all-artifact set: per arch,
 # per source, the enumerated packages must EQUAL `[<source> all-artifact]` in expected-packages.txt
 # (the two-set model finalized in todo 1.4). An added, dropped, renamed, or unmapped deb is a
@@ -37,10 +54,19 @@ EXPECTED="${EXPECTED_PACKAGES:-$HERE/expected-packages.txt}"
 VERSION="${TAG#v}"
 SUFFIX="~ceralive${VERSION}"
 
-# The 9-package runtime closure — used to mark rows (role) and to assert none is missing.
+CLOSURE_VERSION=2
+
+# The 9 arch-dependent runtime packages, and the arch-all runtime companion.
 RUNTIME_PKGS=(modemmanager libmm-glib0 libmbim-glib4 libmbim-proxy libmbim-utils \
 	libqmi-glib5 libqmi-proxy libqmi-utils libqrtr-glib0)
-is_runtime() { local p="$1" r; for r in "${RUNTIME_PKGS[@]}"; do [ "$r" = "$p" ] && return 0; done; return 1; }
+ARCH_ALL_RUNTIME_PKGS=(ceralive-modem-support)
+INDEX_ARCHES=(arm64 amd64)
+
+is_runtime() {
+	local p="$1" r
+	for r in "${RUNTIME_PKGS[@]}" "${ARCH_ALL_RUNTIME_PKGS[@]}"; do [ "$r" = "$p" ] && return 0; done
+	return 1
+}
 
 # Parse "<pkg>_<version>_<arch>.deb" -> pkg / version / arch (version never contains '_').
 deb_field() { # <basename> <pkg|version|arch>
@@ -53,6 +79,13 @@ deb_field() { # <basename> <pkg|version|arch>
 # ---- expected-packages.txt readers (the [<source> all-artifact] blocks) --------------------
 expected_sources() {
 	awk -F'[][]' '/^\[[^]]+ all-artifact\]/ { split($2, a, " "); print a[1] }' "$EXPECTED" | LC_ALL=C sort -u
+}
+is_arch_all_source() {
+	awk -v want="$1" '
+		/^\[/ { insec=($0 ~ /^\[arch-all sources\]/) ? 1 : 0; next }
+		insec { l=$0; sub(/#.*$/, "", l); gsub(/[ \t]+/, "", l); if (l==want) { found=1 } }
+		END { exit(found ? 0 : 1) }
+	' "$EXPECTED"
 }
 expected_set() { # <source> -> its all-artifact package list, sorted-unique
 	awk -v want="[$1 all-artifact]" '
@@ -79,12 +112,17 @@ mkdir -p "$(dirname "$OUT")"
 	echo "version: ${VERSION}"
 	echo "deb_version_suffix: ${SUFFIX}"
 	echo "sources: [${SOURCES[*]}]"
+	echo "closure_version: ${CLOSURE_VERSION}"
 	echo "runtime_closure_size: ${#RUNTIME_PKGS[@]}"
-	echo "# columns: arch  package  source  version  role  filename  sha256"
+	echo "arch_all_closure_size: ${#ARCH_ALL_RUNTIME_PKGS[@]}"
+	echo "index_arches: [${INDEX_ARCHES[*]}]"
+	echo "# columns: build_arch  package  source  version  role  filename  sha256"
+	echo "# build_arch 'all' => the artifact enters EVERY index arch; otherwise its own only."
 } > "$OUT"
 
 total_all=0
 total_runtime=0
+total_arch_all=0
 arches_seen=()
 rc=0
 for archdir in "$BUILD_ROOT"/*/; do
@@ -100,8 +138,20 @@ for archdir in "$BUILD_ROOT"/*/; do
 	done
 	produced_sorted="$(printf '%s\n' "${!FILE_OF[@]}" | LC_ALL=C sort -u)"
 
-	# (a) No runtime package may be absent (kept from the original closure check).
-	for pkg in "${RUNTIME_PKGS[@]}"; do
+	# A build directory is either an INDEX-ARCH directory (arm64/amd64, holding the four
+	# upstream sources' arch-dependent debs) or the single ARCH-ALL directory. Every check
+	# below is scoped to its kind: without that, build/all would be required to contain
+	# modemmanager and every per-arch dir would be required to contain the companion.
+	dir_is_arch_all=0
+	[ "$arch" = "all" ] && dir_is_arch_all=1
+
+	# (a) No runtime package of this directory's kind may be absent.
+	if [ "$dir_is_arch_all" -eq 1 ]; then
+		required_pkgs=("${ARCH_ALL_RUNTIME_PKGS[@]}")
+	else
+		required_pkgs=("${RUNTIME_PKGS[@]}")
+	fi
+	for pkg in "${required_pkgs[@]}"; do
 		[ -n "${FILE_OF[$pkg]:-}" ] || { echo "generate-release-manifest: MISSING runtime deb '$pkg' for $arch" >&2; exit 2; }
 	done
 
@@ -111,8 +161,14 @@ for archdir in "$BUILD_ROOT"/*/; do
 		[ -n "${SOURCE_OF[$p]:-}" ] || { echo "generate-release-manifest: FAIL CLOSED — [$arch] produced package '$p' is in no expected all-artifact set" >&2; rc=3; }
 	done <<< "$produced_sorted"
 
-	# (c) Per-source EQUALITY: produced set for this source == its all-artifact set.
+	# (c) Per-source EQUALITY: produced set for this source == its all-artifact set,
+	#     over only the sources that belong in THIS directory's kind.
 	for src in "${SOURCES[@]}"; do
+		if is_arch_all_source "$src"; then
+			[ "$dir_is_arch_all" -eq 1 ] || continue
+		else
+			[ "$dir_is_arch_all" -eq 0 ] || continue
+		fi
 		want="$(expected_set "$src")"
 		# `|| true`: the filter's last test can be a non-match (exit 1); pipefail would else
 		# abort. An empty `got` simply fails the equality below, closed.
@@ -132,7 +188,16 @@ for archdir in "$BUILD_ROOT"/*/; do
 		fn="$(basename "$deb")"
 		ver="$(deb_field "$fn" version)"
 		sha="$(sha256sum "$deb" | awk '{print $1}')"
-		if is_runtime "$pkg"; then role=runtime; total_runtime=$((total_runtime + 1)); else role=aux; fi
+		if is_runtime "$pkg"; then
+			role=runtime
+			if [ "$dir_is_arch_all" -eq 1 ]; then
+				total_arch_all=$((total_arch_all + 1))
+			else
+				total_runtime=$((total_runtime + 1))
+			fi
+		else
+			role=aux
+		fi
 		printf '%s  %s  %s  %s  %s  %s  %s\n' "$arch" "$pkg" "${SOURCE_OF[$pkg]:-UNKNOWN}" "$ver" "$role" "$fn" "$sha" >> "$OUT"
 		total_all=$((total_all + 1))
 	done <<< "$produced_sorted"
@@ -141,8 +206,8 @@ for archdir in "$BUILD_ROOT"/*/; do
 done
 
 {
-	echo "# arches: ${arches_seen[*]:-none}"
-	echo "# all_debs_total: ${total_all}  runtime_debs_total: ${total_runtime}  (across ${#arches_seen[@]} arch)"
+	echo "# build_dirs: ${arches_seen[*]:-none}"
+	echo "# all_debs_total: ${total_all}  arch_runtime_rows: ${total_runtime}  arch_all_runtime_rows: ${total_arch_all}"
 } >> "$OUT"
 
 [ "$total_all" -gt 0 ] || { echo "generate-release-manifest: no debs found under $BUILD_ROOT" >&2; exit 2; }
@@ -152,4 +217,4 @@ if [ "$rc" -ne 0 ]; then
 fi
 
 cat "$OUT"
-echo "generate-release-manifest: wrote $OUT (${total_all} deb rows, ${total_runtime} runtime, across ${#arches_seen[@]} arch)" >&2
+echo "generate-release-manifest: wrote $OUT (${total_all} deb rows; ${total_runtime} arch-runtime + ${total_arch_all} arch-all runtime; build dirs: ${arches_seen[*]})" >&2

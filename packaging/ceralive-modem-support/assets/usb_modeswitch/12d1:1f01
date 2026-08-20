@@ -1,0 +1,11 @@
+# Huawei HiLink-class dongle — Zero-CD (USB mass storage) personality.
+#
+# ZERO-CD ONLY — see the note in 19d2:1225. Nothing here is board-gated or behavioural.
+#
+# Admin override tier: /etc/usb_modeswitch.d/12d1:1f01.
+#
+# 12d1:1f01 (mass storage)  ->  12d1:14dc (HiLink RNDIS composition)
+
+TargetVendor=0x12d1
+TargetProductList="14dc,1506,1c1e"
+HuaweiNewMode=1

@@ -15,19 +15,19 @@
 
 import { expect, test } from 'bun:test';
 import {
-	createUhubctlPowerHook,
-	type UhubctlPortMap,
-	type UhubctlResult,
-	type UhubctlRunner,
-	type UsbEnumerationPoller,
-} from '@ceralive/modem-control';
-import {
 	type HilCycleDeps,
 	type HilCyclePhase,
 	type MmSlotRecord,
 	runHilCycle,
 } from './commands/hil-cycle';
 import { capturingIo } from './io';
+import {
+	createUhubctlPowerHook,
+	type UhubctlPortMap,
+	type UhubctlResult,
+	type UhubctlRunner,
+	type UsbEnumerationPoller,
+} from './uhubctl-power-hook';
 
 const SLOT = 'platform-fc000000.usb-usb-0:1.4.4:1.4';
 const MM_DEVICE = '/sys/devices/platform/fc000000.usb/usb4/4-1/4-1.4/4-1.4.4';

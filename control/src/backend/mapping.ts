@@ -12,18 +12,22 @@ import {
 	type CellularSnapshot,
 	imeiEquipmentId,
 	type MmState,
+	subscriberNumber as makeSubscriberNumber,
 	subscriptionId as makeSubscriptionId,
 	type RadioPower,
 	runtimePath,
+	type SubscriberNumber,
 	type SubscriptionId,
 } from '../domain';
 import { MODEM_IFACE, MODEM3GPP_IFACE, SIM_IFACE } from './constants';
 import {
 	type DecodedManagedObjects,
+	type DecodedProps,
 	findInterface,
 	followObjectPath,
 	numberProp,
 	pathsWithInterface,
+	stringArrayProp,
 	stringProp,
 } from './managed-objects';
 
@@ -104,6 +108,24 @@ function readSubscriptionId(
 	return iccid !== undefined && iccid.length > 0 ? makeSubscriptionId(iccid) : undefined;
 }
 
+/**
+ * The SIM's own number(s) from `Modem.OwnNumbers`, or `undefined` when the
+ * carrier published none. Most SIMs carry no MSISDN at all, so an absent or
+ * empty property is the ordinary case and must read as "not reported" rather
+ * than as an empty list an operator could mistake for a failed read.
+ */
+function readOwnNumbers(modem: DecodedProps | undefined): readonly SubscriberNumber[] | undefined {
+	const raw = stringArrayProp(modem, 'OwnNumbers');
+	if (raw === undefined) {
+		return undefined;
+	}
+	const numbers = raw
+		.map((value) => value.trim())
+		.filter((value) => value.length > 0)
+		.map((value) => makeSubscriberNumber(value));
+	return numbers.length > 0 ? numbers : undefined;
+}
+
 /** Map ONE modem object to its dimensions. The modem must expose `Modem`. */
 export function mapModem(tree: DecodedManagedObjects, modemPath: string): MappedModem {
 	const modem = findInterface(tree, modemPath, MODEM_IFACE);
@@ -113,12 +135,14 @@ export function mapModem(tree: DecodedManagedObjects, modemPath: string): Mapped
 	const mmState = mapMmState(numberProp(modem, 'State'));
 	const radioPower = reconcilePower(mapRadioPower(numberProp(modem, 'PowerState')), mmState);
 	const sub = readSubscriptionId(tree, modemPath);
+	const ownNumbers = readOwnNumbers(modem);
 
 	return {
 		identity: {
 			equipmentId: imeiEquipmentId(equipment),
 			runtimePath: runtimePath(modemPath),
 			...(sub !== undefined ? { subscriptionId: sub } : {}),
+			...(ownNumbers !== undefined ? { ownNumbers } : {}),
 		},
 		presence: 'present',
 		sourceHealth: 'live',
@@ -145,6 +169,7 @@ export function fingerprint(mapped: MappedModem): string {
 	return JSON.stringify({
 		id: mapped.identity.equipmentId,
 		sub: mapped.identity.subscriptionId ?? null,
+		own: mapped.identity.ownNumbers ?? null,
 		path: mapped.identity.runtimePath,
 		presence: mapped.presence,
 		radioPower: mapped.radioPower,

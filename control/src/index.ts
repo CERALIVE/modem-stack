@@ -9,7 +9,20 @@
 export const PACKAGE_NAME = '@ceralive/modem-control';
 
 export * from './backend';
+export * from './band';
+export * from './capability';
 export * from './domain';
+export * from './fcc';
+export * from './hardware/router-parsers';
+export * from './journal';
+export * from './location';
+export * from './observations';
+export * from './operations';
 export * from './ports';
+export * from './providers';
+export * from './radio';
 export * from './redact';
+export * from './safety';
+export * from './sms';
 export * from './usb-mode';
+export * from './ussd';

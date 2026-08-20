@@ -12,11 +12,45 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 
 | Directory | Artifact | Role |
 |-----------|----------|------|
-| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (see § below), USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface** (see § below). Published to public npm under `@ceralive`. |
+| `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, injected admission/ownership/USB-hub ports, USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface**, capability-module **support-claim taxonomy + detection**, and the **band-lock** vocabulary + certification catalog (see §§ below). Published to public npm under `@ceralive` as **built ESM + `.d.ts`** across seven entry points (see § PUBLISHED PACKAGE SURFACE). |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
-| `packaging/` | ModemManager stack `.deb`s | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`). Bench installs from CI artifacts. |
+| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets so those four never absorb one. |
 
 `control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a bookworm container.
+
+## FIRST-PARTY COMPANION — `ceralive-modem-support`
+
+The four upstream sources are byte-faithful, zero-patch rebuilds. `ceralive-modem-support`
+(`packaging/ceralive-modem-support/`, `Architecture: all`) is the first-party package that
+keeps them that way: it owns the UNCONDITIONAL, generic modem system assets — CeraLive's
+identification-only udev rules, Zero-CD usb-modeswitch device data, and the FCC
+policy-reconciliation helper plus its oneshot unit. It ships **no FCC-unlock script at
+all**; an absent `/data/ceralive/fcc-unlock-policy.json` exits 0 and activates nothing,
+which is also the correct behaviour on generic Debian with no CeraLive partition layout.
+
+**Board-gated generated assets stay image-owned** — M.2 SIM quirk rows and per-slot modem UID
+rules consume build-time board facts a generic package cannot know. Do not move them here.
+
+**The udev basename is load-bearing.** udev resolves rules by BASENAME, and an
+`/etc/udev/rules.d` file SHADOWS a same-basename `/usr/lib/udev/rules.d` file completely
+while `dpkg -S` keeps naming the package as owner of the `/usr/lib` path — the substitution
+is invisible to package tooling. The companion therefore uses the modem-only basename
+`60-ceralive-modem.rules`, which no image-owned `/etc` file shares (the image owns
+`99-ceralive-hardware.rules` and `78-mm-ceralive-slot-uid.rules`). Never rename it onto an
+image-owned basename, and never ship an `/etc` copy from this package. A stale same-basename
+`/etc` override is removed on upgrade ONLY when marker AND sha256 identify a known generated
+payload; anything unknown or operator-modified is preserved.
+
+QA is two-stage and the split is deliberate: `packaging/ci/test-companion-chroot.sh` proves
+packaging SHAPE in a clean `debian:trixie` container, while the consumer proofs (`udevadm
+test` against a real modem, `usb_modeswitch -c`, unit ordering against a real boot journal)
+are BENCH-GATED and must not be faked in a container. Full detail: `packaging/README.md`.
+
+The release manifest emits **`closure_version: 2`**, which adds this one `Architecture: all`
+asset to the frozen 9 × 2 closure as a single row with `build_arch` `all`. It is ONE
+immutable release asset with TWO index memberships; apt-worker's publisher indexes it into
+both per-arch indexes. A per-arch build is forbidden — two byte-different files under one
+package/version key break the immutable-key rule.
 
 ## RULE D — SELF-CONTAINED (load-bearing)
 
@@ -46,6 +80,144 @@ ONE unified tag `vX.Y.Z` releases **both** artifacts: `@ceralive/modem-control@X
 npm and the `.deb` set. `.deb` versions encode the tag as `<upstream>-<rev>~ceralive<X.Y.Z>`
 (upstream-ordered, apt-safe; injected with `dch --force-bad-version`). Non-tag CI builds use
 `~ceralive0.0.0~dev`. Full contract: `docs/VERSIONING.md`.
+
+## FROZEN V1.1 DOMAIN CONTRACTS
+
+`control/src/domain/` additively freezes the provider-neutral v1.1 foundation while the
+published v1.0 package facade remains intact. The exact public shapes and safety rules are
+documented in [`docs/DOMAIN-CONTRACTS.md`](docs/DOMAIN-CONTRACTS.md).
+
+- `PhysicalModemId` / `StableKey` use serial → udev `ID_PATH` → a 128-character-bounded
+  fallback. Their constructors refuse MM object paths, interface names, IP addresses, IMEI,
+  and subscriber identifiers; none of those runtime or sensitive values can become the new
+  physical identity.
+- `DeviceGeneration` increments on re-enumeration or provider replacement and fences every
+  async observation/operation completion. `ObservationEnvelope<T>` separately models fresh,
+  stale, and unavailable data; unavailable carries `value: null`, never an invented value.
+- `OperationDescriptor<I, O>` keeps read and write support independent and records authority,
+  constraints, preconditions, availability, mutation impact, retry policy, transactional
+  requirements, evidence, and confidence. `OperationResult<O>` maps stale completions and
+  timed-out/dropped writes to `unknown-outcome` with mandatory reconciliation. Only explicitly
+  classified idempotent reads may auto-retry.
+
+This layer is pure data and functions: no daemon, socket, network endpoint, or CeraUI import.
+
+## PROVIDER REGISTRY + EVIDENCE MATCHER
+
+`control/src/providers/` is the provider-neutral registration and selection layer built on the
+frozen v1.1 domain contracts. The public contract and scoring details are documented in
+[`docs/PROVIDER-MATCHING.md`](docs/PROVIDER-MATCHING.md).
+
+- `ProviderDefinition` keeps each provider's profile version, declarative passive matchers,
+  harmless unauthenticated probes, optional single owner-selected authentication algorithm,
+  normalized `ObservationEnvelope` producer, provider-specific operations object and sanitized
+  contract fixtures together. `ProviderReadOperations` and `ProviderWriteOperations` are
+  composable capability subinterfaces; there is no package-wide vendor mega-interface.
+- `createProviderMatcher` evaluates every registered provider in stage order: transport → passive
+  facts → unauthenticated fingerprints → profile rank → at most one auth call → capability reads.
+  Evidence is scored `unsupported → maybe → likely → supported`; only a unique `supported`
+  candidate receives its operations object.
+- Ties and weak candidates return `ambiguous`, with `provider`, `profile` and `operations` all
+  `null`, `writable: false`, and the complete evidence/conflict ledger retained. Authentication is
+  not attempted for tied candidates, so an ambiguous match cannot cycle algorithms or acquire a
+  write surface.
+- Selection is cached only for the same `PhysicalModemId`, `DeviceGeneration`, registry revision,
+  firmware and composition. Any generation, firmware or composition change runs the full matcher
+  again.
+
+This layer registers no concrete provider. Huawei, ZTE, UFI/HIMI and other implementations remain
+separate evidence-backed work.
+
+### CONFORMANCE MATRIX — ALL FOUR PROVIDERS REGISTERED AT ONCE
+
+`control/src/providers/conformance-matrix.test.ts` is where todo 5's matcher meets every real
+provider simultaneously. Each provider suite runs with only itself in the registry, which cannot
+answer whether a Huawei dongle stays a Huawei dongle while a ZTE provider and a UFI provider are
+also asking. **20 cases** — 9 fleet profiles + 11 safety cases (ambiguous collision,
+cross-profile refusal, 3 malformed, auth-expired, lockout-unknown, 2 unknown-firmware,
+wrong-interface, wrong-transport) — each registering all four providers, expecting the EXACT
+decision. Full behaviour: [`docs/PROVIDER-MATCHING.md`](docs/PROVIDER-MATCHING.md) §
+"The conformance matrix".
+
+- **The corpus is repo-local and unpublished** (`control/test-support/conformance/`) and REUSES
+  `observation-fixtures.ts` rather than minting a second payload set that can drift from it.
+  Sanitization is structural, not a review promise: a 14+ digit run anywhere in the corpus or in
+  any recorded request FAILS the suite unless it is a declared member of
+  `SANITIZED_SUBSCRIBER_IDENTIFIERS`, and the detector has a non-vacuity control.
+- **`conformance-transcripts.test.ts` asserts the exact wire** per firmware — method, path,
+  query, form/JSON/XML body, the header ARRAY in order, and the cookie — rebuilt from the
+  protocol, never read back from the provider. A whole-array `toEqual` pins the request COUNT
+  too, so an extra login or a stray probe fails even when the decision is unchanged.
+- **`conformance-scale.test.ts` is a SOFTWARE UPPER BOUND at 16 concurrently attached modems.**
+  It is a FIXTURE result: subscriptions stay fleet-wide (4, never per-modem), `Signal.Setup` is
+  issued once per (epoch, modem) and re-applied to every survivor on a new epoch, an attachment
+  burst is coalesced, and sixteen concurrent matches each answer about their own modem. **The
+  hardware-verified figure remains the 8-device bench fleet** — 16 must never be reported as a
+  bench measurement; a hardware claim comes from todo 42, on a real board.
+- **`test-support/conformance/mm-transport.ts` is an in-memory `DbusTransport`** serving the SAME
+  `fake-mm/object-model.ts` tree, so MM rows run without `dbus-run-session`. `fake-mm/service.ts`
+  stays the right harness for codec/epoch proof on a real bus; a matrix whose MM rows SKIP where
+  no session bus exists answers nothing, which is why the matrix uses this one.
+- **The UFI fingerprint probe is fenced by USB evidence** (`usbEvidencePermitsProbe`) — this
+  matrix is what found it. The HIMI fingerprint needs a session, so an unfenced probe spent the
+  provider's single bounded login against every non-HIMI device in the registry. An ABSENT usb
+  fact is still probed; a MISMATCHING one is not.
+
+## PUBLISHED PACKAGE SURFACE — BUILT ESM, SEVEN SUBPATHS, NO SERVICE
+
+`@ceralive/modem-control` publishes **built output**: `files: ["dist"]`, and every
+`exports` target resolves under `./dist/`. It shipped raw TypeScript through `v1.0.0`
+(`exports` → `./src/index.ts`, `files: ["src"]`); that is gone. The public surface is
+seven specifiers and no more — `.`, `./transport`, `./domain`, `./providers`,
+`./capabilities`, `./hardware`, `./testing`. Full consumer-facing detail:
+[`control/README.md`](control/README.md).
+
+- **`control/scripts/entries.ts` is the single source of truth.** The build, the
+  exports map and the shape gate all read it, so they cannot drift. Adding a row is a
+  deliberate, permanent widening of the public API; internal barrels (`src/backend`,
+  `src/ports`, `src/sms`, `src/ussd`, `src/location`, `src/fcc`, `src/redact`) are
+  reachable only through the root entry and stay unexported on purpose.
+- **`./capabilities` maps to `src/capability/` and `./hardware` to `src/band` +
+  `src/usb-mode`.** The specifier is the contract; the directory layout behind it is not.
+- **`./testing` is the PUBLIC contract-fakes surface, and `control/test-support/` is
+  not.** The fakes are pure data and functions built through the package's own
+  constructors and classifiers — `fakeOperationResult` routes through the real
+  `classifyOperationCompletion`, so a consumer's fixture cannot drift from what the
+  package returns, and `fakeUnavailableObservation` has no overload that could invent a
+  value. `test-support/` keeps this repo's heavy internals (the MM-faithful fake D-Bus
+  service on a private session bus, the stateful `nmcli` harness); it lives outside
+  `src`, is unpublished, and must not become a subpath.
+- **`dist/` is a 1:1 `tsc` emit, deliberately NOT a bundle.** `Bun.build --splitting`
+  emitted an entry whose `export { … }` list named symbols it never imported — Bun's
+  loader accepts it, Node answers `SyntaxError: Export 'BigIntRequiredError' is not
+  defined in module`. Bundling without splitting instead gives each subpath its own copy
+  of the shared modules, which breaks `instanceof DomainError` across two subpaths of
+  one package. The 1:1 emit has one instance of every module.
+- **`scripts/build.ts` rewrites every emitted relative specifier** into `./x.js` or
+  `./x/index.js`, resolved against the emit itself, because the sources are written for
+  `moduleResolution: bundler` and `tsc` never rewrites a specifier. The build FAILS if
+  one extensionless specifier survives. `prepack` runs the build, so no pack can publish
+  a stale `dist/`.
+- **The repo-root `tsconfig.json` `paths` map `@ceralive/modem-control*` back to
+  `control/src`.** This is DEV-ONLY and load-bearing: without it the workspace `cli`
+  resolves the package through its exports map to `dist` while `control/test-support`
+  resolves the same modules relatively, and `Brand`'s `unique symbol` turns every
+  branded value crossing between them into a hard type error. It also means the
+  workspace never needs `dist` to exist in order to typecheck or test. The published
+  package is unaffected — consumers still resolve to `dist`.
+- **The built artifact is proven by things that ignore that mapping.**
+  `control/scripts/tarball-shape.test.ts` packs with `bun pm pack` and runs six rules
+  over the extracted tarball (no raw source / built output present / every declared
+  entry exported AND packed / no undeclared subpath / nothing pointing outside `./dist/`
+  / **no `bin`, systemd unit, shebang or listening-socket construct** — the library-only
+  proof). Every detector has a non-vacuity test that trips it with a synthetic artifact.
+  `control/fixtures/` then holds two STANDALONE consumer projects — one Node, one Bun —
+  which `bun run verify:consumers` installs the real `.tgz` into and imports all seven
+  specifiers from. The Node fixture refuses to run on anything but Node 26.x, so a green
+  result cannot come from an older Node on `PATH`.
+- **Removing `./testing` cannot pass the gate.** It is a row in `entries.ts` AND a
+  literal in the shape test's `EXPECTED_SUBPATHS`, so dropping it from `package.json`
+  fails four tests and dropping it from `entries.ts` too fails a fifth.
 
 ## PROVENANCE PINS (packaging)
 
@@ -77,33 +249,142 @@ arch-dependent stanzas + enumerated `-dbgsym`) for exact per-source set **equali
 `packaging/ci/check-package-sets.sh` (add/remove/rename fails closed). Full detail:
 `packaging/README.md`.
 
-## RECOVERY LADDER — uhubctl POWER HOOK (rung 4)
+## MUTATION ADMISSION + EXCLUSIVE OWNERSHIP
 
-`control/src/backend/uhubctl-power-hook.ts` (`createUhubctlPowerHook`) is the first real
-`PowerHook` implementation: the `usb-hub-port-cycle` capability backing recovery-ladder
-rung 4. It cuts VBUS on one port of a per-port-power-switching (PPPS) USB hub via `uhubctl`
-and reports `applied` only once the SAME modem (by udev `ID_PATH`) is observed back on the
-bus — a zero exit from `uhubctl` is never treated as success on its own.
+`control/src/ports/mutation-admission.ts` defines `MutationAdmissionPort`. It is an injected
+authority only: the package submits an operation id, physical modem id, mutation impact and
+the descriptor's frozen `admission` requirement, then preserves the port's typed decision.
+It contains no stream state or stream policy. A required admission with no injected port is
+`{ status: 'refused', reason: 'admission-port-missing' }`, never an allow-all fallback.
 
-- **Config-mapped, never discovered.** A stable key is cyclable only if an operator wrote
-  it into an explicit, Zod-validated port-map file: `{ [stableKey]: { hubLocation: string,
-  port: number } }`. There is no default path and no probing/guessing — `hubLocation` is
-  regex-pinned to the sysfs bus-port shape so a shell-metacharacter or flag cannot parse
-  into it.
-- **Argv-only, allowlisted, no shell.** The command is built as an argv array
-  (`['-l', loc, '-p', port, '-a', 'cycle', '-d', '3']`) and every emitted token is
-  re-checked against an allowlist before the injected runner is called.
-- **Bounded + cancellable** (`commandTimeoutMs` + `enumerationTimeoutMs`, plus an optional
-  `AbortSignal`); **serialised per modem** through the shared `ModemActor`, keyed on the
-  stable key, so two overlapping cycles on one port cannot interleave power-on/power-off.
-- **Disabled by default**, matching the existing recovery-ladder default
-  (`RECOVERY_DISABLED: { enabled: false }` in `control/src/domain/policy.ts`) — this hook
-  does not change that default; it is only reachable when an operator opts in.
-- The HIL harness (`cli hil-cycle <slot> --hub-map <file>`, bench runbook
-  [`docs/BENCH.md` RB-10](docs/BENCH.md)) orchestrates a full cycle end-to-end: pre-state
-  capture → PowerHook cycle → USB-disappearance assertion → re-enumeration assertion → MM
-  re-detection of the same `modem.generic.device` slot UID. See `cli/README.md` for the
-  exact CLI contract and typed failure reasons.
+`control/src/ports/resource-ownership.ts` defines the acquire-or-refuse
+`ResourceOwnershipPort` used for file stores, router sessions and USB-hub access. The Linux
+default adapter is `createFlockResourceOwnershipPort()` in `control/src/safety/`: it requires
+an injected path, uses non-blocking `flock`, records the actual holder PID and start time,
+and relies on kernel lock lifetime plus PID liveness to recover after holder death. The
+conventional caller-selected path is `DEFAULT_MODEM_CONTROL_LOCK_PATH`; the adapter itself
+has no hidden path and there is no no-op ownership implementation.
+
+`createModemControlCompositionRoot()` fails if an ownership port is absent and throws
+`CompositionRootAlreadyExistsError` for a second live root in the same process. Within one
+root, `actorFor(PhysicalModemId)` returns the same `ModemActor` to every caller for that
+physical modem. `ModemManagerInhibitPort` is the narrow MM inhibit/uninhibit contract used by
+maintenance transactions. `UhubctlPort` is port-only in the control package: v1.1 ships no
+provider, runner, argv builder or concrete `uhubctl` call. The bench CLI owns its existing
+HIL-only adapter and acquires the same exclusive lock before using it.
+
+## DESCRIPTOR-GATED OPERATION ENGINE
+
+`control/src/operations/operation-engine.ts` executes the frozen `OperationDescriptor` and
+`OperationResult` contracts. It takes a `ModemControlCompositionRoot`, so every mutation uses
+todo 19's shared actor for its `PhysicalModemId`; live preconditions and admission are checked
+inside that actor immediately before execution, never cached before queueing. Reads bypass the
+write queue and only failed `idempotent-read` descriptors receive one automatic retry.
+
+The behavioral uncertainty fence is a per-engine `Set<PhysicalModemId>`. A stale-generation
+completion or timed-out/dropped write classifies `unknown-outcome` and inserts the modem into
+that set. Every later mutation checks the set before calling admission or provider code and is
+refused `reconciliation-required`. `OperationEngine.reconcile()` runs on the same actor and
+removes the modem only after a successful reconciliation whose generation stayed current.
+Required readback, rollback and journal hooks are checked before execution; rollback runs only
+after a definite failure/readback mismatch, never after an unknown outcome. Public hook and
+reconciliation types are in `control/src/operations/contracts.ts`; the module is exported through
+the existing package root and adds no package subpath.
+
+## TRANSACTION JOURNAL — PATH-PARAMETERIZED, APPEND-ONLY, NEVER SELF-TRUNCATING
+
+`control/src/journal/` is the durable half of the uncertainty fence above. The operation
+engine keeps "which modems need reconciling" in a `Set<PhysicalModemId>` on the engine
+instance, so a process death drops it and the next mutation proceeds as if nothing were
+outstanding. The journal writes the same two facts down. It is exported through the
+existing package ROOT entry and adds **no** package subpath (todo 17/18 precedent).
+
+**THE PATH IS INJECTED AND HAS NO DEFAULT — this package never names `/data`.**
+`createFileJournalStore({ path })` REQUIRES the path and substitutes nothing; an empty
+path throws `JournalPathError` rather than falling back. Same shape and same reason as
+todo 19's `FlockResourceOwnershipOptions.lockPath`: an embedding process owns its
+filesystem layout, and a library that guesses one writes to the wrong disk on a device it
+has never seen. `journal-path-injection.test.ts` scans this directory's shipped source —
+**comments stripped** — for absolute path literals and for `/data` / CeraUI-specific
+location tokens, and fails the build on either. Prose naming a path stays legal (the
+compat reader has to be able to explain the shape it reads); executable code producing one
+does not. The strip is proven non-vacuous both ways.
+
+**Three durability properties, each pinned by a test that goes red when removed:**
+
+- **Append-only.** There is no verb that rewrites or truncates. A rewrite is the one
+  operation that can lose an already-durable fact, and a journal that can lose a fact
+  answers nothing after a crash.
+- **A damaged record never discards its neighbours.** `read()` decodes every line
+  independently and returns the survivors ALONGSIDE a typed `JournalDamageRecord[]`.
+  Stopping at the first bad line — what a `for` loop with a throw does naturally —
+  silently truncates the journal to its first corruption. Breaking this reddens 9 tests.
+- **A torn trailing line is closed before the next append.** A process killed mid-write
+  leaves a final line with no terminator; appending straight onto it would glue the new
+  entry to the garbage and corrupt a SECOND record that was never in flight. The store
+  probes the last byte once and emits a leading terminator when needed, so damage stays
+  confined to the record that actually tore. The damaged bytes are PRESERVED, never
+  rewritten away (the `fcc/policy-store.ts` fail-safe stance, not the usage store's
+  rewrite-fresh one).
+
+**The typed recovery error is `JournalRecoveryError`, raised by `assertJournalIntact`, and
+it is deliberately NOT raised by `recover()`.** Recovery must be able to hand back the
+survivors even when part of the file is unreadable, so the decision to refuse to proceed
+belongs to the caller — after it has seen what did survive.
+
+**Four dispositions, and only two of them mean "reconcile".** `pending` (a start with no
+completion) and `unknown-outcome` (the engine's own classification) both populate
+`reconciliationRequired`; `resolved` is a definite ending; `blocked` is a terminal state a
+human must clear. `blocked` exists for the compat reader below — folding CeraUI's
+`failed`/quarantine states into `resolved` would report an operator-blocked device as
+healthy, and folding them into `unknown-outcome` would claim doubt about a known outcome.
+
+**Neither the operation's INPUT nor its RETURNED VALUE is ever written to disk.** An input
+is routinely a PIN, a PUK, or a USSD command carrying a voucher code; a returned value is
+routinely a message body or a location fix — every one of them a class `redact.ts` masks
+elsewhere. The journal records THAT an operation ran and HOW it ended, never what was sent
+or read, and a test greps the written file for both. A caller needing a rollback payload
+owns persisting it under its own redaction decision.
+
+### CeraUI compatibility — a READER, because the two shapes genuinely differ
+
+`journal/legacy-ceraui.ts` reads the mutation journal CeraUI already writes. The shapes are
+not interchangeable and neither is being re-labelled: this package's journal is an
+append-only EVENT LOG in one file, CeraUI's is a directory of per-modem LATEST-STATE
+snapshot documents, rewritten whole on every transition. The bridge decodes CeraUI's shape
+into the SAME `JournalOperationRecord` model, so a consumer enumerates pending and
+unknown-outcome work across both **without CeraUI having to change its file format first**.
+
+- **Nothing here writes.** No rewrite, no repair, no in-place migration, no delete.
+  CeraUI's own reader leaves an unreadable slot on disk deliberately; a second reader that
+  tidied up behind it would destroy evidence CeraUI kept on purpose.
+- **The directory is injected**, exactly like the native store's path.
+- **`armed` maps to `pending`, `executing` maps to `unknown-outcome`.** They are different
+  facts: `armed` says the pre-state was captured and the write never dispatched, so the
+  device is untouched; `executing` says it WAS dispatched and no terminal state was
+  recorded — precisely this package's unknown outcome. Collapsing them either invents
+  certainty about a dispatched write or manufactures doubt about one that never left.
+- **A legacy `unknown-outcome` record carries NO outcome reason.** `JournalOutcome`'s
+  unknown union is the frozen domain vocabulary and CeraUI's `executing` asserts none of
+  its three members. The disposition carries the fact; the reason stays unclaimed.
+- **`kind` is validated as a non-empty string, NOT against a frozen enum.** CeraUI spreads
+  its capability-module mutation kinds into the runtime enum, so the vocabulary grows on
+  CeraUI's release cycle — a frozen copy here would reject a valid file the day a module is
+  added, and a compatibility reader that fails closed on new-but-valid input is worse than
+  none.
+- **`JournalOperationRecord.physicalModemId` is TEXT, and `origin` says which vocabulary it
+  holds.** A legacy record carries CeraUI's `stableKey`, which `physicalModemId()` REFUSES
+  by construction; coercing it would either throw on a valid legacy file or launder a
+  foreign identity into a branded type that promises the serial/ID_PATH ladder.
+- `legacyMutationSlotName(stableKey)` mirrors CeraUI's `<sha256-hex>.json` slot naming so a
+  consumer can address one modem without scanning. **Rule-D MIRROR, never a shared
+  import** — the same relationship the support-claim ladder and the redaction key sets
+  already have with their CeraUI twins.
+
+Coverage: `journal/journal-replay.test.ts` (write N, drop the engine with no shutdown,
+reconstruct from disk, assert the pending/unknown enumeration), `journal-corruption.test.ts`
+(trailing, mid-file, torn, wrong-version and missing-field damage), `legacy-ceraui.test.ts`,
+and `journal-path-injection.test.ts`. Fixtures: `control/test-support/journal-fixture.ts`.
 
 ## DATA-USAGE POLICY — A LOCAL WRITE, BECAUSE MODEMMANAGER HAS NO SUCH API
 
@@ -176,23 +457,820 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
 - Per-SKU capture runbooks are `docs/BENCH.md` **RB-11 … RB-15** (RB-16 is the FM350
   USB-vs-PCIe probe — its 2026-08-16 bench run found the unit not connected, so
   `docs/FM350-DECISION.md`'s three-gate ledger stays OPEN with the probe evidence recorded;
-  RB-17 is modem-flap resilience). All are `[PARTIAL]` — four named blockers
-  (`usbutils` absent from the board and its archive; the enumerator not populating `ifname`;
-  no AT transport on the bench; an empty real-SKU catalog) are recorded in `docs/BENCH.md`
-  § "Per-SKU certification". No SKU is certified and no matrix row is promoted.
+  RB-17 is modem-flap resilience). All are `[PARTIAL]` — **six** named blockers are recorded
+  in `docs/BENCH.md` § "Per-SKU certification", re-verified live on 2026-08-18:
+  **B1 CLEARED** (`usbutils` is now on the board), **B3 downgraded** (`socat` is present, so
+  a manual query-only AT session works; the CLI's `benchAtSender` still rejects every send),
+  and **B2 promoted to hardware-proven** — `certify` matches its device by `ifname`, which
+  the enumerator never populates, so **every real bundle comes out with no `sku` and empty
+  `udevProperties`** and the ingestion seam refuses it `sku-missing`. Two blockers are new:
+  **B5**, the shared redactor does not mask `imei` / `equipment-identifier`, so a real
+  bundle carries every bench modem's IMEI and must not be committed or pasted into a review
+  comment; and **B6**, `skuOf` reads `firmwarePrefix` from udev `ID_REVISION`, which is the
+  USB `bcdDevice` rather than the modem firmware revision, so a catalog entry built from a
+  capture would not actually be firmware-keyed. B2 and B6 are pinned by
+  `control/src/usb-mode/ingestion.hardware.test.ts`. No SKU is certified and no matrix row
+  is promoted.
+- **Bench composition evidence** for the SIMCom SIM7600G-H and the carrier-mounted Fibocom
+  FM350-GL is recorded in [`docs/COMPOSITION-EVIDENCE.md`](docs/COMPOSITION-EVIDENCE.md) —
+  descriptors, driver bindings, firmware revisions, and the read-back state of each vendor's
+  USB-mode command (`AT+CUSBPIDSWITCH`, `AT+GTUSBMODE`), captured **non-mutatingly**
+  (bare-execute / READ `?` / TEST `=?` forms only; no SET form was ever sent). It certifies
+  nothing: the SIMCom's PID→composition mapping is unproven so its target modes stay
+  UNCERTIFIED and HIDDEN, and the FM350 gains **no** classifier entry for its `0e8d:7127`
+  carrier id — `docs/FM350-DECISION.md` is unchanged.
 - The full bench-runbook ladder, RB-1 through RB-17, lives in `docs/BENCH.md`: RB-9 is the
   fleet-inventory capture (one identity bundle per acquired physical unit), RB-10 is the
   hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
   per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe.
 
-## eSIM (investigate-only, implementation deferred)
+## CAPABILITY MODULES — TAXONOMY AND DETECTION, NOT IMPLEMENTATION
+
+`control/src/capability/` carries the FIVE-STATE support-claim taxonomy and the
+per-modem capability detection the seven gated capability modules (band-lock, SMS,
+5G-pref, FCC-auto-unlock, GPS, USSD, eSIM) resolve against. **No module is
+implemented here**, and none may be surfaced or claimed until its own change lands
+with its probe and its evidence.
+
+The taxonomy exists because "supported" was one word doing four jobs — the code
+exists, an operator turned it on, the modem advertises it, and somebody proved it
+on this firmware. `resolveSupportClaim` answers with the highest rung reached:
+`unavailable` (not shipped, or the modem positively lacks it) → `implemented`
+(gate OFF, the default everywhere) → `enabled` (gate ON, capability UNKNOWN) →
+`capable` (gate ON, modem advertises it — the floor for offering a control) →
+`certified` (proven on this exact model+firmware — the ONLY rung a support matrix
+may claim).
+
+**It is a Rule-D MIRROR of CeraUI's `@ceraui/rpc` ladder, never a shared import**
+— the same relationship `usb-net-classifier.ts` has with `device-classifier.ts` in
+the other direction. The two halves are kept honest by their tests, not by a path.
+
+`detect.ts` follows `backend/features.ts` exactly: it PROBES the observed surface
+rather than matching a version whitelist, never throws, and treats `unknown` as a
+first-class result — a property set nobody observed says nothing about the device,
+and the ladder stops at `enabled` for it. Two facts are worth knowing before
+extending it:
+
+- **SMS / USSD / GPS are advertised as INTERFACES, not properties**, so
+  `MmPropertyProbe` alone cannot see them; `ModuleCapabilityProbe` adds the modem
+  object's interface set. The `Location` interface being exported is separately NOT
+  a GNSS claim — MM exports it for 3GPP-LAC/CID-only devices too, so a GNSS source
+  must appear in `Location.Capabilities`.
+- **`fcc-auto-unlock` is always `unknown`, deliberately.** FCC unlock is carried out
+  by a ModemManager PLUGIN keyed on the device, and nothing on the modem's own
+  D-Bus surface says whether one applies. `absent` would hide the module on
+  supported hardware; `present` would promise a plugin that may not be installed.
+  Evidence for it comes from the catalog instead — `control/src/fcc/coverage.ts`,
+  see the section below.
+
+### `five-g-pref` — a MODEL, not just a probe [IMPLEMENTED, UNCERTIFIED]
+
+`control/src/capability/five-g-preference.ts` is pure and total: it maps four
+named postures (`5g-only` / `prefer-5g` / `prefer-4g` / `5g-off`) onto the
+`(allowed, preferred)` pair `MmMutations.setRadioModes` already writes, and
+refuses to name one the modem never advertised. It opens NO new transport —
+`setRadioModes` owns the `SetCurrentModes` call, the per-modem serialization and
+the quiesce — and a test greps its executable source to keep it that way.
+
+**Why it exists at all, given `setRadioModes` already writes modes.** That
+surface's vocabulary is the ALLOWED SET, and two genuinely different postures
+share one: "allow 4G and 5G, prefer 5G" and "allow 4G and 5G, prefer 4G" differ
+only in the PREFERRED mode. An operator on a marginal 5G cell wants exactly that
+distinction, and an allowed-set selector structurally cannot express it.
+`prefer-5g` and `prefer-4g` therefore emit an IDENTICAL allowed set — so nothing
+on this path may decide "no write is needed" by diffing allowed sets, and nothing
+may confirm a restore by comparing them either.
+
+Three refusals are load-bearing:
+
+- **A modem with no 5G is offered NOTHING, `5g-off` included.** "Turn 5G off" on a
+  radio that has none is a control that cannot change anything, which is worse
+  than an absent one because it invites an operator to act.
+- **A posture the modem cannot express resolves `undefined`, never a neighbour.**
+  Substituting is how "prefer 4G" on a marginal cell silently becomes 5G-first.
+- **A current pair no posture names reads `undefined`, never the nearest one.**
+  Rounding would show an operator a selection they never made and cannot get back to.
+
+**SA/NSA is REPORTED unsupported, with a reason.** Checked against MM 1.24.2's own
+surface rather than recalled: the only NR-specific member on a modem object is
+`Modem3gpp.SetNr5gRegistrationSettings`, whose keys are `mico-mode` and
+`drx-cycle` — power-saving registration parameters, not a standalone-vs
+non-standalone selector. Vendors expose the selector through their own AT commands
+(Quectel `AT+QNWPREFCFG="mode_pref"`, one per vendor after that), which is exactly
+the uncertified per-SKU write the evidence gate keeps out. A missing field would
+read as "nobody asked"; the stated `not-exposed-by-modemmanager` tells an operator
+hunting for an SA toggle why there is none.
+
+**`detect.ts`'s `five-g-pref` verdict NARROWS when the caller decoded the mode
+catalog.** Every ModemManager modem exports `SupportedModes`, including a 4G-only
+one, so the property NAME alone resolves `present` on hardware with no 5G. The
+optional `ModuleCapabilityProbe.supportedRats` narrows the verdict to whether the
+catalog actually names 5GNR; ABSENT it, the property-name answer stands verbatim.
+A strict narrowing, never a new way to claim a capability.
+
+**Status: `implemented-but-uncertified`.** No 5G SIM/plan and no verified 5G
+coverage exist at the bench (`docs/BENCH.md` per-SKU blockers; the CeraLive-side
+record is todo 2's BLOCKER B3), so the readback/registration/data/fallback drill
+on the RM530N-GL has not run. Every claim above is fixture-proven only.
+
+## PURE ROUTER RESPONSE PARSERS — TRANSPORT STAYS OUT
+
+`control/src/hardware/router-parsers.ts` owns the pure CeraUI migration seam for
+SIM-presence evidence and Huawei HiLink, ZTE goform, and Qualcomm UFI/HIMI response
+normalization. It is exported through the existing root and `./hardware` entry points;
+no new package subpath exists. Empty/refused/malformed readings remain explicit unknown
+states, vendor placeholders are omitted, and HiLink capability refusal preserves the
+device code. The module accepts response bodies only: HTTP, authentication, interface
+binding, retries, caching, and every write remain outside it. CeraUI keeps its adapters
+until the explicit cutover todo; this migration creates no sibling path dependency.
+
+The same transport-free migration seam also owns the remaining pure CeraUI compatibility
+rules: portable USB physical identity/link-id derivation, modem display-name sanitation,
+ModemManager enum normalization, USB-network classification and labels, capability-module
+selection, and shadow-backend divergence folding. These helpers accept snapshots, primitive
+values, or already-normalized records and return deterministic values only. They do not read
+udev, invoke ModemManager, persist state, or alter CeraUI; CeraUI keeps its local adapters and
+copies until the explicit consumer cutover.
+
+### `parseZteDetails` MUST stay a superset of the consumer it replaces
+
+The seam only works if adopting a packaged parser is a no-op for the shipped
+consumer. It was not: an overlay of the 1.1 candidate over CeraUI's own tree found
+this parser both NARROWER than the reader it is meant to retire and in disagreement
+with it about one key name. Both are fixed here, and both are pinned by tests:
+
+- **`band` and `network_band` are two readings, not one key.** `lte_band` is the
+  SERVING cell's band and `wan_active_band` is the band the WAN leg is active on;
+  they disagree the moment carrier aggregation is up. This parser previously folded
+  all three spellings onto `network_band`, so a consumer rendering the serving band
+  got the WAN leg's — or nothing. They are now separate and neither falls back to
+  the other.
+- **The carrier composition and the dongle's own counters are carried.**
+  `lte_ca_{p,s}cell_{arfcn,band,bandwidth}`, `monthly_{tx_bytes,rx_bytes,time}` +
+  `date_month`, and the five `realtime_*` counters now emit as `pcell_*` / `scell_*`
+  / `monthly_*` (with `monthly_period`) / `session_*`. The `realtime_*` → `session_*`
+  rename is deliberate: three of those five are cumulative counters, and the vendor's
+  own prefix reads as "live rate" for all five.
+- **`stated()` drops every vendor placeholder**, not only the single dash — `--`,
+  `n/a` and `N/A` are unset markers on these firmwares too, and echoing one puts a
+  value on screen that reads like a reading. This widening applies to
+  `parseUfiDetails` as well, which shares the helper.
+
+**`parseUfiDetails` is still NARROWER than CeraUI's UFI reader and takes a different
+input shape** (three bodies here, five there — no `status`/`networkMode`). No
+consumer probes for it today, so nothing is broken; a future cutover must reconcile
+it before pointing CeraUI's UFI path at this one.
+
+## OBSERVATIONS — NORMALIZATION THAT NARROWS WITHOUT DISCARDING
+
+`control/src/observations/` sits directly on top of the parsers above and turns a raw
+per-vendor payload into ONE `ObservationEnvelope<NormalizedModemObservation>`. It decodes
+nothing itself — every value comes from `domain/mm-enums.ts`,
+`domain/modem-presentation.ts` or `hardware/router-parsers.ts` — and adds exactly two
+things those pure functions cannot carry: **where a value came from**, and **why a value
+is missing**. It opens no transport; a provider performs the read, this layer explains the
+result. Reachable through the package ROOT entry, deliberately not through a new subpath.
+
+**FOUR STATES, NOT A VALUE PLUS A FLAG.** `readMetric` answers `fresh` | `stale` |
+`unavailable` | `unknown`, and they differ in SHAPE rather than only in label:
+`unavailable` and `unknown` carry no `value` field at all, and `unavailable` carries no
+metric provenance because no metric was produced. So no consumer can read a value off a
+state that has none.
+
+- **`stale` KEEPS the value.** An aged reading is the last thing the device actually said;
+  discarding it leaves an operator unable to tell "we lost contact" from "the modem reports
+  nothing".
+- **`unavailable` is terminal on re-evaluation and never becomes `stale`.** It carries no
+  value, so there is nothing to age — re-classifying it would have to invent one.
+- **Staleness is MONOTONIC.** `evaluateFreshness` returns an already-stale envelope
+  unchanged, so its `since`/`reason` record the FIRST cause. Freshness comes from a new
+  read, never from re-evaluating an old one. Trigger precedence when several apply:
+  superseded generation → superseded source epoch → degraded source → TTL expiry; the first
+  three state that reality overtook the reading, TTL expiry only says nobody looked.
+- **A TTL expiry's `since` is `observedAt + ttlMs`, not the evaluation time** — otherwise a
+  reading that expired an hour ago looks like it just went stale.
+
+**`unknown` IS NEVER COERCED TO `unsupported`, and the reason class is what enforces it.**
+`metricUnknownClass` splits `MetricUnknownReason` into `capability` (only `unsupported` — a
+durable claim about the SOURCE) and `read` (`not-reported`, `not-observed`, `malformed`,
+`auth-expired`, `refused`, `unreachable` — claims about ONE attempt). A consumer decides
+whether to HIDE a control or show it pending by branching on that class, never on the bare
+fact that a value is absent. The three distinctions this buys, all pinned by tests:
+
+| Situation | Reason | Class |
+|---|---|---|
+| ModemManager exposes no bar scale, only a percentage | `unsupported` | capability |
+| The `Sim` interface was never read | `not-observed` | read |
+| `Modem.State` was absent from the payload | `not-reported` | read |
+| `Sim.EsimStatus` was present but decoded to nothing | `malformed` | read |
+| The HiLink session answered `125002` | `auth-expired` | read |
+
+`metricUnknownReasonFromRouter` is a WIDENING, never a re-classification — every
+`RouterSignalUnknownReason` member keeps its exact meaning.
+
+**A PAYLOAD THAT ARRIVED IS AN OBSERVATION, however little of it could be read.** A refused
+HiLink session and an unparseable goform body both produce a FRESH envelope whose metrics
+are `unknown` with a reason — not an `unavailable` one. That is not taxonomy for its own
+sake: `ObservationEnvelope` pairs `unavailable` with `value: null`, so emitting it for a
+payload we did hold would throw the diagnostics block away, and the raw vendor fields with
+it. `unavailableObservation` is reserved for the case where there is no payload at all.
+
+**NOTHING IS DROPPED — retention is structural, not a discipline.** Every normalizer builds
+ONE flat `RawFieldRecord` keyed `<body>.<provider-native field>` and reads its metrics out
+of that same record, so a field a metric consumed is necessarily a field the diagnostics
+block already carries. `createObservationDiagnostics` DERIVES `unmapped` (raw keys minus
+consumed) rather than accepting it, so a field no metric names lands there automatically
+instead of vanishing. A repeated XML tag is kept as `Tag`, `Tag#2`, `Tag#3`; a nested JSON
+object keeps its JSON text; `Modem.SimSlots`-style arrays stay arrays.
+
+**`ObservationDiagnostics.raw` is a REDACTION-CLASS boundary.** The UFI overview endpoint
+returns an IMSI and an ICCID, and they ARE retained — normalization does not get to decide
+what a diagnostician may need. Anything that logs, serializes or files a diagnostics block
+must route it through `redactObservationDiagnostics`, which runs the package's own key-based
+`redact`, so the classes masked here are the classes masked everywhere else. Retention and
+disclosure are separate decisions; this layer only guarantees the first. Note the recorded
+`B5` finding still applies: the shared redactor does not mask `imei` /
+`equipment-identifier`, so a caller that puts `Modem.EquipmentIdentifier` in a raw record
+owns that exposure.
+
+**PER-METRIC PROVENANCE, INCLUDING PER-METRIC AUTHORITY.** One normalized observation folds
+several provider reads together — HiLink answers `monitoring_status` and `device_signal`
+separately, UFI answers three endpoints — so a single envelope-level `observedAt` would be a
+claim about a reading no individual metric came from. Authority is per-metric for the same
+reason a payload can mix classes: a router's RSRP is a measurement the modem reported and is
+`authoritative`, while its bar count is a vendor rendering of that measurement and is
+`derived`. This layer has no clock: `observedAt` and `sourceEpoch` are supplied by whoever
+performed the read, so a normalizer cannot stamp a payload with a time it did not come from.
+
+**SIM PRESENCE IS BINARY, and that is the point.** `deriveSimPresence` answers
+`present | absent | unknown`; the third member is not a presence, it is the absence of an
+answer, so it becomes the metric's `unknown` state with a reason. That is what stops "we
+could not tell" from rendering beside "there is no SIM". For the three ROUTER sources SIM
+presence is deliberately NOT claimed at all — each vendor reports its own presence code
+(`SimStatus`, `simcard_state`, `simstate`) with vendor semantics and no migrated decoder
+covers them, so the code stays verbatim in the diagnostics block for the per-vendor
+providers to claim later with evidence. Guessing one would be exactly the invented reading
+this layer exists to prevent.
+
+**DESIRED, APPLIED AND OBSERVED ARE THREE THINGS AND STAY THREE THINGS.**
+`state-separation.ts` follows NetworkManager's own split: a connection PROFILE is what an
+operator asked for, an active connection's BEARER is what was put into force, and the
+device's reported state is what the hardware is doing. All three are routinely different at
+once, and a merged "current state" blob has to pick one and lose the other two — which makes
+"did our write take effect", "is this the network's doing or ours" and "what do we roll back
+TO" unanswerable. `ModemStateView` therefore has exactly three slots with three `kind`
+discriminants and NO fourth merged field (an effective value is a rendering decision, and
+computing one here would bake a policy every consumer would work around).
+`describeStateDivergence` returns TWO independent comparisons — `desiredVsApplied` ("did our
+write happen") and `appliedVsObserved` ("did it stick") — because one boolean cannot separate
+a request that was never carried out from one the network undid a second later, and those
+need opposite responses. An unavailable observation compares `indeterminate`, never
+`aligned`: "we could not read it" is not evidence that it matches.
+
+Coverage: `control/src/observations/{observation-states,normalization,state-separation}.test.ts`
+against the canonical per-source fixtures in `control/test-support/observation-fixtures.ts`
+(ModemManager, HiLink, ZTE goform, UFI/HIMI, plus the auth-expired and unparseable variants).
+Each fixture deliberately carries vendor-specific fields the normalized model has no slot for
+— `Modem.Ports`, `CurrentNetworkTypeEx`, `wan_lte_ca`, `cputemp` — and the round-trip
+assertions are what prove those survive. Later provider work should reuse those fixtures
+rather than re-invent them.
+
+## MODEMMANAGER PROVIDER — TYPED D-BUS, RUNTIME-DISCOVERED GENERIC CONTROLS
+
+`control/src/providers/modem-manager/` is the concrete `ProviderDefinition` for
+`org.freedesktop.ModemManager1`. It composes the existing typed transport and adapters; it does
+not introduce a second D-Bus stack. `ObjectManager.GetManagedObjects` supplies normalized
+snapshots, while the existing epoch-scoped `MmDbusObserver` supplies signal-driven lifecycle
+events and retains rows across daemon loss. A new or unknown model is selected by the live
+`Modem` interface and receives mode, signal, SIM, and power reads from the properties it exports.
+No model catalog participates in those generic reads.
+
+The provider reuses `MmDbusBackend`/`MmMutations`, `MmLocation` plus the bounded
+`location/fix-state.ts` machine, `createDbusSmsPort`, `MmUssd`, the band codec/certification split,
+and FCC coverage. Band reads are generic; band writes remain refused until the embedding process
+supplies a `bandSku` resolving to a catalog entry (see § RADIO CAPABILITY TRUTH). Its `modes`
+operation surfaces the modem's own `(allowed, preferred)` catalog verbatim. `Location.Setup` still sends `signal_location=false`, SMS remains
+read-only, and FCC remains policy/catalog-only. One shared `ModemActor` serializes every composed
+adapter for a modem. The provider has no bearer/APN method; NetworkManager remains sole owner.
+
+`errors.ts` maps typed daemon/transport failures to stable refusal reasons (`unauthorized`,
+`unsupported`, `wrong-state`, `busy`, `not-found`, `timed-out`, `disconnected`, `failed`).
+`forbidden-subprocess.test.ts` scans every production file in this provider and proves no path can
+spawn `mmcli`, `qmicli`, or `mbimcli`; its detector has a non-vacuity control for all three names.
+Private-session-bus coverage is `modem-manager-provider.integration.test.ts`. Operation-by-operation
+detail (which reads are generic, which writes stay refused, and the exact refusal vocabulary) lives in
+[`docs/MODEMMANAGER-PROVIDER.md`](docs/MODEMMANAGER-PROVIDER.md).
+
+## NETWORKMANAGER ADAPTER — SAVED vs APPLIED, AND NOTHING ELSE
+
+`control/src/providers/network-manager/` is the thin `NetworkManagerAdapter`: desired
+connection profiles, the applied bearer, and the interface that bearer landed on. It is the
+**only bearer/APN authority surface in the package**, and it is deliberately narrow — no
+radio, band, SIM or power operation appears in it, because those belong to the ModemManager
+provider and a second expression of them would make two writers for one resource. It is
+exported through the existing `./providers` and root entries; **no eighth package subpath**.
+
+It COMPOSES rather than replaces the existing NM work: `NmcliNmPort`
+(`control/src/backend/nmcli-nm-port.ts` — nine-field GSM write parity, device-exact
+activation, atomic Auto-APN transitions, quiesce leases) is unchanged and remains the
+`NetworkManagerPort` implementation this adapter is constructed with.
+
+Six decisions are load-bearing, each pinned by a test that goes red when removed:
+
+- **Observed state never writes the desired slot.** `observe()` may clear `applied` and
+  always rewrites `observed`; it touches `desired` on no path. Reality overtaking a write
+  does not un-ask the operator's question — and if it did, a re-enumeration would erase the
+  configuration the controller exists to restore.
+- **Desired records the REQUEST; applied records NM's READBACK.** Seeding desired from the
+  readback would make a field NM silently rewrote (`gsm.auto-config` driving the APN is the
+  real case) structurally unreportable, and asserting applied from the input would make a
+  silently-rejected write look like it took.
+- **`unbound` is a VALUE, not an unavailable observation.** "The device is here and idle" is
+  a definite divergence from a desired bearer; "the device is gone" is not knowledge at all.
+  An unavailable observation compares `indeterminate` against everything, which is right for
+  the second and wrong for the first, so a present-but-idle device produces a FRESH envelope
+  carrying `unbound` and only a MISSING device produces `unavailable` / `device-absent`.
+- **A readout is an ENUMERATION, never a delta.** A device absent from `NmObservationInput.devices`
+  is GONE. That is the only shape in which re-enumeration is detectable without depending on a
+  removal event nobody guarantees will arrive.
+- **A transitional device state is `pending`, not a loss.** A device in `prepare`/`ip-config`
+  carrying our connection is coming UP; reporting that as a lost bearer would turn every
+  ordinary activation into a false alarm. Loss is reported only for the four states that
+  positively contradict the applied bearer: `interface-absent`, `interface-detached`,
+  `connection-replaced`, `activation-failed` — and the loss retains `previous`, because the
+  applied slot has just been cleared precisely because it no longer describes reality.
+- **The adapter owns no identity and no credential.** Every slot is keyed by NM's own
+  connection UUID, never a `PhysicalModemId`, so this can never become a second authority on
+  which physical modem is which. `NmBearerBinding` also omits `username`/`password`: a state
+  slot is compared and surfaced in divergence output, and `gsm.password` is the one profile
+  field redaction masks everywhere else. There is likewise **no delete path** — profile
+  removal is not in the port-tagged `NmOp` set, so the adapter cannot express it.
+
+A superseded-generation readout is REFUSED rather than folded late, so a reply about a
+previous enumeration cannot clear applied state belonging to the current one. Divergence is
+reported through todo 18's `describeStateDivergence` — two independent comparisons, never one
+verdict. Coverage is `network-manager-adapter.test.ts`, driven by the stateful `nmcli`
+harness in `control/test-support/fake-nm/` (real readback, no bus, no subprocess); its scope
+gate scans the module's comment-stripped source for radio/SIM/delete/identity identifiers and
+proves the strip non-vacuous in both directions.
+
+## SMS — LIST / READ AND OBSERVATION, PERMANENTLY
+
+`control/src/ports/sms.ts` + `control/src/sms/` are the read-only SMS surface:
+`SmsObservationPort` is `list()` / `observe()` / `stop()` and nothing else. There is
+no verb here that composes, stores, sends, or deletes a message, and none may be
+added — sending or deleting is billable, irreversible, and turns a diagnostic read
+into real control over the subscriber's account. That is PERMANENT policy, not a
+phase limitation; CeraUI has carried the same contract since Phase A.
+
+**Two grep gates, and they enforce different vocabularies.**
+`control/src/sms/readonly-gate.test.ts` scans the whole SMS surface (the port
+included) for the D-Bus write verbs (`Messaging.Create` / `Delete`, `Sms.Send` /
+`Store`), the mmcli spellings, and the identifiers a hand-rolled write path would
+use; it also asserts the only D-Bus METHODS called are `List` + `GetAll` and the
+only SIGNALS subscribed are `Added` + `Deleted`. Those two sets are asserted
+SEPARATELY because both are spelled `member: 'X'` and only an outgoing `callMethod`
+can mutate a device. CeraUI's `tests/modem-sms-readonly-gate.test.ts` is the other
+half, extended by this work to cover the D-Bus verbs its mmcli-flag patterns could
+not spell. Neither gate may be deleted or narrowed to land a write path.
+
+**LIST ONCE, then follow the signals.** `createDbusSmsPort`
+(`sms/dbus-messaging.ts`) calls `Messaging.List` once and folds `Added`/`Deleted`
+from then on. Re-listing on a poll tick is the anti-pattern this port exists to
+remove: it costs one method call per stored message per tick and still cannot report
+an arrival sooner than the tick it lands on. The ONE re-list is on a transport
+RECONNECT, where the events that occurred while the bus was down were never
+delivered — and it is published as `resynced`, which the store applies by REPLACING
+its rows. Folding a fresh list as a series of `Added` events would keep a message
+deleted during the outage forever, and is exactly how a restart comes to duplicate
+an inbox it already held.
+
+**Duplicate suppression is not identity-based, because MM's own duplicate is not
+byte-identical.** ModemManager announces a message while it is `receiving` and again
+once it is `received`, so `createSmsInboxStore` (`sms/inbox-store.ts`) updates a row
+whose content CHANGED and no-ops one that is verbatim. A store that skipped on "have
+I seen this id" would keep the empty `receiving` row forever.
+
+**`sms/mmcli-parse.ts` is a CLI grammar living beside a D-Bus adapter, deliberately.**
+`mmcli` is a client of the SAME daemon, and CeraUI has read its inbox through it on
+real hardware since Phase A — so owning the grammar here is what makes the port's
+output provable against that reader on captured output (`sms/parse.test.ts` pins the
+golden values; CeraUI's `modem-sms-port-parity.test.ts` pins the identical ones), and
+what lets a consumer move its parsing onto this package without moving its transport
+in the same change. Four behaviours in it are load-bearing and each fails silently if
+dropped: the octal unescape is per-BYTE then UTF-8 (`\302\241` is two bytes, not two
+characters); the service-centre timestamp's HOURS-ONLY offset (`…-05`) is widened to
+`-05:00` or every message scores undated and "newest first" degrades to object-index
+order, which MM reuses; the list is cut to `SMS_INBOX_CAP` (50) BEFORE any per-message
+read; and an absent `modem.messaging.sms` VALUE is an empty inbox while a missing KEY
+is drift.
+
+**Nothing here puts message content into an error, a log, or a receipt.** A body
+routinely carries a one-time code and a sender identifies the subscriber, so a
+malformed record reports the KEY NAMES it found and nothing else, and the module
+never logs at all. `redact.ts`'s `isSmsSensitiveKey` is the value-side class; it is
+its own set rather than additions to `SENSITIVE_KEYS` because that set matches leaf
+names exactly, so adding `text` / `number` / `sender` would blank a receipt reason, a
+slot number, and a signal reading across the package. It mirrors CeraUI's
+`helpers/logger.ts` set key-for-key — a Rule-D MIRROR, never a shared import.
+
+**HONEST STATUS: no live receive has been drilled.** Only the Quectel has a SIM and
+it never registers, so no bench modem can receive an SMS (todo-2 BLOCKER B4). Every
+claim here is fixture-proven, including the restart-recovery behaviour; what is
+missing is the board measurement, not the behaviour.
+
+## FCC AUTO-UNLOCK — A CATALOG, A POLICY FILE, AND NOTHING ELSE
+
+`control/src/fcc/` implements NO unlock procedure and ships NO unlock script. It
+records which `<vid>:<pid>` MODELS an operator opted in for, so
+`ceralive-fcc-reconcile` can re-derive ModemManager's own admin-tier symlinks from
+that record on every boot. The unlocking is ModemManager's dispatcher's job, start
+to finish. Full model, matrix and certification status:
+[`docs/FCC-UNLOCK-COVERAGE.md`](docs/FCC-UNLOCK-COVERAGE.md).
+
+- **`<vid>:<pid>` is the ONLY correct key.** `mm-dispatcher-fcc-unlock.c` builds
+  exactly `g_strdup_printf("%04x:%04x", vid, pid)` and opens no other name, so a
+  vendor-only file is never a dispatcher target — it exists only as what the
+  available tier's `<vid>:<pid>` symlinks point at. A vendor-keyed rule would also
+  be wrong twice over: Sierra silicon ships under THREE vendor ids (`1199` its own,
+  `03f0` HP-branded, `413c` Dell-branded), so keying on the vendor misses two of the
+  three, and keying on the model misses the OEM rebrands.
+- **Three tiers, and the reconciler owns exactly one.** available
+  (`/usr/share/ModemManager/fcc-unlock.available.d`, ModemManager's, inert) →
+  enabled-admin (`/etc/ModemManager/fcc-unlock.d`, **ours, opt-in only**) →
+  enabled-package (`${libdir}/ModemManager/fcc-unlock.d`, a distribution's; CeraLive
+  writes there never). Writing into the wrong one is SILENT — the link is simply
+  never opened.
+- **The `/data` file is the record; the symlink is derived.** `/etc` rides the
+  rootfs, which is exactly what a RAUC slot swap REPLACES, so an opt-in written only
+  as a symlink survives a reboot and not an OTA. `/data/ceralive/fcc-unlock-policy.json`
+  (0600, atomic temp→chmod→rename) is what persists, and the oneshot re-materializes
+  the link before ModemManager probes a radio.
+- **Coverage is a TRI-STATE, and `unknown` is not `absent`.**
+  `resolveFccUnlockCoverage` answers `present` (MM ships a procedure), `absent` (the
+  ids are well-formed and are NOT in the mapping — a positive statement about the
+  device) or `unknown` (we could not read the ids, a statement about the READ).
+  Folding the third into the second would hide the module on hardware that may be
+  covered.
+- **The coverage check is part of the WRITE, not a UI nicety.** Persisting `true`
+  for an uncovered model leaves an enabled toggle that provably cannot act — the
+  reconciler would skip it forever, silently. `setFccUnlockPolicy` rejects it
+  `not-covered`. Disabling is deliberately NOT coverage-checked: a fail-closed
+  opt-OUT is not a thing.
+- **Corruption is fail-SAFE and the bytes are KEPT.** Unlike
+  `backend/usage/policy-store.ts`, which rewrites a fresh file, this store leaves a
+  damaged policy on disk and simply refuses to act on it. Enabling a
+  regulatory-unlock procedure is not something to infer from a file we could not
+  read, and replacing the evidence would make the next diagnosis impossible.
+- **The toggle is per MODEL and the UI must say so.** The mechanism is a
+  `<vid>:<pid>` symlink, so it applies to EVERY attached device matching it — the
+  bench's two identical HiLink twins are the shape of the problem. No per-unit
+  refinement exists without changing ModemManager.
+- **Enabling is not retroactive.** The dispatcher runs during modem
+  INITIALIZATION, so an already-enumerated modem needs a re-probe
+  (`mmcli -m <id> --disable && --enable`, or a replug). `SetFccUnlockPolicyResult`
+  carries `changed` precisely so an unchanged write does not cost one.
+
+Coverage: `control/src/fcc/{coverage,policy}.test.ts` plus
+[`packaging/ci/test-fcc-reconcile.sh`](packaging/ci/test-fcc-reconcile.sh) (the
+shell reconciler's behaviour on any host) and `packaging/ci/test-companion-chroot.sh`
+§ 6 (the same logic from its PACKAGED location after a real `dpkg` install).
+
+## BAND LOCK — THE ONE MODULE THAT IS STRICTER THAN THE FRAMEWORK FLOOR
+
+`control/src/band/` is the first of the seven capability modules with real verbs
+behind it. Two halves:
+
+- **`band-names.ts`** — `MMModemBand` ↔ name, both directions. The D-Bus surface
+  speaks numbers (`SupportedBands` / `CurrentBands` / `SetCurrentBands` are all
+  `au`); every operator-facing surface speaks the name (`eutran-3`, `any`). ONE
+  mapping so the two cannot disagree. It reproduces `mm-enums.h`'s actual shape:
+  the GSM/UTRAN head (1..20) is IRREGULAR — `UTRAN_2` is 12 while `UTRAN_6` is 8 —
+  so it is an explicit table and can only ever be one, while every later block is
+  arithmetic by MM's own construction (`EUTRAN_n = 30 + n`, `CDMA_BCn = 128 + n`,
+  `NGRAN_n = 300 + n`). Deriving those rather than transcribing ~350 constants is
+  the point: a transcription is where a wrong band number hides, and a wrong band
+  number locks a radio to a band the network does not operate on. A value this
+  build does not name round-trips as `band-<n>` — never dropped, never guessed.
+- **`certification.ts` + `certified-bands.json`** — the per-SKU proof gate.
+
+**`encodeBandList` FAILS CLOSED AS A WHOLE.** One unplaceable name rejects the
+entire selection rather than silently narrowing it: a partial band set is a
+DIFFERENT lock from the one that was asked for, and applying it strands the radio
+on bands nobody chose. `decodeBandList` is the mirror — a malformed member is
+dropped rather than coerced, and MM's `unknown` (0) is dropped because it means
+"the modem did not say", which is not a band an operator can select.
+
+**There is no reset VERB, and there must not be one.** ModemManager releases a
+band lock by setting exactly `MM_MODEM_BAND_ANY` (256); `setCurrentBands(modem,
+['any'])` IS the reset. Adding a `resetBands` sibling would be a second way to
+express one D-Bus call, and the two would eventually disagree about what "no
+lock" means.
+
+**Band-lock deliberately requires `certified`, not `capable`, to be OFFERED.**
+That is a documented DEVIATION from `support-claim.ts`'s framework floor, and the
+framework is right in general: hiding an uncertified-but-working control puts
+hardware behind a paperwork gate. For this module the paperwork IS the safety
+argument — a band the SIM's network does not operate on registers nowhere, and a
+modem that does not honour a reset leaves an operator with no way back short of a
+replug they may not be able to reach. So `isBandControlCertified` gates the
+control, and the catalog demands FOUR separate proofs (`supportedRead`, `set`,
+`readback`, `reset`), each `z.literal(true)`, so a half-certified entry cannot be
+expressed at all: a reviewer with three of four has an uncertified SKU and the
+file says so by OMITTING it. `readback` exists because an accepted-but-ignored
+write is indistinguishable from success at the call site.
+
+**The shipped catalog is EMPTY, and a test pins that.** No fleet modem has been
+through the drill: the bench Quectel RM530N-GL's SIM never registers (phase-C
+todo 2, blocker B2), so "re-registration proven" cannot be claimed on this bench
+today. An entry is added by a human-reviewed commit carrying the transcript,
+exactly like `usb-mode/certified-catalog.json`.
+
+`setCurrentBands` runs QUIESCED through the shared `ModemActor` for the same
+reason `setRadioModes` does: it re-registers the radio, so NM must stand down
+before the bearer drops underneath it rather than after.
+
+## RADIO CAPABILITY TRUTH — THE MODEM'S OWN CATALOG, UNEDITED
+
+`control/src/radio/` is the layer that carries ModemManager's `SupportedModes` /
+`CurrentModes` / `SupportedBands` answers to a consumer **without editing them**, and
+turns them into operation descriptors. Reachable through the package ROOT entry;
+**no eighth subpath** (the todo 17/18/23 precedent). It sits BESIDE `src/band/` rather
+than inside it — a mode change is disruptive-but-reversible, a band lock can strand a
+radio where nothing registers, and the two safety models must not be merged.
+
+- **`preferred: 0` is `none`, and `none` is a VALUE.** The bench FM350-GL advertises
+  exactly one combination whose preferred mask is 0: the modem allows a set of modes and
+  states NO preference within it. Substituting "the highest allowed mode" shows an
+  operator a preference the modem never expressed and cannot be returned to. `none`
+  therefore survives all the way into `descriptor.constraints.values`, and a test asserts
+  it is not any of the allowed modes.
+- **An unfamiliar mode bit stays OFFERED.** It round-trips as `mode-bit-<n>` (the
+  `band-<n>` discipline from `band-names.ts`), the combination is classified
+  `unknown-combination`, and the descriptor stays `available`. Hiding it would coerce
+  `unknown` into `unsupported`, which is the first rule `support-claim.ts` exists to
+  enforce.
+- **Nothing is dropped, structurally.** `decodeSupportedModeCombinations` puts a member
+  that is not a `(uu)` into `undecodable`, so `combinations.length + undecodable.length`
+  is the member count the provider sent. A test asserts that identity rather than the
+  contents.
+- **A selection the modem never advertised is REFUSED, never rounded.** Same rule, same
+  reason as `five-g-preference.ts`: substituting is how "prefer 4G" on a marginal cell
+  silently becomes 5G-first.
+- **`MmMutations.setModeCombination` exists because `setRadioModes` structurally cannot
+  express `MM_MODEM_MODE_NONE`** — its preferred mask is derived from
+  `preferenceOrdered[0]`. Both quiesce; both are one `SetCurrentModes` call.
+- **Mode and band writes are readback-gated at the CALL PATH, not only in the
+  descriptor.** `SetCurrentModes` / `SetCurrentBands` returning without an error only
+  proves the daemon accepted the call; an accepted-but-ignored write looks like success
+  from the call site, which is exactly the failure the catalog's own `readback` proof
+  exists to catch.
+- **The band-write gate is `band/certification.ts`, wired — not re-implemented.**
+  `describeBandWriteCertification` reads `findBandCertification` + `offerableBands` and
+  nothing else. `buildBandWriteDescriptor` then publishes `mutationImpact: 'disruptive'`,
+  a `band-certification-present` live precondition, a required readback, and
+  `availability: refused` / `support.write: false` carrying
+  `band-certification-required`. Because the shipped catalog is EMPTY, that is the
+  answer for every device on the fleet today. **The gate is deliberately DOUBLED** — the
+  descriptor is what a consumer reads to decide whether to offer the control, the
+  provider's own check is what refuses a call made anyway; a gate that exists in only one
+  of the two is either advisory or invisible.
+- **`ModemManagerProviderOptions.isBandControlCertified` is GONE, replaced by `bandSku` +
+  `bandCertificationCatalog`.** An injected boolean let a caller assert certification
+  without a catalog row, which the four-proof `z.literal(true)` schema exists to prevent.
+  MM's `Modem` interface carries `Model` and `Revision` but no USB `vid:pid`, and
+  `BandSku` needs all three — so the SKU resolver is injected and, with none supplied,
+  there is no SKU, no entry, and no band write. Fail-closed in every direction.
+- **A band reset readback is satisfied by `any` OR by the whole supported set** (MM
+  reports either after `SetCurrentBands([ANY])`); a NARROWING lock must match exactly,
+  because a superset is a different lock from the one that was asked for.
+
+`ContextWriteOperation` gained `describe(context)` for this: a static descriptor cannot
+carry a device's own catalog, so "which combinations does THIS modem advertise" and "is
+THIS SKU's band lock certified" are read live instead of inferred from a capability flag.
+
+Coverage: `control/src/radio/{mode-combinations,mode-truth,band-truth}.test.ts` (pure) and
+`control/src/providers/modem-manager/capability-truth.test.ts` (the whole path, over the
+in-memory MM transport, with FM350 / Quectel / SIMCom / unknown-combination / no-SIM
+specs).
+
+## SIGNAL AND SIM NORMALIZATION — EVIDENCE, NOT INFERENCE
+
+The observation layer's SIM and signal halves are finalized on top of todo 18.
+
+- **`absent` is reachable through exactly ONE evidence kind.**
+  `readSimPresence` (`hardware/router-parsers.ts`) returns the presence AND the
+  `SimPresenceEvidence` that decided it; only `state-failed-reason` (mmcli's
+  `sim-missing`) can produce `absent`. `NormalizedSim.presenceEvidence` and
+  `ModemManagerSimState.presenceEvidence` carry it, so "there is no SIM" and "we could not
+  tell" — read off the SAME empty fields — are separable by a consumer and by a test.
+  ModemManager reports `Sim: '/'` while a modem is initializing and while a slot switch is
+  in flight, so a blank object path proves nothing and stays `unknown`.
+- **`decodeStateFailedReason` is what makes absence readable at all.**
+  `Modem.StateFailedReason` is a `u` on D-Bus, while the migrated presence rule matches
+  the mmcli STRING — so before this decoder the D-Bus path could never produce the one
+  fact that proves absence. Both spellings are accepted; an unrecognized number decodes
+  to `undefined` and proves nothing.
+- **`ModemManagerSimState.present` is POSITIVE evidence only.** `true` means the modem
+  exports an active SIM object path. `false` is NOT a claim of absence — `presence` is.
+- **The router sources still claim no presence, and now say WHICH code they left alone.**
+  `vendor-code-unclaimed` names HiLink's `SimStatus`, goform's `simcard_state` and HIMI's
+  `simstate`. The field is NAMED in the evidence but deliberately NOT marked `consumed`,
+  so it stays in the diagnostics block's `unmapped` set, verbatim, for the per-vendor
+  provider that will one day decode it with evidence.
+- **`Modem.CurrentModes` and `Modem.SignalQuality` are retained as their D-Bus STRUCTS.**
+  The provider used to flatten `(uu)` and `(ub)` to their first member before handing them
+  to normalization, which dropped the preferred mode and the measurement-recency flag
+  before the diagnostics block ever saw them. `rawStructMember` / `rawNumberAt` /
+  `rawBooleanAt` read either shape, so a pre-existing flattened fixture still decodes.
+- **`NormalizedSignal.qualityRecent` claims the `(ub)` boolean.** It is a fact about when
+  the MODEM last measured, which is a different question from the envelope's staleness
+  (when WE last read). The router APIs have no such flag and answer `unsupported` — a
+  capability claim, the `bars` / `maxBars` precedent.
+
+Coverage: `control/src/observations/sim-evidence.test.ts`, whose control case is a modem
+with the identical blank fields and NO failure reason, asserting `unknown`.
+
+## GPS / LOCATION — A LIVE FIX, AND DELIBERATELY NO HISTORY
+
+`control/src/ports/location.ts` + `control/src/location/` +
+`control/src/backend/mm-location.ts` are the gated GNSS module. The port is
+`getLocationStatus` / `enableGnss` / `disableGnss` / `readFix` and nothing else, and it
+is deliberately NOT part of `ModemManagerPort` — a consumer that only reconciles radio
+and SIM state has no business holding a handle that can read a position.
+
+**The privacy fence is a PRODUCT rule, not a phase limitation.** There is no history
+verb, no track verb, no export verb and no upload verb, and none may be added: a fix is
+held in memory for a live display and is gone the moment GNSS is switched off or the fix
+goes stale. `ports/location-fence.test.ts` fails the build if a member whose name implies
+history, tracking, persistence or upload ever appears on the port.
+
+Four decisions are load-bearing and easy to undo by accident:
+
+- **`Location.Setup`'s `signal_location` argument is ALWAYS false.** Passing `true` makes
+  ModemManager broadcast the `Location` property over `PropertiesChanged`, which would put
+  the operator's coordinates on the system bus for every listener — including this
+  package's own observer, whose snapshots are logged. The fix is fetched by an explicit
+  `GetLocation` call instead, so a coordinate only ever exists where somebody asked for one.
+- **GNSS runs through `actor.run`, NOT `actor.runQuiesced`.** Quiescing exists to stop
+  NetworkManager racing a disruptive change and it costs a bearer deactivation; dropping a
+  link on a bonded device to switch a GPS receiver on would be an absurd trade.
+  `Location.Setup` touches no bearer, so per-modem serialization is all that is needed.
+- **Disable clears ONLY the GNSS bits.** `3gpp-lac-ci` is the existing cell-info module's
+  source, so blanking the whole mask would silently switch off a neighbouring feature the
+  operator never touched. For the same reason `3gpp-lac-ci` is absent from `GNSS_SOURCES`,
+  and the `Location` interface merely being exported is NOT a GNSS claim — MM exports it
+  for 3GPP-LAC/CID-only devices (the fleet's FM350-GL is exactly one), so a GNSS source
+  must appear in `Location.Capabilities`.
+- **Acquisition is BOUNDED and a fix EXPIRES.** `location/fix-state.ts` is a pure, total
+  machine with no clock and no I/O — the caller supplies `at` on every event, which is what
+  makes both bounds testable without waiting. Past `acquireTimeoutMs` (120 s) the state
+  becomes an honest terminal `no-fix` rather than an endless spinner; a fix older than
+  `fixTtlMs` (30 s) is dropped. A fix is reachable ONLY through `renderableFix`, which
+  answers only in the `fix` state, so no code path can render a position the modem has
+  stopped reporting.
+
+`gps-nmea` is decoded locally (`location/nmea.ts` — GGA only, checksum-verified) because it
+is the one GNSS source every GNSS-capable fleet modem advertises while MM's pre-decoded
+`gps-raw` dict is not guaranteed. GGA is the sentence used because it carries fix QUALITY
+alongside the position, so "the receiver has not locked on" is decoded rather than inferred.
+A `gps-raw` entry that exists but carries no usable coordinate pair is NOT a fix — MM
+populates the key as soon as the source is switched on.
+
+Coordinates are their own redaction class (`latitude` / `longitude` / `altitude` / `lat` /
+`lon` / `lng` / `nmea` / `nmeasentences` / `coordinates`), so a fix that reaches a log line,
+a receipt or a bundle comes out as the marker.
+
+**Status: `implemented-but-uncertified`.** Three fleet modems advertise GNSS, so the
+capability gate is satisfied, but whether a GNSS antenna is physically attached to the bench
+Quectel is unanswered (phase-C todo 2, `needs-user` N1), so the live-fix drill has not run.
+The capability, no-fix, disable, expiry and redaction paths are fixture-proven; the
+acquire-a-real-fix path is not.
+
+## USSD — A SESSION PROTOCOL, MODELLED AS ONE
+
+`control/src/ussd/` is the gated USSD module: a pure session machine (`session.ts`), a
+refusal taxonomy with its registration reader (`refusal.ts` + `registration.ts`), the four
+D-Bus calls (`calls.ts`), and the adapter that drives them (`mm-ussd.ts`).
+
+**LEASE-ONLY, never journaled.** A USSD session cannot re-register the radio, so it takes
+the per-modem mutation lease and carries no pre-state and no rollback — the split todo 29's
+`MutationAdmissionPort` enforces in the TYPE SYSTEM, so this classification is not a
+convention that can drift.
+
+**USSD is a SESSION protocol, not request/response, and that is why the machine exists.**
+`Initiate` opens a dialogue the network may hold open pending a `Respond`; a session that is
+neither responded to nor cancelled stays open NETWORK-side, consuming a scarce
+per-subscriber slot and failing the next `Initiate` with a busy error nobody can see the
+cause of. "Which verb is legal right now" is therefore a real question with a real wrong
+answer, and answering it inside the D-Bus adapter would make it untestable without a bus.
+
+Four properties are load-bearing:
+
+- **Three of the seven states are LOCAL.** `initiating` / `responding` / `cancelling` have
+  no counterpart in MM's `MMModem3gppUssdSessionState`, because MM has no state for "we
+  dispatched a call and the reply has not landed". Without them a second `initiate` racing
+  the first would be judged against `idle` and let through — exactly the double-open the
+  network answers busy.
+- **An illegal verb is REFUSED with a typed reason, never thrown and never ignored**, and
+  the machine does not move. A refusal at an RPC boundary must name what the caller can do
+  about it; a throw becomes an opaque failure and a silent no-op becomes a UI that spins.
+- **`lte-only-unsupported` is claimed ONLY on a positively PS-only registration.** USSD is a
+  circuit-switched supplementary service, so a modem attached LTE/5G-SA with no CS domain
+  and no CSFB can only carry it where the operator deployed USSI (3GPP TS 24.390) — and
+  where they did not, the modem answers a generic unsupported/failed error indistinguishable
+  from "this modem has no USSD interface". Reporting that as a device limitation would send
+  an operator hunting for a firmware fix for a network policy. `registration.ts` derives the
+  fact rather than guessing: `AccessTechnologies` all packet-only ⇒ no CS domain, EXCEPT
+  that MM's two CSFB registration states (`*_CSFB_NOT_PREFERRED`, 9 and 10) override it
+  outright. An unread registration stays `undefined` and can only ever make the refusal LESS
+  specific.
+- **An unanswered session is closed at a bound AND the network release is attempted.** The
+  machine closes `timed-out` first — that is the operator's answer whether or not the
+  release lands — and the modem-side `Cancel` is best-effort afterwards, because a modem
+  that did not answer the dialogue may not answer this either and a timeout must still
+  terminate. A `closed` machine accepts nothing, so a finished session cannot be
+  resurrected; the adapter's per-modem map starts each new dialogue from a fresh machine.
+
+**Carrier text is redacted by FIELD NAME, which is why the fields are named as they are.**
+`../redact.ts` is key-based, so `ussdCommand` / `ussdResponse` / `ussdReply` (rather than the
+shorter names that read better) ARE the guarantee. BOTH directions are sensitive, not just
+the reply: a USSD dialogue is how a subscriber tops up a prepaid line, so the command
+routinely carries a voucher code and the reply a balance or a one-time code.
+`NetworkNotification` / `NetworkRequest` are MM's own property names for network-initiated
+USSD text and are included so a raw property dump cannot leak what the call path masks.
+Nothing in `calls.ts` logs, and every error it raises is re-thrown untouched so the
+classifier — not a string built around the payload — decides what the caller is told.
+
+**Status: `implemented-but-uncertified`.** Only the bench Quectel has a SIM and it never
+registers, so no bench modem can open a USSD session (phase-C todo 2, BLOCKER B4). The state
+machine, the refusal classifier, the timeout path and the redaction are fixture-proven; the
+live balance-check drill has not run.
+
+## eSIM — `blocked` on hardware, not deferred by choice (2026-08-18)
 
 `docs/ESIM-DECISION.md` records the full eSIM investigation: SGP.22 profile-binding makes
 cross-device profile "copying" cryptographically impossible; the workable paths are
 removable eUICC, carrier reissue, or multi-profile remote switching; `lpac` (external LPA)
 is assessed but not adopted (AGPL-3.0 core, AT backend is demo-only, needs MM
-inhibit-coordination). Implementation is **deferred by user decision (2026-08-13)** — this
-doc is the exit artifact, not a task list. No eSIM code exists in this repository.
+inhibit-coordination).
+
+The 2026-08-13 **deferral was reversed** by user decision and eSIM re-entered scope as a
+hardware-gated adoption spike. It closed **`blocked`** (§9): **no bench modem exposes an
+eUICC** — the only SIM on the entire fleet reports no `eid` under MM 1.24.2, which is
+positive evidence of a classic removable UICC, and RM530N-GL eUICC capability is unproven
+for that unit. **`blocked` is not a NO-GO**: the spike's three hardware steps could not
+start, so no verdict exists and none may be inferred.
+
+**No eSIM code exists in this repository, and none may be written on the strength of this
+record.** No `ceralive-lpac` `.deb`, no closure row, no manifest entry, no apt publication,
+no image pin — the release manifest stays at `closure_version: 2` with its frozen matrix.
+
+The **licensing half of the spike did complete** and binds any future adoption:
+
+- lpac's program logic (`src/`, `driver/`, `utils/`) is **AGPL-3.0-only** — it may only ever
+  be spawned as an EXTERNAL process over its CLI, never linked or embedded into
+  `@ceralive/modem-control`, `cerastream`, or `CeraUI`.
+- Redistributing it obliges **Corresponding Source from the same place** (AGPL-3.0 §6(d)).
+  `apt.ceralive.tv` publishes binary indexes only — a source channel would have to exist
+  BEFORE any lpac upload.
+- AGPL §13 attaches to **modified** versions only, so the rule is *ship unmodified or not at
+  all* — the same answer `POLICY.md`'s no-fork rule already gives.
+- Shipping form on a hypothetical GO: a first-party bookworm rebuild in `packaging/`, pinned
+  like the other four sources. The stock Debian package (`lpac` 2.3.0-1) exists but is in
+  testing/unstable only — **not** bookworm, **not** trixie.
+
+## THE SIM'S OWN NUMBER — READ, REDACTED, NEVER A KEY
+
+`Modem.OwnNumbers` is the MSISDN the carrier wrote into the SIM. `mapping.ts`
+`readOwnNumbers` folds it onto `ModemIdentity.ownNumbers`
+(`readonly SubscriberNumber[]`, branded like `SubscriptionId` because it is the
+same PII class), and `redact.ts` gains `isOwnNumberSensitiveKey` for it.
+
+Four decisions carry weight:
+
+- **ABSENT, EMPTY and BLANK all read as NOT REPORTED.** Most SIMs carry no
+  MSISDN in their elementary files at all, so an empty `as` is the ordinary
+  answer — publishing `[]` would invite a consumer to render "no numbers" as a
+  finding rather than as silence. The key is omitted instead.
+- **The array is KEPT, not collapsed to a first element.** MM's property is `as`
+  and a dual-number SIM is expressible; dropping the tail would be a silent
+  loss. The bench Quectel RM530N-GL reports exactly one (`+573115422359`), which
+  is what the fixtures use.
+- **It is its OWN redaction class, not an addition to `SENSITIVE_KEYS`.** That
+  set matches a leaf name, so `number` / `numbers` there would blank a slot
+  index and a band count package-wide. `msisdn` stays where it already lived, in
+  the SMS set, and is not duplicated. Mirrors CeraUI's
+  `isOwnNumberSensitiveKey` (`helpers/logger.ts`) — a Rule-D MIRROR, never a
+  shared import.
+- **It may never bind policy.** `PolicyBindingKey` enumerates its fields, so the
+  addition cannot leak into a durable key by construction — the same protection
+  `subscriptionId` already relies on. It IS displayed to an operator behind an
+  explicit reveal; that is a rendering decision and does not make it loggable.
+
+Coverage: `control/src/backend/mapping.test.ts` (the read matrix, the
+fingerprint bump, and the everything-else-untouched control) plus the three
+own-number blocks in `control/src/redact.test.ts`.
 
 ## POLICY
 
@@ -213,12 +1291,19 @@ rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION
   `tsconfig.json` covers both members (`bun run typecheck` → `tsc --noEmit`).
 - **Biome** via `@ceralive/biome-config` (repo-root `biome.json` extends it). `bun run lint`.
 - **Bun test** (`bun test`) discovers `*.test.ts` across both members.
+- **Node 26** for the standalone consumer fixtures (`control/fixtures/`). Point
+  `CERALIVE_NODE_BIN` at a Node 26 binary if it is not first on `PATH`.
 
 ```sh
 bun install
-bun test          # workspace tests
+bun test          # workspace tests (includes the tarball-shape gate)
 bun run lint      # biome check .
 bun run typecheck # tsc --noEmit (strict + exactOptionalPropertyTypes)
+bun run build     # build @ceralive/modem-control into control/dist
+
+cd control
+bun run verify:tarball    # pack + assert the published artifact's shape
+bun run verify:consumers  # install the tarball into standalone Node 26 + Bun projects
 ```
 
 `packaging/` runs in a `debian:bookworm` container; its contract/verification scripts live
@@ -237,7 +1322,10 @@ Follows the CeraLive CI/CD standard (concurrency, trigger hygiene, least privile
 major action versions, per-manager caches, weekly grouped Dependabot, test-before-publish).
 
 - **`.github/workflows/ci-bun.yml`** — paths-filtered PR + push(`main`) lane for
-  `control/**` and `cli/**`: `bun install` → Biome check → `tsc --noEmit` → `bun test`.
+  `control/**` and `cli/**`: `bun install` → Biome check → `tsc --noEmit` → `bun test` →
+  `bun run verify:consumers` (the standalone Node 26 + Bun consumer fixtures against the
+  packed tarball). Its `node-version` pin is load-bearing rather than incidental:
+  `control/scripts/verify-consumers.ts` refuses any major but 26.
   `cancel-in-progress: true`.
 - **`.github/workflows/ci-packaging.yml`** — paths-filtered PR + push(`main`) container lane
   for `packaging/**`: runs the packaging contract scripts in `debian:bookworm`. The four
@@ -259,7 +1347,9 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
      (test-before-publish).
   3. **build-deb** (needs [tag-guard, test]) — injects `<upstream>-<rev>~ceralive<X.Y.Z>`
      (non-tag runs `~ceralive0.0.0~dev`) via `packaging/ci/inject-deb-version.sh`, builds both
-     arches, runs the package contract suite + daemon smoke, generates the manifest-complete
+     arches, runs the package contract suite + daemon smoke, builds the `Architecture: all`
+     companion ONCE (`packaging/ci/build-companion.sh`) and runs its clean-chroot contract
+     (`packaging/ci/test-companion-chroot.sh`), generates the manifest-complete
      release manifest (`packaging/ci/generate-release-manifest.sh`), and uploads the `.deb`
      artifacts + manifest.
   4. **publish-npm** (needs [tag-guard, build-deb]) — OIDC trusted publishing
@@ -271,14 +1361,92 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
      pre-create moved-tag re-check, downloads the `.deb` + manifest artifact, assembles a flat
      asset dir, and reconciles it immutably via `packaging/ci/reconcile-release-assets.sh`
      (manifest-complete, staged sanitized `~`→`.` names, collision-rejected, existing assets
-     integrity-compared and never overwritten).
+     integrity-compared and never overwritten). The flat assembly additionally REFUSES a
+     duplicate RAW basename before any sanitization can mask it. It then **dispatches
+     `apt-modem-closure` to `CERALIVE/apt-worker`** — last, so the manifest the publisher
+     fetches already exists on the release. `CERALIVE_DISPATCH_TOKEN` must be a fine-grained
+     PAT with **`Contents: read/write`** on the target repo; the repository-dispatch endpoint
+     is gated on Contents, NOT on `Actions: write`.
+- **`.github/workflows/apt-dispatch-preflight.yml`** — proves this repository's
+  `CERALIVE_DISPATCH_TOKEN` can reach apt-worker's publisher without publishing anything. It
+  sends `client_payload.preflight=true`, which apt-worker forces to DRY_RUN regardless of its
+  live default; with no tag it exits before manifest resolution, so it is safe to run BEFORE
+  the release exists. An operator's own `gh api` call would test the operator's CLI token and
+  prove nothing about the repository secret — which is exactly why this lives here.
   `cancel-in-progress: false` (never cancel a release/publish mid-run).
 
 Action pins track the latest stable **major** (resolved via the `gh api` releases/latest
-endpoint); Dependabot keeps them current. JS/TS CI runs on **Node 24**.
+endpoint); Dependabot keeps them current. JS/TS CI runs on **Node 26** — the CeraLive CI
+baseline, and the runtime the published tarball's consumer fixture asserts on.
 
 ## DOCS DISCIPLINE (Rule A)
 
 Any change to this repo's behavior or structure updates this `AGENTS.md`, the relevant
 `README.md`, and `docs/` in the **same** change. Keep the three-artifact map, the versioning
 contract, and the no-fork policy authoritative.
+
+## Huawei HiLink provider (Todo 24)
+
+`control/src/providers/huawei-hilink/` is the concrete network provider for two exact replay-backed firmware profiles: `e3372h-22.200-password-type-3` and `e3372h-22.333-password-type-4`. The evidence matcher first requires the exact firmware and an unauthenticated `SesTokInfo` document, then makes ONE profile-selected login attempt only after `state-login` confirms that profile's password type. It never tries the neighbouring algorithm. Unknown firmware and profile mismatches receive no operations surface.
+
+Every HTTP request is interface-bound and redirect-disabled. Credentials, password derivatives, cookies and tokens stay in memory and never enter errors or contract fixtures. Status, signal, network-mode and mobile-data capabilities are probed separately; only mode and mobile-data have writes, and Wi-Fi has no operation at all. Writes serialize per physical modem, acquire the non-queueing `router-session` ownership lease, preflight their own capability, and use a newly authenticated session for exact readback before `applied`. A `125002` or HTTP 401/403 during the write refuses `auth-expired` without another login attempt. Pure XML parsing remains centralized in `hardware/router-parsers` through `hardware/hilink-protocol.ts`.
+
+## ZTE GOFORM PROVIDER (TODO 25)
+
+`control/src/providers/zte-goform/` owns two incompatible, exact replay-backed profiles:
+`mf79u-legacy` uses `LOGIN` with a base64 password and browser-equivalent Origin/Referer;
+`mf266-salted` uses `LOGIN_MULTI_USER`, `LD`, salted SHA-256, `stok`, `RD`, and derived `AD`.
+The firmware-selected algorithm receives one bounded attempt and never falls through to the
+other profile. Cookies and derivatives are memory-only and sanitized fixtures expose only
+redaction markers. Unknown firmware may match the ZTE response shape but receives only the
+`zte-unknown-read-only` operation surface. All ZTE operation surfaces are currently read-only;
+in particular `wifi.enabled` is absent until a safe write plus readback is captured.
+
+The bench-only harness `control/scripts/mf79u-diagnose.sh` requires
+`MF79U_BENCH_PASSWORD` and one redacted browser request-shape manifest. It performs at most
+one request and emits only `auth-accepted`, `protocol-mismatch`, `auth-rejection`, or
+`lockout-unknown`; see `docs/MF79U-DIAGNOSIS.md`.
+
+## UFI / HIMI PROVIDER (TODO 26) — READ-ONLY, PLUS THE QUALCOMM PROHIBITION FENCES
+
+`control/src/providers/ufi-himi/` normalizes the Qualcomm UFI/HIMI telemetry the pure
+parsers already own (`hardware/router-parsers.ts` → `observations/sources/ufi.ts`) into a
+provider that is **read-only by construction, not by policy**. It adds a session and a
+transport around those parsers and nothing else.
+
+**Read-only is structural in three independent places.** HIMI is one endpoint
+(`POST /himiapi/json`) with the verb in the body's `cmdid`, so a method restriction would
+prove nothing; the command vocabulary is a frozen union instead — seven `get*` reads plus
+`login` — and a write command is therefore UNREPRESENTABLE rather than refused. The
+operations surface exposes `ProviderReadOperations` entries verbatim (a type with no
+`write` member to omit), every descriptor carries
+`support.write: {supported:false, reason:'ufi-himi-provider-is-read-only'}`, and a
+structural test asserts the only callables reachable from `operations()` are the two
+reads and the pure planner.
+
+**`05c6:9024` is evidence of a COMPOSITION, not a permission** — RNDIS plus an ADB
+interface. **`05c6:9091` is a firmware-chosen product id and is NOT proof of DIAG**; only
+an interface descriptor (class `ff`, subclass `ff`, protocol `30`) proves a DIAG channel,
+which is what `classifyUfiDiagEvidence()` encodes. Production never falls back to ADB,
+SSH, telnet or DIAG under any circumstance, and `UFI_DIAG_PRODUCTION_ACCESS` is
+`prohibited` unconditionally — a descriptor-confirmed channel raises only what a
+SUPERVISED BENCH operator may attempt by hand ([`docs/UFI-DIAG-PROBE.md`](docs/UFI-DIAG-PROBE.md)).
+
+**`prohibitions.ts` is INERT DATA, and the operations it names have no implementation
+anywhere** — not a refused stub, not a disabled branch. NV/EFS/identity/calibration
+writes, firmware flashing, EDL automation, blind driver/interface retries, DIAG writes,
+the DIAG info probe (bench-supervised only) and shell transport fallback each answer a
+typed reason. `planUfiOperation` takes no transport parameter and returns synchronously,
+so `transportContacted: false` is a provable literal; a spy-transport test asserts ZERO
+calls both there and for the same ids driven through the real `OperationEngine`, where
+the inert descriptor refuses on three independent fences (read unsupported, write
+unsupported, availability refused, plus an empty allowed-value set).
+`no-write-path.test.ts` scans the comment-stripped provider source for the constructs a
+write path would need — subprocess, raw socket, shell-fallback binary, DIAG device node,
+mutating HTTP verb, write-shaped literal — each with a non-vacuity control.
+
+Login is bounded to ONE attempt per physical modem per generation; a `SessionOut` drops
+the cached session and surfaces as an honest `auth-expired` reading rather than a retry
+loop. The admin password is EPHEMERAL BENCH INPUT (`UFI_BENCH_PASSWORD`), injected for a
+supervised run only, and `credential-fence.test.ts` scans tracked and intended-untracked
+files for it plus its base64/SHA-256 derivatives.
