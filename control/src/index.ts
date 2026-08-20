@@ -15,6 +15,7 @@ export * from './domain';
 export * from './fcc';
 export * from './location';
 export * from './ports';
+export * from './providers';
 export * from './redact';
 export * from './sms';
 export * from './usb-mode';

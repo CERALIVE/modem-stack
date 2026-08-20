@@ -81,6 +81,53 @@ npm and the `.deb` set. `.deb` versions encode the tag as `<upstream>-<rev>~cera
 (upstream-ordered, apt-safe; injected with `dch --force-bad-version`). Non-tag CI builds use
 `~ceralive0.0.0~dev`. Full contract: `docs/VERSIONING.md`.
 
+## FROZEN V1.1 DOMAIN CONTRACTS
+
+`control/src/domain/` additively freezes the provider-neutral v1.1 foundation while the
+published v1.0 package facade remains intact. The exact public shapes and safety rules are
+documented in [`docs/DOMAIN-CONTRACTS.md`](docs/DOMAIN-CONTRACTS.md).
+
+- `PhysicalModemId` / `StableKey` use serial → udev `ID_PATH` → a 128-character-bounded
+  fallback. Their constructors refuse MM object paths, interface names, IP addresses, IMEI,
+  and subscriber identifiers; none of those runtime or sensitive values can become the new
+  physical identity.
+- `DeviceGeneration` increments on re-enumeration or provider replacement and fences every
+  async observation/operation completion. `ObservationEnvelope<T>` separately models fresh,
+  stale, and unavailable data; unavailable carries `value: null`, never an invented value.
+- `OperationDescriptor<I, O>` keeps read and write support independent and records authority,
+  constraints, preconditions, availability, mutation impact, retry policy, transactional
+  requirements, evidence, and confidence. `OperationResult<O>` maps stale completions and
+  timed-out/dropped writes to `unknown-outcome` with mandatory reconciliation. Only explicitly
+  classified idempotent reads may auto-retry.
+
+This layer is pure data and functions: no daemon, socket, network endpoint, or CeraUI import.
+
+## PROVIDER REGISTRY + EVIDENCE MATCHER
+
+`control/src/providers/` is the provider-neutral registration and selection layer built on the
+frozen v1.1 domain contracts. The public contract and scoring details are documented in
+[`docs/PROVIDER-MATCHING.md`](docs/PROVIDER-MATCHING.md).
+
+- `ProviderDefinition` keeps each provider's profile version, declarative passive matchers,
+  harmless unauthenticated probes, optional single owner-selected authentication algorithm,
+  normalized `ObservationEnvelope` producer, provider-specific operations object and sanitized
+  contract fixtures together. `ProviderReadOperations` and `ProviderWriteOperations` are
+  composable capability subinterfaces; there is no package-wide vendor mega-interface.
+- `createProviderMatcher` evaluates every registered provider in stage order: transport → passive
+  facts → unauthenticated fingerprints → profile rank → at most one auth call → capability reads.
+  Evidence is scored `unsupported → maybe → likely → supported`; only a unique `supported`
+  candidate receives its operations object.
+- Ties and weak candidates return `ambiguous`, with `provider`, `profile` and `operations` all
+  `null`, `writable: false`, and the complete evidence/conflict ledger retained. Authentication is
+  not attempted for tied candidates, so an ambiguous match cannot cycle algorithms or acquire a
+  write surface.
+- Selection is cached only for the same `PhysicalModemId`, `DeviceGeneration`, registry revision,
+  firmware and composition. Any generation, firmware or composition change runs the full matcher
+  again.
+
+This layer registers no concrete provider. Huawei, ZTE, UFI/HIMI and other implementations remain
+separate evidence-backed work.
+
 ## PROVENANCE PINS (packaging)
 
 The four rebuilt sources are pinned in `packaging/upstream-pins.yaml`, re-verified end-to-end
