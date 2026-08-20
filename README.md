@@ -19,6 +19,14 @@ straight from CI artifacts; nothing is published to `apt.ceralive.tv` yet.
 | [`cli/`](cli/) | **`modem-control`** (bench CLI) | The iteration surface: `probe`, `watch`, `apply`, `set-usb-mode`, `usage`, `certify`, `hil-cycle`. Compiled for `arm64` + `amd64` and run against real modems on a bench device to mature the package, capture per-SKU certification bundles, and prove hub VBUS port-cycling ([RB-10](docs/BENCH.md#rb-10--hub-vbus-verification-partial)). |
 | [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork, zero source patches** (see [`POLICY.md`](POLICY.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
 
+The control package's existing `./hardware` entry point also exposes transport-free
+SIM-presence and Huawei/ZTE/UFI response normalization. Device I/O, sessions, retries,
+interface binding, caches, and writes remain outside those pure parsers. Its existing
+root, `./domain`, and `./capabilities` surfaces also expose deterministic compatibility
+helpers for portable modem identity, display naming, ModemManager enums, USB-network
+classification, capability selection, and shadow-result comparison; these helpers perform
+no discovery or transport and leave CeraUI integration to a separate cutover.
+
 ## Versioning at a glance
 
 ONE unified **SemVer** tag `vX.Y.Z` releases **both** artifacts together: `v0.2.0` publishes

@@ -13,3 +13,4 @@
 
 export * from '../band';
 export * from '../usb-mode';
+export * from './router-parsers';

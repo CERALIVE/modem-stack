@@ -35,13 +35,23 @@ export {
 	SIM_IFACE,
 } from './constants';
 export {
+	CELLULAR_USB_VENDOR_IDS,
+	cellularEvidence,
+	cellularVendorName,
 	classifyDevice,
+	classifyUsbNetDevice,
 	type DeviceClass,
 	type DeviceClassification,
 	descriptorsMatch,
 	detectUsbMode,
+	modelLabel,
+	publishesGenericIdentity,
 	type UsbDeviceSnapshot,
 	type UsbInterface,
+	type UsbNetClass,
+	type UsbNetClassification,
+	unitDiscriminator,
+	vendorLabel,
 } from './device-classifier';
 export {
 	buildEnrichment,

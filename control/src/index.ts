@@ -13,6 +13,7 @@ export * from './band';
 export * from './capability';
 export * from './domain';
 export * from './fcc';
+export * from './hardware/router-parsers';
 export * from './location';
 export * from './ports';
 export * from './providers';

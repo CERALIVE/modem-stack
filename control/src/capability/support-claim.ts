@@ -104,3 +104,11 @@ export function resolveCapabilityMatrix(input: CapabilityMatrixInput): Capabilit
 	}
 	return claims;
 }
+
+export function surfaceableModules(claims: CapabilityModuleClaims): CapabilityModule[] {
+	return CAPABILITY_MODULES.filter((module) => mayRenderModule(claims[module]));
+}
+
+export function claimableModules(claims: CapabilityModuleClaims): CapabilityModule[] {
+	return CAPABILITY_MODULES.filter((module) => mayClaimSupport(claims[module]));
+}

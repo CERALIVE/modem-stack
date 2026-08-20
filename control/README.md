@@ -34,6 +34,19 @@ through the root entry, so an internal reorganisation is not a breaking change.
 | `@ceralive/modem-control/transport` | The D-Bus transport seam (no underlying-library type is re-exported) |
 | `@ceralive/modem-control/testing` | Public **contract fakes** for consumers' own tests |
 
+The `./hardware` surface also owns the transport-free response parsers migrated
+from CeraUI: SIM-presence evidence plus normalized Huawei HiLink, ZTE goform,
+and Qualcomm UFI/HIMI signal, detail, and capability reads. They accept response
+bodies only; HTTP sessions, interface binding, retries, caches, and writes remain
+consumer-owned.
+
+The migration surface is broader than response parsing but remains pure: the root and
+existing `./domain`, `./capabilities`, and `./hardware` entries expose portable physical
+identity/link-id derivation, modem presentation rules, ModemManager enum decoding,
+USB-network classification and labels, capability-module selection, and shadow-backend
+divergence folding. Every helper consumes caller-supplied values or snapshots; none discovers
+devices, opens a transport, persists state, or performs a modem write.
+
 ### `./testing` is the contract-fakes surface
 
 A consumer writing tests against this package needs valid instances of the domain and

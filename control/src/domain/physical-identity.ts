@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Brand } from './brand';
 import { DomainError } from './errors';
 
@@ -140,4 +141,36 @@ export function resolvePhysicalModemIdentity(
 	}
 
 	throw new PhysicalModemIdentityError('no-identity-facts');
+}
+
+export type PortableIdentityAnchor = 'usb-serial' | 'id-path' | 'ifname';
+export interface PortablePhysicalObservation {
+	readonly ifname: string;
+	readonly idPath?: string;
+	readonly vendorId?: string;
+	readonly serial?: string;
+}
+export interface PortablePhysicalDeviceIdentity {
+	readonly identityKey: string;
+	readonly anchor: PortableIdentityAnchor;
+	readonly linkId: string;
+}
+
+export function mintLinkId(identityKey: string): string {
+	return `lnk_${createHash('sha256').update(identityKey).digest('hex').slice(0, 16)}`;
+}
+
+export function resolvePortablePhysicalIdentity(
+	observation: PortablePhysicalObservation,
+): PortablePhysicalDeviceIdentity {
+	const serial = observation.serial?.trim();
+	const idPath = observation.idPath?.trim();
+	const vendor = observation.vendorId?.trim().toLowerCase();
+	const identityKey = serial
+		? `usb-serial:${vendor ? `${vendor}:` : ''}${serial}`
+		: idPath
+			? `id-path:${idPath}`
+			: `ifname:${observation.ifname}`;
+	const anchor: PortableIdentityAnchor = serial ? 'usb-serial' : idPath ? 'id-path' : 'ifname';
+	return { identityKey, anchor, linkId: mintLinkId(identityKey) };
 }

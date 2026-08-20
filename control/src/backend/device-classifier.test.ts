@@ -3,7 +3,15 @@
 // confident guess, and mass storage without a modeswitch trigger is NOT a modem.
 
 import { describe, expect, test } from 'bun:test';
-import { classifyDevice, detectUsbMode, type UsbDeviceSnapshot } from './device-classifier';
+import {
+	classifyDevice,
+	classifyUsbNetDevice,
+	detectUsbMode,
+	modelLabel,
+	type UsbDeviceSnapshot,
+	unitDiscriminator,
+	vendorLabel,
+} from './device-classifier';
 
 /** A Quectel-style QMI composition: a `qmi_wwan` control port (+ AT serials). */
 const QMI: UsbDeviceSnapshot = {
@@ -164,5 +172,40 @@ describe('classifyDevice — honesty guards', () => {
 			interfaces: [{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x00 }],
 		};
 		expect(classifyDevice(bareVendor).deviceClass).toBe('unmanaged');
+	});
+});
+
+describe('CeraUI USB-net classification parity', () => {
+	test('requires positive cellular evidence before naming a tether cellular', () => {
+		const plainNic: UsbDeviceSnapshot = {
+			vendorId: '0b95',
+			productId: '772b',
+			bDeviceClass: 0,
+			interfaces: [
+				{
+					interfaceClass: 0x02,
+					interfaceSubClass: 0x06,
+					interfaceProtocol: 0,
+					driver: 'cdc_ether',
+				},
+			],
+		};
+		expect(classifyUsbNetDevice(plainNic).deviceClass).toBe('wired-ethernet');
+		expect(classifyUsbNetDevice(HILINK_ECM).deviceClass).toBe('router-cellular');
+		expect(classifyUsbNetDevice(QMI).deviceClass).toBe('mm-managed');
+	});
+
+	test('replaces duplicated class strings with database identity', () => {
+		const hilink: UsbDeviceSnapshot = {
+			...HILINK_ECM,
+			manufacturer: 'HUAWEI_MOBILE',
+			product: 'HUAWEI_MOBILE',
+			databaseVendor: 'Huawei Technologies Co., Ltd.',
+			databaseModel: 'E3372 LTE/UMTS/GSM HiLink Modem/Networkcard',
+			serialNumber: 'Y4QDU17621000872',
+		};
+		expect(vendorLabel(hilink)).toBe('Huawei');
+		expect(modelLabel(hilink)).toBe('E3372 LTE/UMTS/GSM HiLink Modem/Networkcard');
+		expect(unitDiscriminator(hilink)).toBe('Y4QDU17621000872');
 	});
 });

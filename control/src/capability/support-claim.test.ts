@@ -3,11 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import {
 	CAPABILITY_MODULES,
 	type CapabilityModule,
+	claimableModules,
 	mayClaimSupport,
 	mayRenderModule,
 	resolveCapabilityMatrix,
 	resolveSupportClaim,
 	SUPPORT_CLAIM_STATES,
+	surfaceableModules,
 } from './support-claim';
 
 const ALL: readonly CapabilityModule[] = CAPABILITY_MODULES;
@@ -87,5 +89,17 @@ describe('the seven-module matrix', () => {
 		for (const module of ALL) {
 			expect(claims[module]).toBe('unavailable');
 		}
+	});
+
+	test('derives surfaceable and claimable modules in canonical module order', () => {
+		const claims = resolveCapabilityMatrix({
+			implemented: ALL,
+			gates: { 'band-lock': true, sms: true, gps: true },
+			capability: { 'band-lock': 'present', sms: 'present', gps: 'absent' },
+			certified: { sms: true },
+		});
+
+		expect(surfaceableModules(claims)).toEqual(['band-lock', 'sms']);
+		expect(claimableModules(claims)).toEqual(['sms']);
 	});
 });

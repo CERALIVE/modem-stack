@@ -429,6 +429,25 @@ coverage exist at the bench (`docs/BENCH.md` per-SKU blockers; the CeraLive-side
 record is todo 2's BLOCKER B3), so the readback/registration/data/fallback drill
 on the RM530N-GL has not run. Every claim above is fixture-proven only.
 
+## PURE ROUTER RESPONSE PARSERS — TRANSPORT STAYS OUT
+
+`control/src/hardware/router-parsers.ts` owns the pure CeraUI migration seam for
+SIM-presence evidence and Huawei HiLink, ZTE goform, and Qualcomm UFI/HIMI response
+normalization. It is exported through the existing root and `./hardware` entry points;
+no new package subpath exists. Empty/refused/malformed readings remain explicit unknown
+states, vendor placeholders are omitted, and HiLink capability refusal preserves the
+device code. The module accepts response bodies only: HTTP, authentication, interface
+binding, retries, caching, and every write remain outside it. CeraUI keeps its adapters
+until the explicit cutover todo; this migration creates no sibling path dependency.
+
+The same transport-free migration seam also owns the remaining pure CeraUI compatibility
+rules: portable USB physical identity/link-id derivation, modem display-name sanitation,
+ModemManager enum normalization, USB-network classification and labels, capability-module
+selection, and shadow-backend divergence folding. These helpers accept snapshots, primitive
+values, or already-normalized records and return deterministic values only. They do not read
+udev, invoke ModemManager, persist state, or alter CeraUI; CeraUI keeps its local adapters and
+copies until the explicit consumer cutover.
+
 ## SMS — LIST / READ AND OBSERVATION, PERMANENTLY
 
 `control/src/ports/sms.ts` + `control/src/sms/` are the read-only SMS surface:
