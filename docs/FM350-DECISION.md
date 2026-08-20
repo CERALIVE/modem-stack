@@ -385,6 +385,35 @@ existing rule, USB enumeration alone does not promote support, matrix, or certif
 status. This note closes the Branch-A human-decision-required STOP; it does not retract or
 rewrite Citation 6.
 
+### Non-mutating composition capture, 2026-08-18 — decision UNCHANGED
+
+A read-only capture pass re-verified the carrier-mounted unit on the same board and added
+the first **AT-level** evidence for it. Full record:
+[`COMPOSITION-EVIDENCE.md`](COMPOSITION-EVIDENCE.md).
+
+| Query | Response |
+|-------|----------|
+| `AT+CGMR` | `81600.0000.00.19.17.10` (matches `mmcli`'s `modem.generic.revision`) |
+| `AT+GTPKGVER?` | `81600.0000.00.19.17.10_5001.0000.030.000.026_B77` |
+| `AT+GTUSBMODE?` | `41` |
+| `AT+GTUSBMODE=?` | `(40,41)` |
+
+Only bare-execute, READ (`?`), and TEST (`=?`) forms were sent; **no SET form**, and the
+unit's `0e8d:7127` identity was read from sysfs before and after and was unchanged.
+
+**Nothing in this record changes.** Specifically:
+
+- **No USB classifier entry is added for `0e8d:7127`.** The Branch-A STOP closure above
+  stands: the id belongs to the M.2→USB carrier, not to a native FM350 USB personality.
+- **The three-gate ledger is untouched** — gate 1 CLEARED, gates 2 and 3 OPEN. Reading a
+  mode register is not an end-to-end HIL pass, and the unit still has no SIM.
+- **`docs/MODEM-SUPPORT-MATRIX.md` is unchanged.** Per the standing rule, USB enumeration —
+  and now an AT read-back — promotes no support, matrix, or certification status.
+- **No mode control is offered for the FM350 in any topology.** The `(40,41)` domain
+  corroborates the kernel-sourced `AT+GTUSBMODE=40/41` research, but which value maps to
+  which composition, and whether a change persists or is recoverable, remains unproven and
+  was deliberately not tested.
+
 ### Branch B — PCIe-only observed (`14c3:4d75` on the PCI bus, `mtk_t7xx` driver bound, no USB VID:PID)
 
 This CONFIRMS the mechanical rule's already-fired branch 3 (documented-deferred) with real

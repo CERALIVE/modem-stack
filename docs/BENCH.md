@@ -812,19 +812,32 @@ the same reviewed ingestion path: [`CATALOG-INGESTION.md`](CATALOG-INGESTION.md)
 
 ### Blockers that make every RB-11…RB-15 row `[PARTIAL]` today
 
-All four were verified on `ceralive2` (192.168.78.132) on 2026-08-16. None is "not run yet";
+Originally verified on `ceralive2` (192.168.78.132) on 2026-08-16 and **re-verified on the
+same board on 2026-08-18** by a non-mutating capture pass against the SIMCom SIM7600G-H and
+the Fibocom FM350-GL. The re-run **cleared B1, downgraded B3, promoted B2 from a code read
+to a hardware-proven failure, and found two new blockers (B5, B6).** None is "not run yet";
 each is a named obligation with a code or packaging fix behind it.
 
-| # | Blocker | Verified how | Consequence |
-|---|---------|--------------|-------------|
-| **B1** | `usbutils` is **not installed and not in the board's apt archive** (`apt-cache show usbutils` → `E: No packages found`) | live on the board | `certify` runs `lsusb -v` **first** and `usb-devices` second (`cli/src/certify/capture.ts`); both fail, so **no bundle of any kind can be captured** until `usbutils` is installed from an archive that carries it, or built |
-| **B2** | The production USB enumerator never populates `ifname` (`control/src/backend/usb-enumerator.ts`, `buildSnapshot`), but `certify` matches its target device **by** `ifname` | code read | the matched device is always `undefined`, so a bundle comes out with **no `sku` and empty `udevProperties`**, and `--transition` refuses with `--transition needs a matched USB device` |
-| **B3** | There is **no AT transport** on the bench: the CLI's `benchAtSender` rejects every send, and the image has no `socat` / `picocom` / `minicom` for a manual session either | code read + live `command -v` sweep | stage 2 cannot execute an AT command at all — every `AT+…` line in RB-11/13/14 below is **documented, never executed** |
-| **B4** | The shipped `certified-catalog.json` holds exactly one entry, `CERALIVE-SYNTHETIC-TEST-SKU` | repo read | stage 2 is unreachable for every real SKU until that SKU's stage-1 entry is merged |
+| # | Blocker | State | Verified how | Consequence |
+|---|---------|-------|--------------|-------------|
+| **B1** | `usbutils` absent from the board and its apt archive | **CLEARED (2026-08-18)** | live `command -v` sweep: `/usr/bin/lsusb`, `/usr/bin/usb-devices` both present | `certify` now completes its base capture; two real `CERTIFY OK … synthetic=false` bundles were captured on 2026-08-18 |
+| **B2** | The production USB enumerator never populates `ifname` (`control/src/backend/usb-enumerator.ts`, `buildSnapshot`), but `certify` matches its target device **by** `ifname` (`cli/src/commands/certify.ts`) | **OPEN — now hardware-proven** | two live `certify` runs | the matched device is always `undefined`, so both real bundles came out with **no `sku` and empty `udevProperties`**; the ingestion seam correctly refuses them `sku-missing`, so **no bundle this pipeline produces can currently be promoted**. Pinned by `control/src/usb-mode/ingestion.hardware.test.ts` |
+| **B3** | No AT transport | **PARTIALLY CLEARED (2026-08-18)** | live: `socat` **is** present at `/usr/bin/socat`; a query-only AT session over `/dev/ttyUSB2` (SIMCom) and `/dev/ttyUSB12` (FM350) succeeded | a **manual** AT session is now possible on the bench. The CLI half is unchanged: `benchAtSender` still rejects every send, so `certify --transition` still cannot execute an AT command. `picocom` / `minicom` remain absent; ModemManager's `--command` passthrough remains unavailable (MM is not run with `--debug`, so `mmcli --command` answers `Operation only allowed in debug mode`) |
+| **B4** | The shipped `certified-catalog.json` holds exactly one entry, `CERALIVE-SYNTHETIC-TEST-SKU` | OPEN | repo read | stage 2 is unreachable for every real SKU until that SKU's stage-1 entry is merged |
+| **B5** | The shared redactor does **not** mask `imei` / `equipment-identifier` / `device-identifier` (`control/src/redact.ts` `SENSITIVE_KEYS` covers ICCID / IMSI / EID / PIN / PUK / passwords only) | **OPEN — new** | inspected both real bundles | every real bundle's `modemManager` half carries the IMEI of **every** modem on the bench (`GetManagedObjects` is fleet-wide, not slot-scoped). A bundle therefore **must not be committed to this repo or pasted into a PR** as-is — which directly conflicts with the review workflow in [`CATALOG-INGESTION.md`](CATALOG-INGESTION.md). The `usb.lsusb` / `usb.usbDevices` halves are IMEI-free and safe to quote |
+| **B6** | `skuOf` (`cli/src/certify/transform.ts`) derives `firmwarePrefix` from udev `ID_REVISION`, which is the USB **bcdDevice** — not the modem firmware revision | **OPEN — new** | compared udev against `mmcli` and AT `AT+CGMR` for both units | for the bench SIMCom, `ID_REVISION` is `0318` while the firmware is `LE20B04SIM7600G22`; for the FM350, `0001` vs `81600.0000.00.19.17.10`. A catalog entry keyed on `ID_REVISION` would **not** be firmware-keyed, so it could not distinguish two firmware builds of one SKU. Pinned by `ingestion.hardware.test.ts` |
 
-**B1 and B2 gate stage 1. B3 and B4 additionally gate stage 2.** A run that reports a
-`CERTIFY OK` line with `synthetic=true`, or with an empty `sku`, is **not** a passing
-RB-11…RB-15 — the gate is the `synthetic=false` line *and* a bundle whose `sku` is populated.
+**B2 and B6 gate stage 1. B3 and B4 additionally gate stage 2. B5 gates the review step for
+every stage.** A run that reports a `CERTIFY OK` line with `synthetic=true`, or with an empty
+`sku`, is **not** a passing RB-11…RB-15 — the gate is the `synthetic=false` line *and* a
+bundle whose `sku` is populated.
+
+> **Query-only AT sessions are safe; SET forms are not.** The 2026-08-18 pass established
+> that a read-only AT survey needs no ModemManager inhibit on this bench: MM held only the
+> Quectel's `ttyUSB7`/`ttyUSB8` open, so every other AT port was free. Restrict such a
+> session to bare execute commands (`ATI`), READ forms (`AT+X?`), and TEST forms (`AT+X=?`)
+> — the TEST form returns a parameter range and assigns nothing (ITU-T V.250 §5.4.1). A SET
+> form (`AT+X=<value>`) is a certification-gated mutation and must never appear in a survey.
 
 ### The shared certify step
 

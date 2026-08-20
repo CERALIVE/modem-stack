@@ -35,8 +35,8 @@ modem-stack/
 ├── control/        @ceralive/modem-control — TS control library (Bun workspace member)
 ├── cli/            modem-control bench CLI  (Bun workspace member)
 ├── packaging/      ModemManager-stack .deb rebuilds + provenance/verification CI
-├── docs/           BENCH.md runbooks, CATALOG-INGESTION.md, VERSIONING.md, FM350-DECISION.md,
-│                   ESIM-DECISION.md
+├── docs/           BENCH.md runbooks, CATALOG-INGESTION.md, COMPOSITION-EVIDENCE.md,
+│                   VERSIONING.md, FM350-DECISION.md, ESIM-DECISION.md
 ├── AGENTS.md       AI routing + repo contract (self-contained; see Rule D)
 └── POLICY.md       no-fork gate + upstream-contribution-first policy
 ```

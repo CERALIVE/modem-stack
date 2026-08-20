@@ -176,10 +176,28 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
 - Per-SKU capture runbooks are `docs/BENCH.md` **RB-11 … RB-15** (RB-16 is the FM350
   USB-vs-PCIe probe — its 2026-08-16 bench run found the unit not connected, so
   `docs/FM350-DECISION.md`'s three-gate ledger stays OPEN with the probe evidence recorded;
-  RB-17 is modem-flap resilience). All are `[PARTIAL]` — four named blockers
-  (`usbutils` absent from the board and its archive; the enumerator not populating `ifname`;
-  no AT transport on the bench; an empty real-SKU catalog) are recorded in `docs/BENCH.md`
-  § "Per-SKU certification". No SKU is certified and no matrix row is promoted.
+  RB-17 is modem-flap resilience). All are `[PARTIAL]` — **six** named blockers are recorded
+  in `docs/BENCH.md` § "Per-SKU certification", re-verified live on 2026-08-18:
+  **B1 CLEARED** (`usbutils` is now on the board), **B3 downgraded** (`socat` is present, so
+  a manual query-only AT session works; the CLI's `benchAtSender` still rejects every send),
+  and **B2 promoted to hardware-proven** — `certify` matches its device by `ifname`, which
+  the enumerator never populates, so **every real bundle comes out with no `sku` and empty
+  `udevProperties`** and the ingestion seam refuses it `sku-missing`. Two blockers are new:
+  **B5**, the shared redactor does not mask `imei` / `equipment-identifier`, so a real
+  bundle carries every bench modem's IMEI and must not be committed or pasted into a review
+  comment; and **B6**, `skuOf` reads `firmwarePrefix` from udev `ID_REVISION`, which is the
+  USB `bcdDevice` rather than the modem firmware revision, so a catalog entry built from a
+  capture would not actually be firmware-keyed. B2 and B6 are pinned by
+  `control/src/usb-mode/ingestion.hardware.test.ts`. No SKU is certified and no matrix row
+  is promoted.
+- **Bench composition evidence** for the SIMCom SIM7600G-H and the carrier-mounted Fibocom
+  FM350-GL is recorded in [`docs/COMPOSITION-EVIDENCE.md`](docs/COMPOSITION-EVIDENCE.md) —
+  descriptors, driver bindings, firmware revisions, and the read-back state of each vendor's
+  USB-mode command (`AT+CUSBPIDSWITCH`, `AT+GTUSBMODE`), captured **non-mutatingly**
+  (bare-execute / READ `?` / TEST `=?` forms only; no SET form was ever sent). It certifies
+  nothing: the SIMCom's PID→composition mapping is unproven so its target modes stay
+  UNCERTIFIED and HIDDEN, and the FM350 gains **no** classifier entry for its `0e8d:7127`
+  carrier id — `docs/FM350-DECISION.md` is unchanged.
 - The full bench-runbook ladder, RB-1 through RB-17, lives in `docs/BENCH.md`: RB-9 is the
   fleet-inventory capture (one identity bundle per acquired physical unit), RB-10 is the
   hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
