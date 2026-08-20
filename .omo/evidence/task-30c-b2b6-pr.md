@@ -4,7 +4,7 @@
 - Base: current `origin/main` (`4b4b206`, PR #12 squash)
 - PR: https://github.com/CERALIVE/modem-stack/pull/14
 - Status: open; not merged
-- CI: no checks reported for the branch at verification time
+- CI: green — `Lint, typecheck, test (control + cli)` (run `32389680098`)
 
 The branch contains the five post-consolidation commits fixing the hardware-confirmed B2/B5/B6 issues. The real-hardware findings and fix rationale are documented in:
 
