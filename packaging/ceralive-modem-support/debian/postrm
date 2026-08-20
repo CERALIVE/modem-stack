@@ -2,8 +2,8 @@
 # postrm for ceralive-modem-support.
 #
 # On PURGE, retire the runtime state this package's helper creates but does not own as
-# packaged files: the ACTIVE fcc-unlock symlinks it wrote into ModemManager's multiarch
-# directory. Those are symlinks into /usr/share/ModemManager/fcc-unlock.d, so removing
+# packaged files: the ACTIVE fcc-unlock symlinks it wrote into ModemManager's admin
+# directory. Those are symlinks into /usr/share/ModemManager/fcc-unlock.available.d, so removing
 # them removes nothing of ModemManager's own — but leaving them behind would let a purged
 # package keep a radio's FCC-unlock script active, which is exactly the state todo 33
 # forbids by default.
@@ -12,23 +12,22 @@
 # is left strictly alone: it is not ours.
 set -e
 
-AVAILABLE_DIR=/usr/share/ModemManager/fcc-unlock.d
+AVAILABLE_DIR=/usr/share/ModemManager/fcc-unlock.available.d
+ACTIVE_DIR=/etc/ModemManager/fcc-unlock.d
 
 purge_active_fcc_symlinks() {
-    for dir in /usr/lib/*/ModemManager/fcc-unlock.d; do
-        [ -d "$dir" ] || continue
-        for link in "$dir"/*; do
-            [ -L "$link" ] || continue
-            target="$(readlink -f "$link" 2>/dev/null || true)"
-            case "$target" in
-                "$AVAILABLE_DIR"/*)
-                    rm -f "$link"
-                    echo "ceralive-modem-support: purge removed active FCC-unlock symlink $link"
-                    ;;
-            esac
-        done
-        rmdir "$dir" 2>/dev/null || true
+    [ -d "$ACTIVE_DIR" ] || return 0
+    for link in "$ACTIVE_DIR"/*; do
+        [ -L "$link" ] || continue
+        target="$(readlink -f "$link" 2>/dev/null || true)"
+        case "$target" in
+            "$AVAILABLE_DIR"/*)
+                rm -f "$link"
+                echo "ceralive-modem-support: purge removed active FCC-unlock symlink $link"
+                ;;
+        esac
     done
+    rmdir "$ACTIVE_DIR" 2>/dev/null || true
 }
 
 case "$1" in
