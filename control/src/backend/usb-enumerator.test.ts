@@ -45,6 +45,7 @@ describe('parseUdevDatabase', () => {
 		expect(quectel?.model).toBe('EG25-G');
 		expect(quectel?.firmwareRevision).toBe('0318');
 		expect(quectel?.physicalUid).toBe('pci-0000:00-usb-0:1');
+		expect(quectel?.sysfsPath).toBe('/sys/devices/pci0000:00/usb1/1-1');
 	});
 
 	test('parses interface class triples from ID_USB_INTERFACES', () => {

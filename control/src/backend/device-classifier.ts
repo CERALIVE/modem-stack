@@ -19,37 +19,9 @@
 // evidence and the three-gate ledger behind that decision.
 
 import type { CanonicalUsbMode, ExpectedDescriptors } from '../usb-mode';
+import type { UsbDeviceSnapshot, UsbInterface } from './usb-device-snapshot';
 
-/** One USB interface's descriptor bytes plus its bound kernel driver, if any. */
-export interface UsbInterface {
-	readonly interfaceClass: number;
-	readonly interfaceSubClass: number;
-	readonly interfaceProtocol: number;
-	/** The bound kernel driver (`qmi_wwan`, `cdc_mbim`, `option`, `cdc_ether`, …). */
-	readonly driver?: string;
-}
-
-/** A single USB device as observed from udev/sysfs — the classifier's whole input. */
-export interface UsbDeviceSnapshot {
-	readonly vendorId: string;
-	readonly productId: string;
-	readonly model?: string;
-	readonly firmwareRevision?: string;
-	readonly manufacturer?: string;
-	readonly product?: string;
-	readonly databaseVendor?: string;
-	readonly databaseModel?: string;
-	readonly serialNumber?: string;
-	/** The device-descriptor `bDeviceClass` byte (0 ⇒ class is per-interface). */
-	readonly bDeviceClass: number;
-	readonly interfaces: readonly UsbInterface[];
-	/** Stable physical-topology UID (udev `ID_PATH` / physdev) — survives a mode change. */
-	readonly physicalUid?: string;
-	/** The bound network interface name, if the device presents one (`wwan0`, `usb0`). */
-	readonly ifname?: string;
-	/** Raw udev properties (`ID_USB_MODESWITCH`, `ID_MM_CANDIDATE`, …). */
-	readonly udevProperties?: Readonly<Record<string, string>>;
-}
+export type { UsbDeviceSnapshot, UsbInterface } from './usb-device-snapshot';
 
 /** The four device classes. `pending-modeswitch` is distinct from `unmanaged`. */
 export type DeviceClass = 'mm-managed' | 'router-mode' | 'unmanaged' | 'pending-modeswitch';

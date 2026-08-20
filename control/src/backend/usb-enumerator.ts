@@ -96,7 +96,10 @@ function interfaceIndex(devpath: string): number | undefined {
 	return Number.isNaN(index) ? undefined : index;
 }
 
-function buildSnapshot(env: ReadonlyMap<string, string>): UsbDeviceSnapshot | undefined {
+function buildSnapshot(
+	devpath: string,
+	env: ReadonlyMap<string, string>,
+): UsbDeviceSnapshot | undefined {
 	const vendorId = env.get('ID_VENDOR_ID');
 	const productId = env.get('ID_MODEL_ID');
 	if (vendorId === undefined || productId === undefined) {
@@ -112,6 +115,7 @@ function buildSnapshot(env: ReadonlyMap<string, string>): UsbDeviceSnapshot | un
 	return {
 		vendorId,
 		productId,
+		sysfsPath: `/sys${devpath}`,
 		bDeviceClass: 0,
 		interfaces: parseInterfaces(env.get('ID_USB_INTERFACES')),
 		udevProperties: props,
@@ -135,7 +139,7 @@ export function parseUdevDatabase(text: string): UsbDeviceSnapshot[] {
 		if (record.env.get('DEVTYPE') !== 'usb_device') {
 			continue;
 		}
-		const snapshot = buildSnapshot(record.env);
+		const snapshot = buildSnapshot(record.devpath, record.env);
 		if (snapshot !== undefined) {
 			snapshots.set(record.devpath, snapshot);
 			devices.set(record.devpath, [...snapshot.interfaces]);
