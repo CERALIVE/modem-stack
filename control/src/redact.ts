@@ -19,6 +19,10 @@ const SENSITIVE_KEYS: ReadonlySet<string> = new Set<string>([
 	'iccid',
 	'imsi',
 	'eid',
+	'imei',
+	'equipmentidentifier',
+	'equipment-identifier',
+	'equipment_identifier',
 	'pin',
 	'pin2',
 	'newpin',
@@ -166,7 +170,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 	if (typeof value !== 'object' || value === null) {
 		return false;
 	}
-	const proto = Object.getPrototypeOf(value) as unknown;
+	const proto: unknown = Object.getPrototypeOf(value);
 	return proto === Object.prototype || proto === null;
 }
 

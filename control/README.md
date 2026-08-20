@@ -58,6 +58,10 @@ USB-network classification and labels, capability-module selection, and shadow-b
 divergence folding. Every helper consumes caller-supplied values or snapshots; none discovers
 devices, opens a transport, persists state, or performs a modem write.
 
+USB snapshots retain the udev `P:` record as an absolute `sysfsPath`, allowing consumers to
+correlate ModemManager `Device`/`Physdev` paths to the most-specific USB parent without relying
+on a network-interface name.
+
 ### Typed ModemManager provider
 
 `createModemManagerProvider({ transport })` returns the concrete `ModemManagerProvider` and its

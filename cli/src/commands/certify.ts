@@ -15,6 +15,7 @@ import {
 	type DecodedManagedObjects,
 	fetchManagedObjects,
 	type MmUsbMode,
+	readRevision,
 	type UsbDeviceSnapshot,
 } from '@ceralive/modem-control';
 import { buildCertificationBundle } from '../certify/bundle';
@@ -31,6 +32,7 @@ import { captureTransitionEvidence } from '../certify/transition-evidence';
 import type { StackContext } from '../context';
 import type { CliIo } from '../io';
 import { selectModem } from '../select';
+import { matchUsbDevice } from '../usb-device-match';
 
 /** Parsed `certify` arguments. */
 export interface CertifyArgs {
@@ -102,22 +104,24 @@ export async function runCertify(
 		io.err(`certify: no modem matching slot '${args.slot}'`);
 		return 1;
 	}
-	const ifname = modem.dataInterface.present ? modem.dataInterface.name : undefined;
-	const devices = await deps.enumerate().catch(() => []);
-	const device = devices.find((d) => d.ifname !== undefined && d.ifname === ifname);
-
-	if (args.transition !== undefined && device === undefined) {
-		io.err(
-			`certify: --transition needs a matched USB device for slot '${args.slot}' (hardware-gated)`,
-		);
-		return 1;
-	}
-
 	// A malformed / failed capture throws a `CertifyError`; catch it so the tool exits
 	// non-zero with a clear message rather than crashing — a broken bundle is never written.
 	try {
+		const tree = await deps.fetchManagedObjects();
+		const devices = await deps.enumerate().catch(() => []);
+		const modemPath = String(modem.identity.runtimePath);
+		const device = matchUsbDevice(tree, modemPath, devices);
+		const firmwareRevision = readRevision(tree, modemPath);
+		if (args.transition !== undefined && device === undefined) {
+			io.err(
+				`certify: --transition needs a matched USB device for slot '${args.slot}' (hardware-gated)`,
+			);
+			return 1;
+		}
 		const base = await captureBase(deps, {
-			mmcliTarget: String(modem.identity.runtimePath),
+			managedObjects: tree,
+			modemPath,
+			mmcliTarget: modemPath,
 			...(device !== undefined ? { device } : {}),
 		});
 
@@ -125,7 +129,7 @@ export async function runCertify(
 		if (args.transition !== undefined && device !== undefined) {
 			transition = await captureTransitionEvidence(
 				{ enumerate: () => deps.enumerate(), atSender: deps.atSender, now: () => deps.now() },
-				{ targetMode: args.transition, device },
+				{ targetMode: args.transition, device, firmwareRevision },
 			);
 		}
 

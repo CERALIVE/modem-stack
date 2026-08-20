@@ -457,20 +457,18 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
 - Per-SKU capture runbooks are `docs/BENCH.md` **RB-11 … RB-15** (RB-16 is the FM350
   USB-vs-PCIe probe — its 2026-08-16 bench run found the unit not connected, so
   `docs/FM350-DECISION.md`'s three-gate ledger stays OPEN with the probe evidence recorded;
-  RB-17 is modem-flap resilience). All are `[PARTIAL]` — **six** named blockers are recorded
-  in `docs/BENCH.md` § "Per-SKU certification", re-verified live on 2026-08-18:
-  **B1 CLEARED** (`usbutils` is now on the board), **B3 downgraded** (`socat` is present, so
-  a manual query-only AT session works; the CLI's `benchAtSender` still rejects every send),
-  and **B2 promoted to hardware-proven** — `certify` matches its device by `ifname`, which
-  the enumerator never populates, so **every real bundle comes out with no `sku` and empty
-  `udevProperties`** and the ingestion seam refuses it `sku-missing`. Two blockers are new:
-  **B5**, the shared redactor does not mask `imei` / `equipment-identifier`, so a real
-  bundle carries every bench modem's IMEI and must not be committed or pasted into a review
-  comment; and **B6**, `skuOf` reads `firmwarePrefix` from udev `ID_REVISION`, which is the
-  USB `bcdDevice` rather than the modem firmware revision, so a catalog entry built from a
-  capture would not actually be firmware-keyed. B2 and B6 are pinned by
-  `control/src/usb-mode/ingestion.hardware.test.ts`. No SKU is certified and no matrix row
-  is promoted.
+  RB-17 is modem-flap resilience). All are `[PARTIAL]` — the **six-entry** status ledger is
+  in `docs/BENCH.md` § "Per-SKU certification". B1 is cleared; B3 is partially cleared
+  (`socat` permits a manual query-only AT session, but `benchAtSender` still rejects sends);
+  B4 remains open. The hardware-proven capture defects B2/B5/B6 were fixed in software on
+  2026-08-20: USB snapshots retain their `/sys` path, `certify` correlates MM
+  `Device`/`Physdev` to the most-specific USB parent, `skuOf` receives MM `Modem.Revision`
+  rather than USB `ID_REVISION`, and the shared redactor masks MM/mmcli IMEI and equipment-
+  identifier spellings while preserving model/vendor/SKU facts. Realistic RM530N tests pin
+  `0504` versus `RM530NGLAAR05A01M4G`. The snapshot contract lives in
+  `control/src/backend/usb-device-snapshot.ts` and remains re-exported by the classifier. The
+  fixed build has **not** been rerun on the board, so no post-fix hardware bundle, certified
+  SKU, or promoted matrix row is claimed.
 - **Bench composition evidence** for the SIMCom SIM7600G-H and the carrier-mounted Fibocom
   FM350-GL is recorded in [`docs/COMPOSITION-EVIDENCE.md`](docs/COMPOSITION-EVIDENCE.md) —
   descriptors, driver bindings, firmware revisions, and the read-back state of each vendor's
@@ -688,10 +686,10 @@ returns an IMSI and an ICCID, and they ARE retained — normalization does not g
 what a diagnostician may need. Anything that logs, serializes or files a diagnostics block
 must route it through `redactObservationDiagnostics`, which runs the package's own key-based
 `redact`, so the classes masked here are the classes masked everywhere else. Retention and
-disclosure are separate decisions; this layer only guarantees the first. Note the recorded
-`B5` finding still applies: the shared redactor does not mask `imei` /
-`equipment-identifier`, so a caller that puts `Modem.EquipmentIdentifier` in a raw record
-owns that exposure.
+ disclosure are separate decisions; this layer only guarantees the first. The former B5
+ gap is closed: the shared redactor masks `imei`, `EquipmentIdentifier`, separator variants,
+ and dotted mmcli spellings. The raw diagnostics block still contains source values in
+ memory, so every serialization boundary must continue to call the redactor.
 
 **PER-METRIC PROVENANCE, INCLUDING PER-METRIC AUTHORITY.** One normalized observation folds
 several provider reads together — HiLink answers `monitoring_status` and `device_signal`

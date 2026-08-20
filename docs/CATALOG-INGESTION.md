@@ -96,7 +96,7 @@ partial result.
 |---|---|
 | `sha256-malformed` | the sha is not 64 lowercase hex — checked before the bundle is read |
 | `bundle-malformed` | the bundle fails the ingestion view schema |
-| `sku-missing` | the capture matched no USB device to the slot (see `BENCH.md` blocker **B2**) |
+| `sku-missing` | the capture matched no USB device to the slot; the promotion gate remains strict even if capture wiring regresses |
 | `device-not-in-capture` | the SKU's VID:PID is absent from the `usb-devices` text |
 | `device-ambiguous` | two or more devices share that VID:PID — a fixture must name one physical device (this bench has an identical Huawei HiLink pair) |
 | `no-interfaces-captured` | the device parsed with zero interfaces; such a fixture classifies nothing |
@@ -228,22 +228,22 @@ a comment — a silently-absent comment is indistinguishable from a forgotten ru
 
 ---
 
-## Bench reality, 2026-08-18 — this path does not yet reach the catalog
+## Bench reality — pre-fix captures remain unpromotable
 
 A non-mutating capture pass against the SIMCom SIM7600G-H and the carrier-mounted Fibocom
 FM350-GL ([`COMPOSITION-EVIDENCE.md`](COMPOSITION-EVIDENCE.md)) ran the real
 `modem-control certify` on real hardware. Both runs printed a valid
-`CERTIFY OK … synthetic=false` line, and **neither bundle was promotable**. Three blockers
-sit between `certify` and the seam above; all three are recorded in [`BENCH.md`](BENCH.md)
-and the first two are pinned by
-[`../control/src/usb-mode/ingestion.hardware.test.ts`](../control/src/usb-mode/ingestion.hardware.test.ts):
+`CERTIFY OK … synthetic=false` line, and **neither bundle was promotable**. The three capture
+defects below were fixed in software on 2026-08-20, but the fixed build has not been rerun on
+the board. The historical bundles stay destroyed/unpromotable and prove no post-fix behavior.
+[`BENCH.md`](BENCH.md) carries the hardware-status ledger.
 
-| Blocker | Effect on this document's flow |
+| Defect | Historical effect and current software behavior |
 |---|---|
-| **B2** — `certify` matches its USB device by `ifname`, which `parseUdevDatabase` never populates | the bundle arrives with **no `sku`** and **empty `udevProperties`**, so `buildCatalogEntryCandidate` and `buildClassifierFixture` both refuse `sku-missing`. The refusal is correct; the capture is what is broken |
-| **B5** — the shared redactor masks ICCID / IMSI / EID but **not** `imei` / `equipment-identifier` | a real bundle's `modemManager` half carries the IMEI of every modem on the bench, because `GetManagedObjects` is fleet-wide. **"Post `comment` on the PR" is unsafe for a real bundle today**, and a real bundle must not be committed as a fixture. The `usb.lsusb` / `usb.usbDevices` halves are IMEI-free and safe to quote |
-| **B6** — `skuOf` reads `firmwarePrefix` from udev `ID_REVISION` (the USB `bcdDevice`) | a promoted entry would be keyed on `0318` / `0001` rather than on `LE20B04SIM7600G22` / `81600.0000.00.19.17.10`, so it could not distinguish two firmware builds of one SKU — defeating the point of a firmware-keyed catalog |
+| **B2** — target USB parent was matched by an unpopulated `ifname` | Pre-fix bundles had no `sku` and empty `udevProperties`, and the seam correctly refused `sku-missing`. The enumerator now retains its `/sys` path and `certify` matches MM `Device`/`Physdev` to the most-specific USB parent |
+| **B5** — `imei` / `EquipmentIdentifier` spellings were outside the shared redaction class | Pre-fix fleet-wide managed objects leaked every modem's IMEI. Shared-redactor and bundle regressions now mask MM property, bare/camel/separator, and dotted keyfile spellings while preserving model/vendor/SKU facts |
+| **B6** — `firmwarePrefix` came from USB `ID_REVISION` / `bcdDevice` | Pre-fix entries would have been keyed on `0318` / `0001`. `captureBase` now derives the discriminator from MM `Modem.Revision`; the RM530N regression distinguishes `0504` from `RM530NGLAAR05A01M4G` |
 
-None of these is a flaw in the seam itself: the refusals above are exactly the typed,
-loud behaviour this document promises. They are defects in the **capture** step, and until
-they are fixed no SKU can reach `certified-catalog.json` from bench evidence.
+None was a flaw in the seam itself: its typed refusals were the correct response to broken
+capture input. No SKU may reach `certified-catalog.json` from this evidence until a new
+post-fix board capture passes the stage-1 checks and human review.

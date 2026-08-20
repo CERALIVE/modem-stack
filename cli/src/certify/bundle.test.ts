@@ -18,18 +18,22 @@ const ICCID = '8900000000000000123';
 const IMSI = '001010000000123';
 const EID = '89033024000000000000000000012345';
 const IMEI = '350000000000001';
+const MODEM_REVISION = 'RM530NGLAAR05A01M4G';
+const USB_REVISION = '0504';
+const RM530N_SYSFS_PATH =
+	'/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb4/4-1/4-1.4/4-1.4.4';
 
-const LSUSB = `Bus 001 Device 004: ID 2c7c:0125 Quectel EG25-G
+const LSUSB = `Bus 004 Device 009: ID 2c7c:0801 Quectel RM530N-GL
 Device Descriptor:
   bLength                18
   idVendor           0x2c7c Quectel
-  idProduct          0x0125
+  idProduct          0x0801
   iSerial                 3 abcdef123456
 `;
 
-const USB_DEVICES = `T:  Bus=01 Dev#=  4 Spd=480
-P:  Vendor=2c7c ProdID=0125 Rev=03.18
-S:  Product=EG25-G
+const USB_DEVICES = `T:  Bus=04 Dev#=  9 Spd=5000
+P:  Vendor=2c7c ProdID=0801 Rev=05.04
+S:  Product=RM530N-GL
 `;
 
 const MMCLI_K = `modem.generic.device-identifier : 0123456789abcdef
@@ -41,7 +45,7 @@ sim.properties.eid : ${EID}
 sim.properties.operator-name : CeraTel
 `;
 
-const TREE = [
+const TREE: DecodedManagedObjects = [
 	[
 		'/org/freedesktop/ModemManager1/Modem/0',
 		[
@@ -49,6 +53,9 @@ const TREE = [
 				'org.freedesktop.ModemManager1.Modem',
 				[
 					['EquipmentIdentifier', { signature: 's', value: IMEI }],
+					['Device', { signature: 's', value: RM530N_SYSFS_PATH }],
+					['Physdev', { signature: 's', value: RM530N_SYSFS_PATH }],
+					['Revision', { signature: 's', value: MODEM_REVISION }],
 					['Sim', { signature: 'o', value: '/org/freedesktop/ModemManager1/SIM/0' }],
 					['State', { signature: 'i', value: 8 }],
 				],
@@ -69,24 +76,24 @@ const TREE = [
 			],
 		],
 	],
-] as unknown as DecodedManagedObjects;
+];
 
 const DEVICE: UsbDeviceSnapshot = {
 	vendorId: '2c7c',
-	productId: '0125',
-	model: 'EG25-G',
-	firmwareRevision: 'SYNTHETICFW01',
+	productId: '0801',
+	model: 'RM530N-GL',
+	firmwareRevision: USB_REVISION,
 	bDeviceClass: 0,
 	interfaces: [
 		{ interfaceClass: 255, interfaceSubClass: 255, interfaceProtocol: 255, driver: 'qmi_wwan' },
 	],
-	physicalUid: 'usb-1-2',
-	ifname: 'wwan0',
+	physicalUid: 'platform-xhci-hcd.0.auto-usb-0:1.4.4',
+	ifname: 'wwan3',
 	udevProperties: {
 		ID_VENDOR_ID: '2c7c',
-		ID_MODEL_ID: '0125',
-		ID_MODEL: 'EG25-G',
-		ID_REVISION: 'SYNTHETICFW01',
+		ID_MODEL_ID: '0801',
+		ID_MODEL: 'RM530N-GL',
+		ID_REVISION: USB_REVISION,
 		ID_SERIAL_SHORT: 'abcdef123456',
 		// A udev rule that surfaced the SIM ICCID — proves redaction reaches udev props.
 		iccid: ICCID,
@@ -120,12 +127,16 @@ function fakeDeps(script: RunnerScript = {}): BaseCaptureDeps {
 			if (command === 'mmcli') return Promise.resolve(script.mmcli ?? ok(MMCLI_K));
 			return Promise.resolve({ stdout: '', stderr: `unknown ${command}`, exitCode: 127 });
 		},
-		fetchManagedObjects: () => Promise.resolve(TREE),
 		captureSignalWindow: () => Promise.resolve(SIGNALS),
 	};
 }
 
-const INPUT = { mmcliTarget: '/org/freedesktop/ModemManager1/Modem/0', device: DEVICE };
+const INPUT = {
+	managedObjects: TREE,
+	modemPath: '/org/freedesktop/ModemManager1/Modem/0',
+	mmcliTarget: '/org/freedesktop/ModemManager1/Modem/0',
+	device: DEVICE,
+};
 
 const buildFrom = (base: BaseCaptureParts, synthetic: boolean) =>
 	buildCertificationBundle({ slot: 'Modem/0', synthetic, capturedAtMs: 1000, base });
@@ -135,9 +146,9 @@ test('builds a schema-valid synthetic bundle with a stable, reproducible sha256'
 	expect(first.bundle.schemaVersion).toBe(1);
 	expect(first.bundle.synthetic).toBe(true);
 	expect(first.bundle.sku).toEqual({
-		vidPid: '2c7c:0125',
-		model: 'EG25-G',
-		firmwarePrefix: 'SYNTHETICFW01',
+		vidPid: '2c7c:0801',
+		model: 'RM530N-GL',
+		firmwarePrefix: MODEM_REVISION,
 	});
 	expect(first.sha256).toMatch(/^[0-9a-f]{64}$/);
 
@@ -145,23 +156,36 @@ test('builds a schema-valid synthetic bundle with a stable, reproducible sha256'
 	expect(second.sha256).toBe(first.sha256);
 });
 
+test('uses Modem.Revision rather than USB ID_REVISION for the firmware-keyed SKU', async () => {
+	// Given
+	const deps = fakeDeps();
+
+	// When
+	const base = await captureBase(deps, INPUT);
+
+	// Then
+	expect(base.sku?.firmwarePrefix).toBe(MODEM_REVISION);
+	expect(base.sku?.firmwarePrefix).not.toBe(USB_REVISION);
+});
+
 test('a real capture is unambiguously marked synthetic:false', async () => {
 	const { bundle } = buildFrom(await captureBase(fakeDeps(), INPUT), false);
 	expect(bundle.synthetic).toBe(false);
 });
 
-test('redacts ICCID / IMSI / EID across mmcli-K, managed objects, and udev', async () => {
+test('redacts subscriber and modem identifiers across mmcli-K, managed objects, and udev', async () => {
 	const { bundle } = buildFrom(await captureBase(fakeDeps(), INPUT), true);
 	const serialized = JSON.stringify(bundle);
 	expect(serialized).not.toContain(ICCID);
 	expect(serialized).not.toContain(IMSI);
 	expect(serialized).not.toContain(EID);
+	expect(serialized).not.toContain(IMEI);
 
-	// mmcli -K keyfile: subscriber secrets masked by dotted-segment; IMEI retained.
 	expect(bundle.modemManager.mmcliKeyfile['sim.properties.iccid']).toBe('[redacted]');
 	expect(bundle.modemManager.mmcliKeyfile['sim.properties.imsi']).toBe('[redacted]');
 	expect(bundle.modemManager.mmcliKeyfile['sim.properties.eid']).toBe('[redacted]');
-	expect(bundle.modemManager.mmcliKeyfile['modem.3gpp.imei']).toBe(IMEI);
+	expect(bundle.modemManager.mmcliKeyfile['modem.generic.equipment-identifier']).toBe('[redacted]');
+	expect(bundle.modemManager.mmcliKeyfile['modem.3gpp.imei']).toBe('[redacted]');
 
 	// GetManagedObjects: MM's SimIdentifier surfaced as `iccid` and masked; Imsi/Eid masked.
 	const sim = bundle.modemManager.managedObjects['/org/freedesktop/ModemManager1/SIM/0']?.[
@@ -171,6 +195,11 @@ test('redacts ICCID / IMSI / EID across mmcli-K, managed objects, and udev', asy
 	expect(sim.Imsi).toBe('[redacted]');
 	expect(sim.Eid).toBe('[redacted]');
 	expect(sim.OperatorName).toBe('CeraTel');
+	const modem =
+		bundle.modemManager.managedObjects['/org/freedesktop/ModemManager1/Modem/0']?.[
+			'org.freedesktop.ModemManager1.Modem'
+		];
+	expect(modem).toEqual(expect.objectContaining({ EquipmentIdentifier: '[redacted]' }));
 
 	// udev: redaction reaches the props (the ICCID-bearing rule is masked); the device
 	// serial is equipment identity (non-subscriber), retained per the A2.1 policy.

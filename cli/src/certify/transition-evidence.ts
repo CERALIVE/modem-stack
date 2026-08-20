@@ -40,6 +40,7 @@ export interface TransitionCaptureDeps {
 export interface TransitionCaptureInput {
 	readonly targetMode: MmUsbMode;
 	readonly device: UsbDeviceSnapshot;
+	readonly firmwareRevision: string | undefined;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,9 +96,11 @@ export async function captureTransitionEvidence(
 			`device is not in an MM-manageable mode (detected ${fromMode ?? 'none'}); cannot certify a transition`,
 		);
 	}
-	const sku = skuOf(before);
+	const sku = skuOf(before, input.firmwareRevision);
 	if (sku === undefined) {
-		throw new CertifyError('device is missing a model or firmware string; SKU is not certifiable');
+		throw new CertifyError(
+			'device is missing a model or ModemManager firmware revision; SKU is not certifiable',
+		);
 	}
 	const entry = findCatalogEntry(deps.catalog ?? CERTIFIED_CATALOG, sku);
 	if (entry === undefined) {

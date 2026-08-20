@@ -17,11 +17,13 @@ import { buildCertificationBundle } from './bundle';
 import type { BaseCaptureParts } from './capture';
 import { captureTransitionEvidence, type TransitionCaptureDeps } from './transition-evidence';
 
+const MM_FIRMWARE_REVISION = 'SYNTHETICFW01';
+
 const QMI_DEVICE: UsbDeviceSnapshot = {
 	vendorId: '2c7c',
 	productId: '0125',
 	model: 'CERALIVE-SYNTHETIC-TEST-SKU',
-	firmwareRevision: 'SYNTHETICFW01',
+	firmwareRevision: '0504',
 	bDeviceClass: 0,
 	physicalUid: 'usb-1-2',
 	ifname: 'wwan0',
@@ -34,7 +36,7 @@ const MBIM_DEVICE: UsbDeviceSnapshot = {
 	vendorId: '2c7c',
 	productId: '0125',
 	model: 'CERALIVE-SYNTHETIC-TEST-SKU',
-	firmwareRevision: 'SYNTHETICFW01',
+	firmwareRevision: '0504',
 	bDeviceClass: 0,
 	physicalUid: 'usb-1-2',
 	ifname: 'wwan0',
@@ -84,6 +86,7 @@ test('captures shape-compatible transition evidence with the catalog AT command'
 	const evidence = await captureTransitionEvidence(deps, {
 		targetMode: 'mbim',
 		device: QMI_DEVICE,
+		firmwareRevision: MM_FIRMWARE_REVISION,
 	});
 
 	expect(evidence.from).toBe('qmi');
@@ -120,6 +123,7 @@ test('the evidence embeds into a bundle and validates against the bundle schema'
 	const transition = await captureTransitionEvidence(deps, {
 		targetMode: 'mbim',
 		device: QMI_DEVICE,
+		firmwareRevision: MM_FIRMWARE_REVISION,
 	});
 	const base: BaseCaptureParts = {
 		usb: { lsusb: 'Device Descriptor:', usbDevices: 'T:', udevProperties: {} },
@@ -140,14 +144,22 @@ test('an uncertified SKU fails loudly', async () => {
 	const { deps } = scripted();
 	const uncertified: UsbDeviceSnapshot = { ...QMI_DEVICE, model: 'UNKNOWN-MODEL' };
 	await expect(
-		captureTransitionEvidence(deps, { targetMode: 'mbim', device: uncertified }),
+		captureTransitionEvidence(deps, {
+			targetMode: 'mbim',
+			device: uncertified,
+			firmwareRevision: MM_FIRMWARE_REVISION,
+		}),
 	).rejects.toThrow(/no certified catalog entry/);
 });
 
 test('a non-permitted transition (mbim -> ecm-ncm) fails loudly', async () => {
 	const { deps } = scripted();
 	await expect(
-		captureTransitionEvidence(deps, { targetMode: 'ecm-ncm', device: MBIM_DEVICE }),
+		captureTransitionEvidence(deps, {
+			targetMode: 'ecm-ncm',
+			device: MBIM_DEVICE,
+			firmwareRevision: MM_FIRMWARE_REVISION,
+		}),
 	).rejects.toThrow(/no permitted transition mbim -> ecm-ncm/);
 });
 
@@ -155,6 +167,10 @@ test('a device without a stable physical UID fails loudly', async () => {
 	const { deps } = scripted();
 	const { physicalUid: _drop, ...noUid } = QMI_DEVICE;
 	await expect(
-		captureTransitionEvidence(deps, { targetMode: 'mbim', device: noUid }),
+		captureTransitionEvidence(deps, {
+			targetMode: 'mbim',
+			device: noUid,
+			firmwareRevision: MM_FIRMWARE_REVISION,
+		}),
 	).rejects.toThrow(/no stable physical UID/);
 });
