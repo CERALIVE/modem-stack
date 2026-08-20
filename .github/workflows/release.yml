@@ -121,7 +121,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "26"
 
       - name: Cache bun install store
         uses: actions/cache@v6
@@ -264,7 +264,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "26"
           registry-url: https://registry.npmjs.org/
 
       # OIDC trusted publishing needs npm >= 11.5.1 (house pattern pins 11.18.0).

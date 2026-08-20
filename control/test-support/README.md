@@ -2,7 +2,14 @@
 
 The doubles the A3.x ModemManager D-Bus backend and A4.1 NetworkManager adapter are
 tested against. This lives outside `control/src`, so it is **not** published in the
-`@ceralive/modem-control` npm package (`files: ["src"]`) — it is test-only.
+`@ceralive/modem-control` npm package (`files: ["dist"]`, and the build only emits from
+`src`) — it is test-only.
+
+**This is not the package's contract-fakes surface.** What a CONSUMER should reuse is
+the published `@ceralive/modem-control/testing` entry (`control/src/testing/`): pure
+data and functions, no bus, no process. Everything here needs a private session bus or
+a stateful `nmcli` state machine and is deliberately unpublished — do not promote it to
+a public subpath, and do not have a consumer reach into it by path.
 
 ## `fake-mm/` — a scriptable, MM-faithful `org.freedesktop.ModemManager1`
 

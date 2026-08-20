@@ -13,14 +13,48 @@
 		"registry": "https://registry.npmjs.org/",
 		"access": "public"
 	},
+	"sideEffects": false,
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./src/index.ts",
-		"./transport": "./src/transport/index.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./transport": {
+			"types": "./dist/transport/index.d.ts",
+			"import": "./dist/transport/index.js"
+		},
+		"./domain": {
+			"types": "./dist/domain/index.d.ts",
+			"import": "./dist/domain/index.js"
+		},
+		"./providers": {
+			"types": "./dist/providers/index.d.ts",
+			"import": "./dist/providers/index.js"
+		},
+		"./capabilities": {
+			"types": "./dist/capability/index.d.ts",
+			"import": "./dist/capability/index.js"
+		},
+		"./hardware": {
+			"types": "./dist/hardware/index.d.ts",
+			"import": "./dist/hardware/index.js"
+		},
+		"./testing": {
+			"types": "./dist/testing/index.d.ts",
+			"import": "./dist/testing/index.js"
+		},
+		"./package.json": "./package.json"
 	},
 	"files": [
-		"src"
+		"dist"
 	],
 	"scripts": {
+		"build": "bun run scripts/build.ts",
+		"prepack": "bun run build",
+		"verify:consumers": "bun run scripts/verify-consumers.ts",
+		"verify:tarball": "bun run scripts/assert-tarball-shape.ts",
 		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},

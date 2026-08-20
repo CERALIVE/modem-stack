@@ -15,7 +15,7 @@ straight from CI artifacts; nothing is published to `apt.ceralive.tv` yet.
 
 | Directory | Artifact | What it is |
 |-----------|----------|------------|
-| [`control/`](control/) | **`@ceralive/modem-control`** (npm package) | The TypeScript control library: the [frozen v1.1 domain contracts](docs/DOMAIN-CONTRACTS.md), [provider registry and evidence-scored matcher](docs/PROVIDER-MATCHING.md), ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (`control/src/backend/uhubctl-power-hook.ts`, config-mapped port map, disabled by default), USB composition-mode model + the [evidence-bundle ingestion seam](docs/CATALOG-INGESTION.md), data-usage sampler plus its `setUsagePolicy` write surface (`control/src/backend/usage/policy-write.ts` — a local 0600 policy file, because ModemManager exposes no data-usage API at all), and the **read-only SMS port** (`control/src/ports/sms.ts` + `control/src/sms/` — LIST/READ plus `Added`/`Deleted` observation, never a send or a delete, locked by `sms/readonly-gate.test.ts`). Published to the public npm registry under the `@ceralive` scope. |
+| [`control/`](control/) | **`@ceralive/modem-control`** (npm package) | The TypeScript control library: the [frozen v1.1 domain contracts](docs/DOMAIN-CONTRACTS.md), [provider registry and evidence-scored matcher](docs/PROVIDER-MATCHING.md), ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, recovery ladder + the `usb-hub-port-cycle` **uhubctl PowerHook** (`control/src/backend/uhubctl-power-hook.ts`, config-mapped port map, disabled by default), USB composition-mode model + the [evidence-bundle ingestion seam](docs/CATALOG-INGESTION.md), data-usage sampler plus its `setUsagePolicy` write surface (`control/src/backend/usage/policy-write.ts` — a local 0600 policy file, because ModemManager exposes no data-usage API at all), and the **read-only SMS port** (`control/src/ports/sms.ts` + `control/src/sms/` — LIST/READ plus `Added`/`Deleted` observation, never a send or a delete, locked by `sms/readonly-gate.test.ts`). Published to the public npm registry under the `@ceralive` scope as **built ESM + `.d.ts`** across seven entry points — see [`control/README.md`](control/README.md). |
 | [`cli/`](cli/) | **`modem-control`** (bench CLI) | The iteration surface: `probe`, `watch`, `apply`, `set-usb-mode`, `usage`, `certify`, `hil-cycle`. Compiled for `arm64` + `amd64` and run against real modems on a bench device to mature the package, capture per-SKU certification bundles, and prove hub VBUS port-cycling ([RB-10](docs/BENCH.md#rb-10--hub-vbus-verification-partial)). |
 | [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork, zero source patches** (see [`POLICY.md`](POLICY.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
 
@@ -48,9 +48,14 @@ Biome via `@ceralive/biome-config`). `packaging/` is built in a bookworm contain
 
 ```sh
 bun install        # install the workspace (control + cli)
-bun test           # run the workspace test suite
+bun test           # run the workspace test suite (includes the tarball-shape gate)
 bun run lint       # Biome check
 bun run typecheck  # tsc --noEmit (strict, exactOptionalPropertyTypes)
+bun run build      # build @ceralive/modem-control into control/dist
+
+cd control
+bun run verify:tarball    # pack + assert the published artifact's shape
+bun run verify:consumers  # standalone Node 26 + Bun consumers of the packed tarball
 ```
 
 Every command runs from the repository root and needs nothing outside this checkout —

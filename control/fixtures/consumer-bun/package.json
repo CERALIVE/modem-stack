@@ -1,0 +1,10 @@
+{
+	"name": "modem-control-consumer-bun",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Standalone Bun consumer of the packed @ceralive/modem-control tarball. The tarball is installed by scripts/verify-consumers.ts; it is deliberately not a committed dependency, because its filename carries the package version.",
+	"scripts": {
+		"check": "bun ./check.mjs"
+	}
+}

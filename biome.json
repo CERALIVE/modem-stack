@@ -2,6 +2,6 @@
 	"$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
 	"extends": ["@ceralive/biome-config"],
 	"files": {
-		"includes": ["**", "!**/node_modules", "!**/dist", "!test-results"]
+		"includes": ["**", "!**/node_modules", "!**/dist", "!**/test-results"]
 	}
 }

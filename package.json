@@ -11,6 +11,7 @@
 		"cli"
 	],
 	"scripts": {
+		"build": "bun run --filter '@ceralive/modem-control' build",
 		"lint": "biome check .",
 		"format": "biome format --write .",
 		"typecheck": "tsc --noEmit",
