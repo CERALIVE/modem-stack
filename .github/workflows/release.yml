@@ -8,7 +8,9 @@ name: Release
 #   tag-guard    — resolve the input tag to its immutable PEELED commit SHA, then validate the
 #                  tag shape (vX.Y.Z). Fails closed before anything else runs. Exports version+sha.
 #   test         — full bun lane + packaging contract lane (test-before-publish).
-#   build-deb    — build the .deb set (both arches), contract + smoke, per-release manifest.
+#   build-deb    — DIFFERENTIAL .deb set (both arches): resolve the previous release once, detect
+#                  which upstream sources actually changed, carry the rest forward byte-identically,
+#                  rebuild only the changed ones, then contract + smoke + per-release manifest.
 #   publish-npm  — integrity-idempotent OIDC trusted publish of @ceralive/modem-control@X.Y.Z.
 #   create-release — stage sanitized assets, immutably reconcile the GitHub release.
 #
@@ -27,6 +29,11 @@ on:
         description: "Unified release tag, exactly vX.Y.Z (no pre-release, no build metadata)"
         required: true
         type: string
+      force_rebuild:
+        description: "Rebuild EVERY upstream source, ignoring per-source change detection (defense-in-depth escape hatch; a shared-input change force-alls on its own)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -154,10 +161,16 @@ jobs:
     # host docker daemon, not to be a container itself.
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 is LOAD-BEARING here and nowhere else. detect-changed-sources.sh takes
+      # `git diff --name-only <prev-tag>..HEAD` and reads `<prev-tag>:packaging/upstream-pins.yaml`;
+      # under the shallow default neither the history nor the previous tag is present, so the
+      # detector's `previous-ref-unresolvable` rule would force-all on EVERY release — safe, but it
+      # would silently disable the differential pipeline this job exists to run.
       - name: Checkout the resolved commit
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag-guard.outputs.sha }}
+          fetch-depth: 0
 
       - name: Assert checkout is pinned to the resolved SHA
         env:
@@ -174,13 +187,105 @@ jobs:
       - name: Set up QEMU (arm64 emulation)
         uses: docker/setup-qemu-action@v4
 
-      # Real rebuilds. RELEASE_VERSION injects <upstream>-<rev>~ceraliveX.Y.Z into a COPY of
-      # each source's debian/changelog inside the container (the committed tree is never
-      # mutated), builds in bootstrap order on native amd64 + QEMU arm64, and asserts the
-      # per-source package sets. --force-bad-version is applied by inject-deb-version.
+      # The previous release is resolved and its manifest downloaded EXACTLY ONCE, here, and the
+      # resulting path is handed to all three consumers below (detection, carry-forward staging,
+      # per-source counter derivation). `gh release list` — never `git describe`: the previous
+      # release is the latest PUBLISHED release, which is a different question from "nearest tag".
+      # The resolution flags mirror detect-changed-sources.sh's own so the two cannot disagree.
+      #
+      # NO previous release, or a release carrying no manifest asset, leaves BOTH outputs empty.
+      # That is the bootstrap case, not an error: an empty PREV_TAG/PREV_MANIFEST_FILE reads as
+      # unset downstream, and the detector's own force-all rules take over.
+      - name: Resolve previous release + fetch its manifest (once)
+        id: prev-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MANIFEST_DEST: ${{ runner.temp }}/previous-release-manifest.txt
+        run: |
+          set -euo pipefail
+          prev_tag="$(gh release list --repo "$GH_REPO" --limit 1 \
+            --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName' 2>/dev/null || true)"
+          if [ -z "$prev_tag" ] || [ "$prev_tag" = "null" ]; then
+            echo "no published previous release — the differential pipeline bootstraps by force-alling"
+            {
+              echo "prev_tag="
+              echo "prev_manifest="
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "previous published release: ${prev_tag}"
+          dl="$(mktemp -d)"
+          if ! gh release download "$prev_tag" --repo "$GH_REPO" \
+                 --pattern 'release-manifest*.txt' --dir "$dl" >/dev/null 2>&1; then
+            echo "::warning::release ${prev_tag} carries no downloadable release-manifest asset — every source will rebuild"
+            {
+              echo "prev_tag=${prev_tag}"
+              echo "prev_manifest="
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          found="$(find "$dl" -maxdepth 1 -name 'release-manifest*.txt' -type f | head -n1)"
+          if [ -z "$found" ]; then
+            echo "::warning::no release-manifest*.txt downloaded from ${prev_tag} — every source will rebuild"
+            {
+              echo "prev_tag=${prev_tag}"
+              echo "prev_manifest="
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp "$found" "$MANIFEST_DEST"
+          echo "previous release manifest: ${MANIFEST_DEST} ($(wc -l < "$MANIFEST_DEST") lines)"
+          {
+            echo "prev_tag=${prev_tag}"
+            echo "prev_manifest=${MANIFEST_DEST}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Per-source verdicts (`<pin-key>=changed|unchanged` + `mode=`) into verdicts.txt. Fail-SAFE
+      # here means REBUILD EVERYTHING: absent previous release, absent/v1-shaped manifest, a
+      # shared `packaging/ci/**` input change, or force_rebuild all yield mode=force-all.
+      - name: Detect changed sources (per-source verdicts)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PREV_TAG: ${{ steps.prev-release.outputs.prev_tag }}
+          PREV_MANIFEST_FILE: ${{ steps.prev-release.outputs.prev_manifest }}
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild == 'true' && 'all' || '' }}
+        run: |
+          bash packaging/ci/detect-changed-sources.sh --out verdicts.txt
+          echo "--- verdicts.txt ---"
+          cat verdicts.txt
+
+      # STRICTLY BEFORE any build-bookworm.sh invocation. Carried debs are not merely release
+      # assets, they are a build INPUT: build-bookworm.sh seeds its Pin-Priority-1001 local apt
+      # repo from packaging/build/<arch>/, so a changed source resolves its build-deps and gir
+      # typelibs against the carried -dev/gir1.2-* packages instead of stock bookworm. Staging
+      # after the build would silently reintroduce stock dependencies.
+      - name: Stage carry-forward debs (unchanged sources, sha256-verified)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PREV_TAG: ${{ steps.prev-release.outputs.prev_tag }}
+          PREV_MANIFEST_FILE: ${{ steps.prev-release.outputs.prev_manifest }}
+        run: bash packaging/ci/stage-carryforward-debs.sh --verdicts verdicts.txt --build-root packaging/build
+
+      # Differential rebuilds. VERDICTS_FILE supplies the build set EXPLICITLY — the script's
+      # build-all default when neither VERDICTS_FILE nor BUILD_SOURCES is set is a local-dev
+      # convenience and must never be what CI relies on. PREV_MANIFEST_FILE is the file resolved
+      # above, reused rather than re-fetched, and is what each rebuilt source's next ~ceralive.N
+      # counter is derived from. RELEASE_VERSION injects into a COPY of each changelog inside the
+      # container (the committed tree is never mutated). A zero-build run starts no container at
+      # all and still asserts the merged runtime closure over the carried set.
+      #
+      # RESIDUAL RISK, ACCEPTED BY THE PLAN: the zero-build path reaching manifest generation with
+      # staged-only debs is proven by contract fixtures (packaging/ci/test-build-bookworm-differential.sh,
+      # test-suffix-coherence-manifest.sh) and by static wiring proof (test-release-workflow-wiring.sh).
+      # Full end-to-end proof lands at the FIRST REAL RELEASE RUN; it is deliberately not simulated.
       - name: Build the MM 1.24 stack (.deb) — amd64 + arm64
         env:
           RELEASE_VERSION: ${{ github.event.inputs.tag }}
+          VERDICTS_FILE: verdicts.txt
+          PREV_MANIFEST_FILE: ${{ steps.prev-release.outputs.prev_manifest }}
         run: |
           packaging/ci/build-bookworm.sh amd64
           packaging/ci/build-bookworm.sh arm64
