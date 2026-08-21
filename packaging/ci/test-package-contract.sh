@@ -13,9 +13,11 @@
 #   3  upgrade            — stock modemmanager 1.20.4 -> the tag-encoded ceralive set
 #   4  rollback           — ceralive set -> stock, correct apt semantics (source-disable +
 #                           explicit stock versions + --allow-downgrades)
-#   5  coherence          — every runtime deb carries the SAME ~ceralive<X.Y.Z> suffix
-#                           (+ a mismatched-libqmi negative fixture that must fail closed)
-#   6  ordering           — REAL `dpkg --compare-versions` proofs of the tilde ordering
+#   5  coherence          — PER-SOURCE: every runtime deb of ONE upstream source carries the
+#                           same ~ceralive suffix; different sources may differ (differential
+#                           releases) (+ an internally-mixed-libqmi negative that fails closed)
+#   6  ordering           — REAL `dpkg --compare-versions` proofs of the tilde ordering, incl.
+#                           the migration-continuity chain from every published legacy version
 #   7  tag-guard negative — a pre-release tag is rejected BEFORE any deb is produced
 #   8  piuparts-style     — install then purge each package; assert zero leftover files
 #
@@ -142,6 +144,11 @@ resolve_debs
 # 1.2.2 -> 1.4.0) needs no edits here, and a wrong revision (`-1` vs the real `-2`) fails closed.
 CI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readpin() { bash "$CI_DIR/read-pin.sh" "$@"; }
+# The suffix contract (per-source coherence + the migration-continuity chain) is SOURCED so
+# this container suite and the host suite ci/test-suffix-coherence-manifest.sh prove the same
+# rule with the same code, instead of two copies that can drift.
+# shellcheck source=suffix-contract.sh
+. "$CI_DIR/suffix-contract.sh"
 MM_TAG="$(readpin modemmanager upstream_tag)"       # upstream tag, matches mmcli --version
 MM_BASE="$(readpin modemmanager --base-version)"    # full Debian base <upstream>-<rev>, revision-exact
 MBIM_BASE="$(readpin libmbim --base-version)"
@@ -193,45 +200,55 @@ check_metadata() {
 }
 
 # ------------------------------------------------------------------------------------------
-# CHECK 5 — coherence: every runtime deb carries the SAME ~ceralive<X.Y.Z> suffix.
-# assert_coherent <version...> — returns 0 iff every arg shares one ~ceralive suffix.
+# CHECK 5 — PER-SOURCE coherence: every runtime deb of ONE upstream source shares one
+# ~ceralive suffix. Two SOURCES holding different counters is not a breach any more — under
+# differential releases a rebuilt source moves to its next `.N` while an untouched one keeps
+# the counter it already had, so the old global-identity assertion would now reject a correct
+# release. The breach that remains is INTRA-source: two debs of one source disagreeing can
+# only mean one of them shipped at the wrong version.
+# assert_coherent / assert_source_coherent / suffix_source_of live in ci/suffix-contract.sh.
 # ------------------------------------------------------------------------------------------
-assert_coherent() {
-	local v suf first=""
-	for v in "$@"; do
-		suf="~ceralive${v##*~ceralive}"
-		[ "$suf" != "~ceralive$v" ] || { echo "    no ~ceralive suffix in '$v'"; return 1; }
-		if [ -z "$first" ]; then first="$suf"
-		elif [ "$suf" != "$first" ]; then
-			echo "    incoherent: '$suf' != '$first'"; return 1
-		fi
-	done
-	echo "$first"
-}
 check_coherence() {
-	echo; echo "==== CHECK 5: coherence (identical ~ceralive suffix across all 9) ===="
-	local pkg vers=()
-	for pkg in "${RUNTIME_PKGS[@]}"; do vers+=("$(dpkg-deb -f "${DEB_OF[$pkg]}" Version)"); done
-	local suffix
-	if ! suffix="$(assert_coherent "${vers[@]}")"; then
-		echo "  CHECK 5 FAIL: runtime versions are not coherent"; return 1
+	echo; echo "==== CHECK 5: PER-SOURCE coherence (one ~ceralive suffix within each source) ===="
+	local pkg specs=() table src n suffix
+	for pkg in "${RUNTIME_PKGS[@]}"; do
+		specs+=("${pkg}=$(dpkg-deb -f "${DEB_OF[$pkg]}" Version)")
+	done
+	if ! table="$(assert_group_coherence "${specs[@]}")"; then
+		echo "  CHECK 5 FAIL: a source's runtime debs are internally incoherent"; return 1
 	fi
-	echo "  ok: all 9 runtime debs share suffix '${suffix}'"
+	while read -r src n suffix; do
+		printf '  ok: %-14s %d runtime deb(s) share suffix %s\n' "$src" "$n" "$suffix"
+	done <<<"$table"
 
-	# Negative fixture: a mismatched libqmi suffix MUST fail closed (QA-failure evidence).
-	# Real pin-derived bases; libqmi carries the odd ~ceralive0.2.0 suffix (MM + libmbim share
-	# 0.1.0), so the set is genuinely incoherent and must be rejected.
-	echo "  negative fixture (mismatched libqmi suffix expected to fail):"
-	local tampered=("${MM_BASE}~ceralive0.1.0" "${MBIM_BASE}~ceralive0.1.0" "${QMI_BASE}~ceralive0.2.0")
-	if assert_coherent "${tampered[@]}" >/dev/null 2>&1; then
-		echo "  CHECK 5 FAIL: coherence accepted a mismatched-libqmi set"; return 1
-	fi
-	echo "  ok: mismatched-libqmi set rejected (fails closed)"
+	# Positive fixture: sources at DIFFERENT counters must both be accepted. It has to be a
+	# fixture — one build run produces one release's set, which cannot itself demonstrate the
+	# cross-source difference a later differential release will carry.
+	echo "  positive fixture (two sources at different counters, both accepted):"
+	assert_source_coherent modemmanager "${MM_BASE}~ceralive.1" "${MM_BASE}~ceralive.1" >/dev/null \
+		|| { echo "  CHECK 5 FAIL: rejected a coherent modemmanager pair at .1"; return 1; }
+	assert_source_coherent libqmi "${QMI_BASE}~ceralive.2" "${QMI_BASE}~ceralive.2" >/dev/null \
+		|| { echo "  CHECK 5 FAIL: rejected a coherent libqmi pair at .2"; return 1; }
+	echo "  ok: modemmanager at .1 beside libqmi at .2 — accepted (differential releases are legal)"
+
+	# Negative fixture: ONE source internally mixed MUST fail closed and NAME that source.
+	echo "  negative fixture (libqmi internally mixed, expected to fail):"
+	local neg rc_neg=0
+	neg="$(assert_source_coherent libqmi "${QMI_BASE}~ceralive.2" "${QMI_BASE}~ceralive.3" 2>&1)" || rc_neg=$?
+	[ "$rc_neg" -ne 0 ] || { echo "  CHECK 5 FAIL: coherence accepted an internally-mixed libqmi set"; return 1; }
+	case "$neg" in
+		*libqmi*) echo "  ok: internally-mixed libqmi set rejected, and the failure names 'libqmi'" ;;
+		*) echo "  CHECK 5 FAIL: rejection did not name the source: $neg"; return 1 ;;
+	esac
 	echo "  CHECK 5 PASS."
 }
 
 # ------------------------------------------------------------------------------------------
-# CHECK 6 — REAL dpkg --compare-versions ordering proofs of the tilde encoding.
+# CHECK 6 — REAL dpkg --compare-versions ordering proofs of the tilde encoding, plus the
+# MIGRATION-CONTINUITY chain: every legacy suffix that exists as a published artifact today
+# (v0.2.0's closure and v1.0.0's repair are live on apt; v1.1.0 released 2026-08-21) must sort
+# BELOW the counter scheme, and the counters must order among themselves — including `.2` <
+# `.10`, which a lexical compare gets backwards.
 # ------------------------------------------------------------------------------------------
 check_ordering() {
 	echo; echo "==== CHECK 6: dpkg --compare-versions ordering proofs (real invocations) ===="
@@ -250,8 +267,14 @@ check_ordering() {
 	prove_lt "${MM_BASE}~ceralive0.0.0~dev" "${MM_BASE}~ceralive0.1.0"
 	# comparator must be real, not always-true:
 	prove_not_lt "${MM_BASE}~ceralive0.2.0" "${MM_BASE}~ceralive0.1.0"
+
+	echo "  migration-continuity chain (legacy published versions -> per-source counters -> stock):"
+	prove_chain_ordered "$MM_BASE" || fail=1
+	prove_not_lt "${MM_BASE}~ceralive.10" "${MM_BASE}~ceralive.2"
+
 	[ "$fail" -eq 0 ] || { echo "  CHECK 6 FAIL"; return 1; }
-	echo "  CHECK 6 PASS: tilde ordering holds (pre-suffix < release; N.9 < N.10; dev < first)."
+	echo "  CHECK 6 PASS: tilde ordering holds and every published legacy version upgrades into"
+	echo "  the counter scheme (0.2.0 < 1.0.0 < 1.1.0 < .1 < .2 < .10 < ${MM_BASE})."
 }
 
 # ---- local apt repo helpers (for install/upgrade/rollback scenarios) ---------------------
