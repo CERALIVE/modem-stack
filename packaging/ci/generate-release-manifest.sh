@@ -26,6 +26,18 @@
 #   infer the shape: `runtime_closure_size` (per-arch, arch-dependent), `arch_all_closure_size`,
 #   and `index_arches`.
 #
+# NO `deb_version_suffix:` HEADER — `suffix_scheme: per-source-counter` REPLACES IT.
+#   Releases are differential: each upstream source carries its own rebuild counter
+#   `<upstream>-<rev>~ceralive.N`, and a source that was not rebuilt keeps the counter it
+#   already had. There is therefore NO single truthful suffix value a header could state, so
+#   the generator declares the SCHEME instead of a value and every row keeps carrying its own
+#   version (which it always did — rows are parsed from real filenames, so a carried-forward
+#   deb at an old counter and a freshly built one at a new counter both emit correctly).
+#   Dropping the old header is safe on both sides: apt-worker's publisher/validator reads
+#   NEITHER field (it extracts only tag / closure_version / sizes / rows), and legacy manifests
+#   are untouched because validation never read the old header either. `version:` is unrelated
+#   and stays — it is the RELEASE's own SemVer, not a per-deb suffix.
+#
 # It also FAILS CLOSED if the produced set is not exactly the frozen all-artifact set: per arch,
 # per source, the enumerated packages must EQUAL `[<source> all-artifact]` in expected-packages.txt
 # (the two-set model finalized in todo 1.4). An added, dropped, renamed, or unmapped deb is a
@@ -50,11 +62,12 @@ OUT="${3:-$PKG_ROOT/../dist/release-manifest.txt}"
 EXPECTED="${EXPECTED_PACKAGES:-$HERE/expected-packages.txt}"
 [ -r "$EXPECTED" ] || { echo "generate-release-manifest: cannot read expected-packages '$EXPECTED'" >&2; exit 2; }
 
-# Strip a leading v for the encoded suffix (tag guard already vetted the shape upstream).
+# Strip a leading v for the release's own version string (tag guard vetted the shape upstream).
+# NOTE: this is NOT a deb suffix — per-deb versions come from each file's own name (see (d)).
 VERSION="${TAG#v}"
-SUFFIX="~ceralive${VERSION}"
 
 CLOSURE_VERSION=2
+SUFFIX_SCHEME="per-source-counter"
 
 # The 9 arch-dependent runtime packages, and the arch-all runtime companion.
 RUNTIME_PKGS=(modemmanager libmm-glib0 libmbim-glib4 libmbim-proxy libmbim-utils \
@@ -110,7 +123,7 @@ mkdir -p "$(dirname "$OUT")"
 	echo "# MANIFEST-COMPLETE: one row per built deb, both arches; runtime closure marked."
 	echo "tag: ${TAG}"
 	echo "version: ${VERSION}"
-	echo "deb_version_suffix: ${SUFFIX}"
+	echo "suffix_scheme: ${SUFFIX_SCHEME}"
 	echo "sources: [${SOURCES[*]}]"
 	echo "closure_version: ${CLOSURE_VERSION}"
 	echo "runtime_closure_size: ${#RUNTIME_PKGS[@]}"

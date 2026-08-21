@@ -77,9 +77,32 @@ do not reach up the tree.
 
 SemVer, **not** CalVer — this repo is the documented exception (alongside `srtla-send-rs`).
 ONE unified tag `vX.Y.Z` releases **both** artifacts: `@ceralive/modem-control@X.Y.Z` on
-npm and the `.deb` set. `.deb` versions encode the tag as `<upstream>-<rev>~ceralive<X.Y.Z>`
-(upstream-ordered, apt-safe; injected with `dch --force-bad-version`). Non-tag CI builds use
-`~ceralive0.0.0~dev`. Full contract: `docs/VERSIONING.md`.
+npm and the `.deb` set. Non-tag CI builds use `~ceralive0.0.0~dev`. Full contract:
+`docs/VERSIONING.md`.
+
+**`.deb` versions no longer encode the tag.** Releases are DIFFERENTIAL, so each upstream
+source carries its own rebuild counter: `<upstream>-<rev>~ceralive.N` (upstream-ordered,
+apt-safe; injected with `dch --force-bad-version`). A REBUILT source takes its previous
+counter + 1, derived from the previous release manifest's rows for that source; an
+UNTOUCHED source is carried forward byte-identically and keeps the counter it already had,
+never re-stamped with the new tag. Two sources at different counters in one release is the
+normal shape, not drift — coherence is a PER-SOURCE property, and a source disagreeing with
+ITSELF fails closed naming that source. Derivation reads every row of a source (both arches,
+runtime and aux) and refuses on a counter disagreement, a counter/legacy mixture, or a
+malformed suffix; entirely-legacy rows and an absent previous manifest bootstrap at `.1`.
+
+The pre-`v1.0.0` releases WERE built with one uniform `~ceralive<X.Y.Z>` suffix shared by all
+four sources; those published artifacts are unchanged. No release mixes the two schemes — the
+first differential release force-rebuilds every source at `.1`, because this effort's own
+`packaging/ci/**` changes are a shared build input and force-all on their own. The
+migration-continuity chain `~ceralive0.2.0 < ~ceralive1.0.0 < ~ceralive1.1.0 < ~ceralive.1 <
+~ceralive.2 < ~ceralive.10 < <upstream>-<rev>` is proven with real `dpkg --compare-versions`
+by the ONE sourced library `packaging/ci/suffix-contract.sh`, from both
+`test-suffix-coherence-manifest.sh` (host) and `test-package-contract.sh` CHECK 5/6
+(container). The release manifest states `suffix_scheme: per-source-counter` and carries **no
+`deb_version_suffix:`** — under per-source counters no single suffix value is truthful. The
+companion `ceralive-modem-support` stays outside this entirely: bare SemVer tag version, no
+`~ceralive` suffix, and always rebuilt.
 
 ## FROZEN V1.1 DOMAIN CONTRACTS
 
@@ -248,6 +271,17 @@ The container build additionally enforces the finalized **two-set package model*
 arch-dependent stanzas + enumerated `-dbgsym`) for exact per-source set **equality** via
 `packaging/ci/check-package-sets.sh` (add/remove/rename fails closed). Full detail:
 `packaging/README.md`.
+
+**The pins are watched, never auto-bumped.** `.github/workflows/upstream-watch.yml` runs
+weekly (plus `workflow_dispatch`) and calls `packaging/ci/check-upstream-freshness.sh`, which
+enumerates each source's upstream release tags and salsa `debian/*` packaging tags via
+`git ls-remote --tags`, filters the development series out, and compares the survivors to the
+four pins above. On `behind` it opens **or updates** ONE issue labelled `upstream-freshness`,
+and closes it when everything is current again. It is **issue-only**: it never edits
+`upstream-pins.yaml` and never dispatches a build, which is why it is the only workflow here
+holding `issues: write` and no dispatch token. A newer upstream release with no matching
+Debian packaging tag reports the distinct `upstream-ahead-no-packaging` — there is no
+`<upstream>-<rev>` pair to pin, so there is no bump to recommend.
 
 ## MUTATION ADMISSION + EXCLUSIVE OWNERSHIP
 
@@ -1350,13 +1384,44 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
      before any other job). Exports `version` + `sha`.
   2. **test** (needs tag-guard) — full bun lane + packaging contract lane
      (test-before-publish).
-  3. **build-deb** (needs [tag-guard, test]) — injects `<upstream>-<rev>~ceralive<X.Y.Z>`
-     (non-tag runs `~ceralive0.0.0~dev`) via `packaging/ci/inject-deb-version.sh`, builds both
-     arches, runs the package contract suite + daemon smoke, builds the `Architecture: all`
-     companion ONCE (`packaging/ci/build-companion.sh`) and runs its clean-chroot contract
-     (`packaging/ci/test-companion-chroot.sh`), generates the manifest-complete
-     release manifest (`packaging/ci/generate-release-manifest.sh`), and uploads the `.deb`
-     artifacts + manifest.
+  3. **build-deb** (needs [tag-guard, test]) — the **DIFFERENTIAL** `.deb` job. Steps, in file
+     order: **Checkout the resolved commit** (`fetch-depth: 0` — load-bearing here and nowhere
+     else, since the detector diffs `<prev-tag>..HEAD`; a shallow checkout would silently
+     force-all forever) → **Assert checkout is pinned to the resolved SHA** → **Set up QEMU
+     (arm64 emulation)** → **Resolve previous release + fetch its manifest (once)**
+     (`id: prev-release`; `gh release list`, never `git describe` — the previous release is the
+     latest PUBLISHED one; no release or no manifest asset leaves both outputs empty, which is
+     the bootstrap case, not an error) → **Detect changed sources (per-source verdicts)**
+     (`packaging/ci/detect-changed-sources.sh --out verdicts.txt`) → **Stage carry-forward debs
+     (unchanged sources, sha256-verified)** (`packaging/ci/stage-carryforward-debs.sh`) →
+     **Build the MM 1.24 stack (.deb) — amd64 + arm64** (`build-bookworm.sh amd64` /`arm64`,
+     with `VERDICTS_FILE` + the already-resolved `PREV_MANIFEST_FILE`) → **Package contract
+     suite** (amd64 full, arm64 metadata) → **Daemon smoke (amd64)** → **Build the first-party
+     companion .deb (Architecture: all)** (UNCONDITIONAL — the companion is never detected and
+     never carried) → **Companion package contract (clean Debian chroot)** → **Generate release
+     manifest** (`packaging/ci/generate-release-manifest.sh`) → **Upload .deb artifacts +
+     release manifest**.
+
+     Three things about that order are load-bearing. The previous release is resolved and its
+     manifest downloaded **exactly once**, and that one path feeds all three consumers
+     (detection, carry-forward staging, per-source counter derivation). Carry-forward staging
+     runs **strictly before any `build-bookworm.sh` call**, because carried debs are a build
+     INPUT — `build-bookworm.sh` seeds its Pin-Priority-1001 local apt repo from
+     `packaging/build/<arch>/`, so a changed source resolves its build-deps and gir typelibs
+     against the carried `-dev`/`gir1.2-*` packages rather than stock bookworm; staging late
+     still goes green and silently reintroduces stock dependencies, which is why
+     `packaging/ci/test-release-workflow-wiring.sh` pins the ordering statically. And a
+     zero-build run starts no container at all yet still asserts the merged runtime closure
+     over the carried set.
+
+     Detection is **fail-SAFE toward rebuilding**: an absent previous release, a manifest with
+     no `closure_version:` header (an absent header IS closure version 1), a shared-input
+     change under `packaging/ci/**` or `packaging/BOOKWORM-ADAPTATIONS.md`, or the operator's
+     escape hatch all yield `mode=force-all`. That escape hatch is the `force_rebuild`
+     `workflow_dispatch` boolean input (default `false`), mapped to the script's
+     `FORCE_REBUILD=all` env via
+     `${{ github.event.inputs.force_rebuild == 'true' && 'all' || '' }}` — defense in depth, since
+     a shared-input change force-alls on its own.
   4. **publish-npm** (needs [tag-guard, build-deb]) — OIDC trusted publishing
      (`id-token: write`), verifies `control/package.json` version === tag, then an
      **integrity-idempotent** publish: `npm pack` → classify registry state (404 → publish;
@@ -1379,6 +1444,22 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
   the release exists. An operator's own `gh api` call would test the operator's CLI token and
   prove nothing about the repository secret — which is exactly why this lives here.
   `cancel-in-progress: false` (never cancel a release/publish mid-run).
+- **`.github/workflows/upstream-watch.yml`** — the weekly **upstream freshness watch**
+  (schedule + `workflow_dispatch`, `cancel-in-progress: false`). Runs
+  `packaging/ci/check-upstream-freshness.sh`, which enumerates each source's upstream release
+  tags and salsa `debian/*` packaging tags via `git ls-remote --tags`, filters out the
+  development series, and compares the survivors to the pins. On `behind` it opens **or
+  updates** ONE issue labelled `upstream-freshness`; when everything is current again it closes
+  it. **Issue-only** — it never edits `packaging/upstream-pins.yaml` and never dispatches a
+  build, which is why it is the ONLY workflow here that escalates `issues: write` and why it
+  holds no dispatch token. The stable filter is the substance: all four projects publish their
+  unstable train on the same tag namespace (ModemManager `1.25.95` → Debian *experimental*), so
+  `-rc`/`-dev`, non-`X.Y.Z`, **odd-minor** and `.9x`-micro tags are rejected, as are `~`-bearing
+  Debian revisions. A newer upstream release with no Debian packaging tag reports the distinct
+  `upstream-ahead-no-packaging` — NOT `behind`, because with no `<upstream>-<rev>` pair there is
+  no bump to recommend. `packaging/ci/test-check-upstream-freshness.sh` pins all of it offline
+  through a fixture seam. NOTE: GitHub disables scheduled workflows after 60 days of repository
+  inactivity — a silent watch reads exactly like an up-to-date one.
 
 Action pins track the latest stable **major** (resolved via the `gh api` releases/latest
 endpoint); Dependabot keeps them current. JS/TS CI runs on **Node 26** — the CeraLive CI

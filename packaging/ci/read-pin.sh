@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # read-pin.sh — dependency-free reader for packaging/upstream-pins.yaml + the Debian base.
 #
-# TWO MODES
+# THREE MODES
 #   read-pin.sh <source> <field>          Print a scalar field of a source from upstream-pins.yaml
 #                                         (e.g. `read-pin.sh modemmanager upstream_tag` -> 1.24.2).
 #   read-pin.sh <source> --base-version   Print the FULL Debian base `<upstream>-<rev>` (e.g.
 #                                         1.24.2-2) taken from that source's debian/changelog TOP
 #                                         entry, cross-checked to equal the pin's salsa_tag suffix
 #                                         (`debian/1.24.2-2` -> `1.24.2-2`). Mismatch FAILS CLOSED.
+#   read-pin.sh --list-sources            Print the pinned source NAMES, one per line, in manifest
+#                                         order. Exposes the reader's own `yaml_sources` so a
+#                                         caller that must iterate every source (e.g.
+#                                         check-upstream-freshness.sh) does not grow a second
+#                                         copy of the YAML parser to enumerate the keys.
 #
 # WHY A SHARED READER
 #   The packaging CI assertion scripts (daemon-smoke.sh, test-package-contract.sh, contract.sh)
@@ -38,9 +43,15 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_ROOT="$(cd "$HERE/.." && pwd)"
 MANIFEST="$PKG_ROOT/upstream-pins.yaml"
 
-[ $# -ge 2 ] || { echo "read-pin: usage: read-pin.sh <source> <field|--base-version>" >&2; exit 2; }
-SRC="$1"
-FIELD="$2"
+if [ "${1-}" = "--list-sources" ]; then
+	MODE="list-sources"; SRC=""; FIELD=""
+else
+	[ $# -ge 2 ] || {
+		echo "read-pin: usage: read-pin.sh <source> <field|--base-version> | read-pin.sh --list-sources" >&2
+		exit 2
+	}
+	MODE="scalar"; SRC="$1"; FIELD="$2"
+fi
 [ -r "$MANIFEST" ] || { echo "read-pin: cannot read manifest '$MANIFEST'" >&2; exit 2; }
 
 # ---- tiny dependency-free YAML readers (byte-identical to verify-upstream-pins.sh) ---------
@@ -63,6 +74,13 @@ yaml_sources() {
 		ins && /^  [^ ]+:[ \t]*$/ { s=$0; sub(/^  /, "", s); sub(/:[ \t]*$/, "", s); print s }
 	' "$MANIFEST"
 }
+
+if [ "$MODE" = "list-sources" ]; then
+	names="$(yaml_sources)"
+	[ -n "$names" ] || { echo "read-pin: no sources found in $MANIFEST" >&2; exit 1; }
+	printf '%s\n' "$names"
+	exit 0
+fi
 
 # The pinned source must exist (fail-closed on a typo'd / wrong source name).
 src_known=0
