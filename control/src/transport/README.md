@@ -9,7 +9,7 @@ directly on this shape.
 ## Why this library
 
 `@httptoolkit/dbus-native` is a pure-JavaScript D-Bus client (no libdbus / native
-addon), which is the deciding factor: it imports and runs under **Bun 1.3.14** with
+addon), which is the deciding factor: it imports and runs under **Bun 1.4.0** with
 **EXTERNAL** auth on a session bus — session-verified during A2.4, and pinned exactly at
 `0.1.5`. A native-addon client (anything binding libdbus) is a portability and
 cross-compile liability for the arm64 + amd64 device image; a pure-JS client is not.

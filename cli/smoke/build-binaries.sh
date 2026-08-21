@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cross-compile the bench CLI and the smoke harness for amd64 + arm64.
 #
-# Bun 1.3.14 cross-compiles with `--compile --target=bun-linux-<x64|arm64>` (verified:
+# Bun 1.4.0 cross-compiles with `--compile --target=bun-linux-<x64|arm64>` (verified:
 # the target flag downloads the matching bun runtime and emits a standalone ELF for that
 # architecture). Outputs land in cli/dist/ (gitignored).
 set -euo pipefail

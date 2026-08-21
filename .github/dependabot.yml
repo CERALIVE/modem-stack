@@ -1,6 +1,6 @@
 version: 2
 # Weekly, grouped, no auto-merge — per the CeraLive CI/CD standard.
-# github-actions (all workflows) + npm (the Bun workspace at the repo root).
+# github-actions (all workflows) + Bun (the workspace at the repo root).
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -10,14 +10,10 @@ updates:
       github-actions:
         patterns: ["*"]
 
-  - package-ecosystem: "npm"
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "weekly"
     groups:
-      npm:
+      bun:
         patterns: ["*"]
-    # TypeScript 7 is explicitly out of scope; never propose a semver-major TS bump.
-    ignore:
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]

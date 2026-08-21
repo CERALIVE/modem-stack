@@ -9,7 +9,7 @@
 import { expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import * as ts from 'typescript';
+import * as ts from '@typescript/typescript6';
 import { MODEM_LOCATION_IFACE } from '../backend/constants';
 import { LOCATION_IFACE } from '../capability/detect';
 
