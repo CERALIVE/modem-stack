@@ -16,7 +16,7 @@ tree; see [Shape gate](#shape-gate).
 npm install @ceralive/modem-control     # or: bun add @ceralive/modem-control
 ```
 
-ESM only (`"type": "module"`). Node 26 and Bun 1.3 are the runtimes the published
+ESM only (`"type": "module"`). Node 26 and Bun 1.4 are the runtimes the published
 tarball is exercised against on every CI run.
 
 ## Public entry points
