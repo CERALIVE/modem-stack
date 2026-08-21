@@ -1283,10 +1283,17 @@ rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION
 
 ## WORKSPACE / TOOLCHAIN
 
-- **Bun 1.3.14** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
+- **Bun 1.4.0** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
   are Bun workspace members.
-- **Strict TypeScript** incl. `exactOptionalPropertyTypes` — a single repo-root
-  `tsconfig.json` covers both members (`bun run typecheck` → `tsc --noEmit`).
+- **Strict TypeScript 7.0.2** incl. `exactOptionalPropertyTypes` — the repo-root
+  `tsconfig.json` is the workspace checker (`bun run typecheck` → `tsc --noEmit`) for both
+  members. `control/tsconfig.json` extends it only to give editors the same types for the
+  package's AST guard tests. The root config's explicit `types` entry preserves Bun globals;
+  its DEV-ONLY `paths` map is resolved relative to that config and deliberately has no
+  `baseUrl`, which TypeScript 7 removed.
+- **AST guard compatibility:** `@typescript/typescript6` is a test-only compiler-API shim for
+  source-shape guards. TypeScript 7's native `tsc` remains the workspace checker and emitted
+  package compiler; the shim never reaches `control/dist` or the published tarball.
 - **Biome** via `@ceralive/biome-config` (repo-root `biome.json` extends it). `bun run lint`.
 - **Bun test** (`bun test`) discovers `*.test.ts` across both members.
 - **Node 26** for the standalone consumer fixtures (`control/fixtures/`). Point

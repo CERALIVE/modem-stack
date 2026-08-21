@@ -49,8 +49,10 @@ modem-stack/
 └── POLICY.md       no-fork gate + upstream-contribution-first policy
 ```
 
-`control/` and `cli/` form a single **Bun** workspace (Bun 1.3.14, strict TypeScript,
+`control/` and `cli/` form a single **Bun** workspace (Bun 1.4.0, strict TypeScript 7.0.2,
 Biome via `@ceralive/biome-config`). `packaging/` is built in a bookworm container.
+The two AST-backed source-shape guard tests use the test-only TypeScript 6 compiler-API
+compatibility package; workspace typechecking and package emit remain TypeScript 7.
 
 ## Develop
 
