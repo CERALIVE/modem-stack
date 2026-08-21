@@ -18,7 +18,7 @@
 import { expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import * as ts from 'typescript';
+import * as ts from '@typescript/typescript6';
 
 const portsDir = import.meta.dir;
 
