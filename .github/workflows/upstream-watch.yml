@@ -1,0 +1,111 @@
+name: Upstream freshness watch
+
+# Weekly check: has a newer STABLE release of ModemManager / libmbim / libqmi / libqrtr-glib
+# (or of its Debian salsa packaging tag) appeared since we pinned?
+#
+# ISSUE-ONLY, BY DESIGN. This workflow opens or updates ONE labelled issue and does nothing
+# else. It never edits packaging/upstream-pins.yaml and it never dispatches a build — bumping
+# a pin is a separate, human-reviewed change that must re-run
+# packaging/ci/verify-upstream-pins.sh (the four-link provenance chain). That is why the job
+# escalates only `issues: write` and holds no dispatch token.
+#
+# THE DEV-SERIES FILTER IS THE POINT. All four sources publish their unstable train on the same
+# tag namespace as their releases (ModemManager 1.25.95 -> Debian *experimental*), so a naive
+# "newest tag wins" watch would file a bump request for a development snapshot roughly every
+# other week and train everyone to ignore it. packaging/ci/check-upstream-freshness.sh applies
+# an explicit stable-only filter; packaging/ci/test-check-upstream-freshness.sh pins it offline.
+#
+# GITHUB DISABLES SCHEDULED WORKFLOWS AFTER 60 DAYS OF REPOSITORY INACTIVITY. If this watch goes
+# quiet, that is the first thing to check: re-enable it from the Actions tab (or push a commit),
+# then confirm with a manual `workflow_dispatch` run. A silent watch reads exactly like an
+# up-to-date one, which is the failure mode worth knowing about.
+on:
+  schedule:
+    # Mondays, 06:17 UTC. Off the hour on purpose — GitHub's scheduler is heavily contended at
+    # :00 and delays a run that has no deadline anyway.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Schedule + manual dispatch, never a PR gate: a run in flight is doing the real check and must
+# not be cancelled by the next trigger.
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Compare the pins against upstream + Debian salsa stable tags
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The ONLY escalation in this repository's workflows. Needed to create the
+      # `upstream-freshness` label and to open/edit the single tracking issue.
+      issues: write
+    env:
+      ISSUE_LABEL: upstream-freshness
+      ISSUE_TITLE: "Upstream freshness: a newer stable ModemManager-stack release is available"
+    steps:
+      - uses: actions/checkout@v7
+
+      # `runner.temp` is unavailable in a job-level `env:` block, so the body path is declared
+      # per step. It stays out of the checkout so the workspace is never dirtied.
+      - name: Enumerate upstream + salsa tags and compare against the pins
+        id: check
+        env:
+          ISSUE_BODY_FILE: ${{ runner.temp }}/upstream-freshness-issue.md
+        run: |
+          set -uo pipefail
+          rc=0
+          bash packaging/ci/check-upstream-freshness.sh --issue-body "$ISSUE_BODY_FILE" || rc=$?
+          case "$rc" in
+            0)  echo "Every pinned source is current (or upstream is ahead with no Debian packaging yet)."
+                echo "behind=false" >> "$GITHUB_OUTPUT" ;;
+            10) echo "At least one pinned source is behind a newer stable release."
+                echo "behind=true" >> "$GITHUB_OUTPUT" ;;
+            *)  echo "::error::check-upstream-freshness.sh could not complete (exit $rc)."
+                exit "$rc" ;;
+          esac
+
+      - name: Open or update the single tracking issue
+        if: steps.check.outputs.behind == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_BODY_FILE: ${{ runner.temp }}/upstream-freshness-issue.md
+        run: |
+          set -euo pipefail
+          # The label is what makes re-runs UPDATE instead of duplicate, so create it on demand
+          # rather than assuming an operator pre-created it.
+          gh label create "$ISSUE_LABEL" \
+            --description "Scheduled watch: a newer stable upstream/Debian pin is available" \
+            --color "0E8A16" >/dev/null 2>&1 || true
+
+          existing="$(gh issue list --label "$ISSUE_LABEL" --state open --limit 1 \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$ISSUE_TITLE" --body-file "$ISSUE_BODY_FILE"
+            echo "Updated existing issue #$existing."
+          else
+            gh issue create --title "$ISSUE_TITLE" --label "$ISSUE_LABEL" --body-file "$ISSUE_BODY_FILE"
+          fi
+
+      - name: Close the tracking issue once every pin is current again
+        if: steps.check.outputs.behind == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          existing="$(gh issue list --label "$ISSUE_LABEL" --state open --limit 1 \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" \
+              --comment "Every pinned source is current again — closed by the scheduled upstream-freshness watch."
+            echo "Closed issue #$existing."
+          else
+            echo "Nothing to close."
+          fi

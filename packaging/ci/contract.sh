@@ -33,12 +33,22 @@ require "README.md"
 require "BOOKWORM-ADAPTATIONS.md"
 require "ci/tag-guard.sh"
 require "ci/test-tag-guard.sh"
+require "ci/detect-changed-sources.sh"
+require "ci/test-detect-changed-sources.sh"
+require "ci/stage-carryforward-debs.sh"
+require "ci/test-stage-carryforward-debs.sh"
 require "ci/read-pin.sh"
 require "ci/inject-deb-version.sh"
 require "ci/build-bookworm.sh"
+require "ci/test-build-bookworm-differential.sh"
 require "ci/test-package-contract.sh"
 require "ci/daemon-smoke.sh"
 require "ci/generate-release-manifest.sh"
+require "ci/suffix-contract.sh"
+require "ci/test-suffix-coherence-manifest.sh"
+require "ci/test-release-workflow-wiring.sh"
+require "ci/check-upstream-freshness.sh"
+require "ci/test-check-upstream-freshness.sh"
 require "ci/build-companion.sh"
 require "ci/test-companion-chroot.sh"
 require "ci/companion-inventory.txt"
@@ -76,6 +86,43 @@ echo "  ok: companion ships no image-owned udev basename"
 echo "  running tag-guard contract..."
 bash "$HERE/test-tag-guard.sh" >/dev/null
 
+# The differential-release change detector must hold. It builds its own throwaway git repo and
+# stubs `gh` on PATH, so it needs no docker, no network and no built .deb — which is exactly why
+# it belongs in this lightweight lane rather than the deb-consuming suite.
+echo "  running change-detection contract..."
+bash "$HERE/test-detect-changed-sources.sh" >/dev/null
+
+# The carry-forward stager must hold. It builds its own fixture manifest + GitHub-mangled asset
+# dir and drives the script through the PREV_MANIFEST_FILE / CARRYFORWARD_ASSET_DIR seams, so it
+# needs no docker, no network and no built .deb — the same reason the detector's test lives here.
+echo "  running carry-forward staging contract..."
+bash "$HERE/test-stage-carryforward-debs.sh" >/dev/null
+
+# The differential builder contract stubs only the expensive source-build body. Build-set parsing,
+# carry seeding, bootstrap dispatch, counter derivation, package-set checking and merged closure all
+# run through their production paths, with no docker or network.
+echo "  running differential build + rebuild-counter contract..."
+bash "$HERE/test-build-bookworm-differential.sh" >/dev/null
+
+# The per-source suffix + mixed-version manifest contract. It stages placeholder debs and runs the
+# real generate-release-manifest.sh over them, and proves the migration-continuity ordering with
+# real `dpkg --compare-versions` — no docker, no network, no built .deb. The same suffix-contract.sh
+# library backs test-package-contract.sh's CHECK 5/6, so the heavy lane cannot drift from this one.
+echo "  running per-source suffix coherence + mixed-version manifest contract..."
+bash "$HERE/test-suffix-coherence-manifest.sh" >/dev/null
+
+# The release.yml wiring proof is STATIC — it reads the workflow text and never dispatches a run.
+# It belongs in this lane because the invariant it guards (carry-forward staged before every
+# build-bookworm.sh call) fails SILENTLY: a late stage still produces a green release, built
+# against stock bookworm dependencies instead of the carried ones.
+echo "  running release.yml differential wiring contract..."
+bash "$HERE/test-release-workflow-wiring.sh" >/dev/null
+
+# The upstream freshness proof is offline and fixture-driven, so it needs no docker, no network
+# and no built .deb — exactly the kind of invariant this lightweight lane should exercise.
+echo "  running upstream freshness contract..."
+bash "$HERE/test-check-upstream-freshness.sh" >/dev/null
+
 # Reading the base here also runs read-pin.sh's changelog-top vs salsa_tag cross-check on every
 # PR-lane run, so a `-1`-vs-`-2` revision drift fails closed before any ordering proof.
 MM_BASE="$(bash "$HERE/read-pin.sh" modemmanager --base-version)"
@@ -94,7 +141,9 @@ for item in "$PKG_ROOT"/*; do
 	cp -a "$item" "$TMP/"
 done
 if command -v dch >/dev/null 2>&1; then
-	( cd "$TMP" && bash ci/inject-deb-version.sh --dev >/dev/null )
+	for source_key in libqrtr-glib libmbim libqmi modemmanager; do
+		( cd "$TMP" && bash ci/inject-deb-version.sh --source "$source_key" --dev >/dev/null )
+	done
 	# The copy's changelogs must now carry the dev suffix; the SOURCE tree must not.
 	for src in ModemManager libmbim libqmi libqrtr-glib; do
 		cl="$PKG_ROOT/$src/debian/changelog"
