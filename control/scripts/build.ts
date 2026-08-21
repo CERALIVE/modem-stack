@@ -147,4 +147,4 @@ if (tsc.exitCode !== 0) {
 await fullySpecifyEmit();
 await verify();
 
-console.log(`built ${PUBLIC_ENTRIES.length} public entries into dist/`);
+console.error(`built ${PUBLIC_ENTRIES.length} public entries into dist/`);
