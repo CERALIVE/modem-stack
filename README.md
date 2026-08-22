@@ -108,6 +108,16 @@ refusal before any transport call. `05c6:9024` proves an RNDIS+ADB composition a
 production access stays prohibited. The supervised, read-only, bench-only DIAG info probe
 is documented in [`docs/UFI-DIAG-PROBE.md`](docs/UFI-DIAG-PROBE.md).
 
+That document also carries the **read-only descriptor capture**:
+`control/scripts/ufi-himi-capture.sh` writes a redacted evidence bundle (full `lsusb -v`
+descriptors, `usb-devices`, udev properties, per-interface driver bindings, `/sys`
+composition, and — with an ephemeral bench password — the HIMI `getproduceinfo` /
+`getsysinfo` identity), and `control/scripts/ufi-himi-evidence.ts` carries the bundle
+schema, the per-interface role classifier, and an independent redaction sweep. With no
+matching device attached the script answers `device-not-present` and writes nothing rather
+than leaving a partial bundle. No captured bundle is committed — the hardware drill that
+produces one has not run.
+
 ## Radio capability truth + SIM evidence (Todo 28)
 
 `control/src/radio/` carries ModemManager's mode and band answers to a consumer without

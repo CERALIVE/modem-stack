@@ -111,7 +111,10 @@ through `OperationEngine` are refused before execution too.
 `05c6:9024` is evidence of an RNDIS+ADB composition, not a permission. `05c6:9091` is a
 firmware-chosen product id and is **not** proof of DIAG — only an interface descriptor is,
 and production access stays `prohibited` regardless. The supervised, read-only, bench-only
-probe is documented in [`../docs/UFI-DIAG-PROBE.md`](../docs/UFI-DIAG-PROBE.md).
+probe is documented in [`../docs/UFI-DIAG-PROBE.md`](../docs/UFI-DIAG-PROBE.md), together
+with the read-only descriptor capture (`scripts/ufi-himi-capture.sh`) and its bundle
+schema, interface-role classifier and redaction sweep (`scripts/ufi-himi-evidence.ts`).
+Neither ships in the package: `files: ["dist"]`, and bench tooling is not a public surface.
 
 ### NetworkManager adapter — saved vs applied
 

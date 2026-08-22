@@ -1568,3 +1568,37 @@ the cached session and surfaces as an honest `auth-expired` reading rather than 
 loop. The admin password is EPHEMERAL BENCH INPUT (`UFI_BENCH_PASSWORD`), injected for a
 supervised run only, and `credential-fence.test.ts` scans tracked and intended-untracked
 files for it plus its base64/SHA-256 derivatives.
+
+### Bench descriptor capture — tooling and schema, NOT a captured bundle
+
+`control/scripts/ufi-himi-capture.sh` + `control/scripts/ufi-himi-evidence.ts` are the
+read-only evidence-capture path for `05c6:9091`, and they live in `control/scripts/`
+rather than in the provider directory on purpose: bench tooling is not published
+(`files: ["dist"]`), and `no-write-path.test.ts` enumerates the provider directory
+exactly, so a file added there would be a change to that gate. **No bundle CONTENT is
+committed by this work** — the hardware drill that produces one has not run.
+
+- **The bundle is `manifest.json` + five capture files + one credential-gated HIMI file**,
+  staged in a temp directory and moved into place as a unit, so a published path either
+  holds a complete bundle or does not exist. With no matching device the script answers
+  `device-not-present` on stdout and exits 3 having written nothing.
+- **Per-step status is five-valued, not a boolean** — `captured` / `empty` /
+  `tool-unavailable` / `unreachable` / `skipped-no-credential`. The bench image ships no
+  `usbutils` (RB-9), so "no `lsusb` here" and "no device there" must not collapse.
+- **Redaction happens at capture time and the rules have ONE implementation** — the
+  script's `--redact-filter` mode, which the test EXECUTES rather than re-expressing. Two
+  layers mirroring `redact.ts`: key-based masking plus a MAC/14+-digit backstop. The
+  staged bundle is then swept and a surviving identifier DESTROYS it (exit 4); there is no
+  override flag. `sweepUfiEvidenceText` is the tested twin of the script's own sweep, and
+  two checkers that disagree fail the capture.
+- **The descriptor triple and the driver binding are two facts and are never merged.**
+  `classifyUfiInterfaceRole` answers `diag` only through `classifyUfiDiagEvidence` itself,
+  so the bench analysis cannot drift from the shipped rule; `ff/ff/*` outside `30` stays
+  `vendor-specific` and the CAPTURED binding says who claimed it. Upstream matching
+  `05c6:9091` in `qmi_wwan.c` under an unrelated annotation, and QCSuper documenting the
+  same id on a different device, are evidence about neither — only this unit's descriptor
+  is.
+- **A static gate scans both files** for `usb_modeswitch`, `setprop`, a shell-transport
+  invocation, an emergency-download tool, `AT!`, an uppercase AT write form and a QMI
+  write, each with a non-vacuity control, and asserts every command literal in them is a
+  member of `UFI_COMMANDS`. Procedure: [`docs/UFI-DIAG-PROBE.md`](docs/UFI-DIAG-PROBE.md).
