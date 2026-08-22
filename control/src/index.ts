@@ -17,6 +17,7 @@ export * from './hardware/router-parsers';
 export * from './journal';
 export * from './location';
 export * from './observations';
+export * from './operation-ids';
 export * from './operations';
 export * from './ports';
 export * from './providers';

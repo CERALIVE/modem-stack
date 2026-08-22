@@ -51,6 +51,16 @@ export {
 	renderPromotionReview,
 } from './promotion-review';
 export {
+	RUNTIME_COMPOSITION_QUERY_REGISTRY,
+	RUNTIME_COMPOSITION_VENDORS,
+	type RuntimeCompositionCapability,
+	type RuntimeCompositionMode,
+	type RuntimeCompositionQuery,
+	type RuntimeCompositionResponse,
+	type RuntimeCompositionVendor,
+	resolveRuntimeCompositionCapability,
+} from './runtime-capability';
+export {
 	type ParsedUsbDevice,
 	type ParsedUsbInterface,
 	parseUsbDevices,
