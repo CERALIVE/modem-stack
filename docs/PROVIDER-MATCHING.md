@@ -63,7 +63,7 @@ exactly the provider and profile it is entitled to — and does no device reach 
 `control/src/providers/conformance-matrix.test.ts` is that matrix. **20 cases**: nine fleet
 profiles (MM-managed Quectel / SIMCom / FM350-on-USB-carrier, both HiLink firmwares, MF79U,
 MF266, and both UFI USB ids) plus eleven safety cases — ambiguous collision, cross-profile
-refusal, three malformed-response cases, auth-expired, lockout-unknown, two unknown-firmware
+refusal, three malformed-response cases, auth-expired, lockout, two unknown-firmware
 cases, wrong-interface and wrong-transport. Every case registers all four providers and scripts
 the three the device does not belong to as devices that answer nothing they understand. The
 expectation is the exact decision — provider, profile, writability and evidence score.

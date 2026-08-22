@@ -81,10 +81,11 @@ AGPL-3.0
 
 ## ZTE goform provider (Todo 25)
 
-`control/src/providers/zte-goform/` keeps MF79U legacy and MF266 salted authentication in
-separate evidence-selected profiles with one bounded attempt and an in-memory-only `stok`
-session. Unknown ZTE firmware retains read-only telemetry; no ZTE profile exposes a Wi-Fi
-write. The executable MF79U one-attempt diagnosis is documented in
+`control/src/providers/zte-goform/` keeps MF79U base64, MF79U `LD`-salted-under-`LOGIN`,
+and MF266 `LOGIN_MULTI_USER` authentication in separate evidence-selected profiles with
+one bounded attempt and an in-memory-only `stok` session. A batched pre-auth probe refuses
+known lockout before the credential POST. Unknown ZTE firmware retains read-only telemetry;
+no ZTE profile exposes a Wi-Fi write. The executable MF79U one-attempt diagnosis is documented in
 [`docs/MF79U-DIAGNOSIS.md`](docs/MF79U-DIAGNOSIS.md).
 
 ## UFI / HIMI provider (Todo 26)
@@ -123,7 +124,7 @@ preferred mode and the measurement-recency flag survive normalization.
 `control/src/providers/conformance-matrix.test.ts` registers all four providers at once and
 runs 20 cases — nine fleet profiles (MM-managed Quectel / SIMCom / FM350-on-USB-carrier, both
 HiLink firmwares, MF79U, MF266, both UFI USB ids) plus ambiguous-collision, cross-profile
-refusal, malformed-response, auth-expired, lockout-unknown, unknown-firmware, wrong-interface
+refusal, malformed-response, auth-expired, lockout, unknown-firmware, wrong-interface
 and wrong-transport cases — asserting the exact provider, profile, writability and evidence
 score each device is entitled to. A tie between two write-capable providers resolves read-only
 with both claimants in the evidence ledger and neither credential spent. Companion suites

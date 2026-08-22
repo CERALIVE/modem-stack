@@ -235,6 +235,7 @@ export const ZTE_RD = 'conformance-rd';
 export const ZTE_STOK = 'stok=conformance-stok';
 export const ZTE_WA_VERSION = 'BD_MF266V1.0.0B01';
 export const ZTE_CR_VERSION = 'CR_MF266V1.0.0B01';
+export const ZTE_MF79U_WA_VERSION = 'BD_XCBZHKMF79UV1.0.0B03';
 
 const sha256Upper = (value: string): string =>
 	createHash('sha256').update(value).digest('hex').toUpperCase();
@@ -246,41 +247,58 @@ export const ZTE_SALTED_PASSWORD = sha256Upper(
 /** The legacy MF79U password: base64, form-encoded. */
 export const ZTE_LEGACY_PASSWORD = Buffer.from(CONFORMANCE_CREDENTIALS.password).toString('base64');
 
-export const ZTE_FINGERPRINT_BODIES = {
-	MF79U: JSON.stringify({ cr_version: 'CR_MF79UV1.0.0B04', network_type: 'LTE' }),
-	MF266: JSON.stringify({ cr_version: ZTE_CR_VERSION, network_type: 'LTE' }),
-	unknown: JSON.stringify({ cr_version: 'CR_ZTEUNKNOWNV9.9.9', network_type: 'LTE' }),
+const ZTE_EVIDENCE_RECORDS = {
+	MF79U: {
+		LD: ZTE_LD,
+		psw_fail_num_str: '5',
+		login_lock_time: '0',
+		wa_inner_version: ZTE_MF79U_WA_VERSION,
+		cr_version: 'CR_MF79UV1.0.0B03',
+	},
+	MF266: {
+		LD: ZTE_LD,
+		psw_fail_num_str: '5',
+		login_lock_time: '0',
+		wa_inner_version: ZTE_WA_VERSION,
+		cr_version: ZTE_CR_VERSION,
+	},
+	unknown: {
+		psw_fail_num_str: '5',
+		login_lock_time: '0',
+		wa_inner_version: 'BD_ZTEUNKNOWNV9.9.9',
+		cr_version: 'CR_ZTEUNKNOWNV9.9.9',
+	},
+} as const;
+
+export const ZTE_EVIDENCE_BODIES = {
+	MF79U: JSON.stringify(ZTE_EVIDENCE_RECORDS.MF79U),
+	MF266: JSON.stringify(ZTE_EVIDENCE_RECORDS.MF266),
+	unknown: JSON.stringify(ZTE_EVIDENCE_RECORDS.unknown),
 } as const;
 
 export const ZTE_LOGIN_ACCEPTED = JSON.stringify({ result: '0' });
 export const ZTE_LOGIN_REJECTED = JSON.stringify({ result: '3' });
-/**
- * The MF79U bench shape that CANNOT be classified from one response: a non-zero result
- * with a lock countdown. Rejection and lockout are indistinguishable here on purpose —
- * separating them is what `scripts/mf79u-diagnose.sh` exists for, and the matcher must
- * refuse identically for both rather than guess.
- */
-export const ZTE_LOGIN_LOCKOUT_UNKNOWN = JSON.stringify({ result: '1', lockedTime: '180' });
+export const ZTE_LOGIN_PROTOCOL_MISMATCH = JSON.stringify({ result: '1' });
 /** An MF266-shaped challenge answered to a legacy `LOGIN` — the cross-profile trap. */
 export const ZTE_LOGIN_SALTED_SHAPE = JSON.stringify({ LD: ZTE_LD });
 
 export type ZteScript = {
 	readonly firmware: 'MF79U' | 'MF266' | 'unknown';
 	readonly fingerprint?: 'reported' | 'malformed';
-	readonly login?: 'ok' | 'rejected' | 'lockout-unknown' | 'salted-shape';
+	readonly login?: 'ok' | 'rejected' | 'protocol-mismatch' | 'salted-shape';
+	readonly lockout?: boolean;
 	readonly telemetry?: 'reported' | 'malformed';
 };
 
-export const ZTE_FINGERPRINT_CMD = 'cr_version,network_type';
+export const ZTE_EVIDENCE_CMD = 'LD,psw_fail_num_str,login_lock_time,wa_inner_version,cr_version';
 export const ZTE_TELEMETRY_CMD = 'network_type,signalbar,rssi,lte_rsrp,lte_rsrq,lte_snr';
-export const ZTE_VERSIONS_CMD = 'wa_inner_version,cr_version';
 
 export function zteDevice(script: ZteScript): ScriptedDevice {
 	const loginBody =
 		script.login === 'rejected'
 			? ZTE_LOGIN_REJECTED
-			: script.login === 'lockout-unknown'
-				? ZTE_LOGIN_LOCKOUT_UNKNOWN
+			: script.login === 'protocol-mismatch'
+				? ZTE_LOGIN_PROTOCOL_MISMATCH
 				: script.login === 'salted-shape'
 					? ZTE_LOGIN_SALTED_SHAPE
 					: ZTE_LOGIN_ACCEPTED;
@@ -299,26 +317,22 @@ export function zteDevice(script: ZteScript): ScriptedDevice {
 		}
 		if (exchange.path !== ZTE_PATHS.get) return NOT_THIS_VENDOR;
 		switch (exchange.query.cmd) {
-			case ZTE_FINGERPRINT_CMD:
+			case ZTE_EVIDENCE_CMD:
 				return {
 					status: 200,
 					body:
 						script.fingerprint === 'malformed'
 							? ZTE_MALFORMED_FIXTURE.body
-							: ZTE_FINGERPRINT_BODIES[script.firmware],
+							: script.lockout === true
+								? JSON.stringify({
+										...ZTE_EVIDENCE_RECORDS[script.firmware],
+										psw_fail_num_str: '0',
+										login_lock_time: '180',
+									})
+								: ZTE_EVIDENCE_BODIES[script.firmware],
 				};
-			case 'LD':
-				return { status: 200, body: JSON.stringify({ LD: ZTE_LD }) };
 			case 'RD':
 				return { status: 200, body: JSON.stringify({ RD: ZTE_RD }) };
-			case ZTE_VERSIONS_CMD:
-				return {
-					status: 200,
-					body: JSON.stringify({
-						wa_inner_version: ZTE_WA_VERSION,
-						cr_version: ZTE_CR_VERSION,
-					}),
-				};
 			case ZTE_TELEMETRY_CMD:
 				return {
 					status: 200,
@@ -404,16 +418,14 @@ export const CORPUS_BODIES: readonly string[] = [
 	HILINK_AUTH_EXPIRED_FIXTURE.status,
 	HILINK_AUTH_EXPIRED_FIXTURE.signal,
 	HILINK_AUTH_EXPIRED_FIXTURE.netModeList ?? '',
-	...Object.values(ZTE_FINGERPRINT_BODIES),
+	...Object.values(ZTE_EVIDENCE_BODIES),
 	ZTE_LOGIN_ACCEPTED,
 	ZTE_LOGIN_REJECTED,
-	ZTE_LOGIN_LOCKOUT_UNKNOWN,
+	ZTE_LOGIN_PROTOCOL_MISMATCH,
 	ZTE_LOGIN_SALTED_SHAPE,
 	ZTE_FIXTURE.body,
 	ZTE_MALFORMED_FIXTURE.body,
-	JSON.stringify({ LD: ZTE_LD }),
 	JSON.stringify({ RD: ZTE_RD }),
-	JSON.stringify({ wa_inner_version: ZTE_WA_VERSION, cr_version: ZTE_CR_VERSION }),
 	UFI_LOGIN_OK,
 	UFI_LOGIN_REJECTED,
 	UFI_MALFORMED,

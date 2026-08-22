@@ -83,10 +83,11 @@ provider runtime. See [`../docs/HUAWEI-HILINK-PROVIDER.md`](../docs/HUAWEI-HILIN
 
 ### ZTE goform provider
 
-`createZteGoformDefinition()` exposes the incompatible `mf79u-legacy` and
-`mf266-salted` authentication profiles without fallback between them. MF79U sends one
-browser-shaped form login with a base64 password; MF266 performs the `LD` challenge,
-salted SHA-256 login, then derives `AD` from version data and `RD`. Session material stays
+`createZteGoformDefinition()` exposes three incompatible authentication profiles without
+fallback between them: MF79U legacy base64 under `LOGIN`, MF79U `LD`-salted SHA-256 under
+the same bare `LOGIN`, and MF266 salted SHA-256 under `LOGIN_MULTI_USER`. One batched
+pre-auth evidence GET selects the exact shape and refuses a reported lockout before any
+credential POST. MF266 derives `AD` from the probed version data and `RD`. Session material stays
 in memory. Unknown ZTE firmware is fingerprinted into a read-only telemetry profile, and
 Wi-Fi writes are absent from every operation surface. See
 [`../docs/MF79U-DIAGNOSIS.md`](../docs/MF79U-DIAGNOSIS.md).
