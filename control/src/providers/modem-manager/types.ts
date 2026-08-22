@@ -22,6 +22,7 @@ import type { BandWriteCertification, ModeSelection, RadioModeTruth } from '../.
 import type { MmUssd, UssdVerbResult } from '../../ussd';
 import type { ProviderExecutionContext, ProviderOperationsSurface } from '../contracts';
 import type { ModemManagerRefusalReason } from './errors';
+import type { RuntimeCompositionOperation } from './runtime-composition-operation';
 
 export type ModemManagerCapabilities = {
 	readonly modeRead: boolean;
@@ -125,6 +126,7 @@ export interface ModemManagerProviderOperations extends ProviderOperationsSurfac
 	readonly signal: ContextReadOperation<ModemManagerSignalState>;
 	readonly sim: ContextReadOperation<ModemManagerSimState>;
 	readonly power: ContextReadOperation<RadioPower>;
+	readonly usbComposition: RuntimeCompositionOperation;
 	readonly location: {
 		status(context: ProviderExecutionContext): Promise<LocationStatusResult>;
 		enable(

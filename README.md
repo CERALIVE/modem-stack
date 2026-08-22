@@ -27,6 +27,13 @@ helpers for portable modem identity, display naming, ModemManager enums, USB-net
 classification, capability selection, and shadow-result comparison; these helpers perform
 no discovery or transport and leave CeraUI integration to a separate cutover.
 
+The ModemManager operation surface also exposes runtime USB-composition capability. Known
+vendors are queried with exact reviewed READ/TEST forms, targets come from the device's own
+enumeration only when it includes a return path, and writes retain the shared admission,
+journal, rollback, readback, identity, and streaming-interlock fences. Reviewed catalog
+descriptors remain the strongest success proof; otherwise a weaker post-switch device READ
+must report the target. Band certification remains catalog-gated and unchanged.
+
 ## Versioning at a glance
 
 ONE unified **SemVer** tag `vX.Y.Z` releases **both** artifacts together: `v1.1.0` publishes

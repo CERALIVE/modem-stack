@@ -51,13 +51,18 @@ export {
 	renderPromotionReview,
 } from './promotion-review';
 export {
+	buildRuntimeCompositionSetCommand,
+	isRuntimeCompositionVendor,
 	RUNTIME_COMPOSITION_QUERY_REGISTRY,
+	RUNTIME_COMPOSITION_SET_REGISTRY,
 	RUNTIME_COMPOSITION_VENDORS,
 	type RuntimeCompositionCapability,
 	type RuntimeCompositionMode,
 	type RuntimeCompositionQuery,
 	type RuntimeCompositionResponse,
+	type RuntimeCompositionSetCommand,
 	type RuntimeCompositionVendor,
+	readRuntimeCompositionCurrent,
 	resolveRuntimeCompositionCapability,
 } from './runtime-capability';
 export {

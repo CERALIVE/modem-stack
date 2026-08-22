@@ -14,7 +14,11 @@ import { connectionId, deviceIfname, type NetworkManagerPort, receipt } from '..
 import type { CertifiedCatalog } from '../usb-mode';
 import type { UsbDeviceSnapshot } from './device-classifier';
 import { ModemActor } from './modem-actor';
-import type { TransitionInterlock, UsbModeTransitionRequest } from './transition-preconditions';
+import type {
+	CatalogUsbModeTransitionRequest,
+	TransitionInterlock,
+	UsbModeTransitionRequest,
+} from './transition-preconditions';
 import { UsbModeTransition, type UsbModeTransitionDeps } from './usb-mode-transition';
 
 const CACHED_UID = 'pci-0000:00-usb-0:1';
@@ -128,7 +132,9 @@ function scriptedEnumerate(
 	};
 }
 
-function makeRequest(overrides: Partial<UsbModeTransitionRequest> = {}): UsbModeTransitionRequest {
+function makeRequest(
+	overrides: Partial<CatalogUsbModeTransitionRequest> = {},
+): CatalogUsbModeTransitionRequest {
 	return {
 		stableKey: 'slot:test',
 		sku: SKU,
@@ -188,6 +194,83 @@ describe('UsbModeTransition — the happy path walks all ten steps', () => {
 	});
 });
 
+describe('UsbModeTransition — tiered postcondition proof', () => {
+	test('an uncataloged runtime transition uses the exact vendor SET and proves success by post-switch READ', async () => {
+		const log: SpyLog = { calls: [] };
+		const sender: UsbModeTransitionDeps['atSender'] = {
+			send: (command) => {
+				log.calls.push(`at.send:${command}`);
+				return Promise.resolve({
+					ok: true,
+					raw: command === 'AT+GTUSBMODE?' ? '+GTUSBMODE: 40\r\nOK' : 'OK',
+				});
+			},
+		};
+		const transition = makeTransition(log, {
+			atSender: sender,
+			catalog: { schemaVersion: 1, entries: [] },
+			enumerate: scriptedEnumerate([[OLD_QMI], [], [{ ...NEW_MBIM, productId: '7127' }]]),
+		});
+		const outcome = await transition.execute({
+			...makeRequest(),
+			strategy: 'runtime',
+			vendor: 'fibocom',
+			fromMode: 41,
+			toMode: 40,
+			capability: {
+				status: 'available',
+				current: 41,
+				enumerated: [40, 41],
+				returnPathProven: true,
+				offerable: [40, 41],
+			},
+		});
+
+		expect(outcome.status).toBe('succeeded');
+		expect(log.calls.filter((call) => call.startsWith('at.send:'))).toEqual([
+			'at.send:AT+GTUSBMODE=40',
+			'at.send:AT+GTUSBMODE?',
+		]);
+		expect(outcome.steps).toContain('postcondition-runtime-read');
+	});
+
+	test('AT OK without a matching post-switch READ is rejected on the weaker runtime tier', async () => {
+		const log: SpyLog = { calls: [] };
+		const sender: UsbModeTransitionDeps['atSender'] = {
+			send: (command) => {
+				log.calls.push(`at.send:${command}`);
+				return Promise.resolve({
+					ok: true,
+					raw: command === 'AT+GTUSBMODE?' ? '+GTUSBMODE: 41\r\nOK' : 'OK',
+				});
+			},
+		};
+		const transition = makeTransition(log, {
+			atSender: sender,
+			catalog: { schemaVersion: 1, entries: [] },
+			enumerate: scriptedEnumerate([[OLD_QMI], [], [NEW_MBIM]]),
+		});
+		const outcome = await transition.execute({
+			...makeRequest(),
+			strategy: 'runtime',
+			vendor: 'fibocom',
+			fromMode: 41,
+			toMode: 40,
+			capability: {
+				status: 'available',
+				current: 41,
+				enumerated: [40, 41],
+				returnPathProven: true,
+				offerable: [40, 41],
+			},
+		});
+
+		expect(outcome.status).toBe('failed');
+		if (outcome.status === 'failed') expect(outcome.reason).toContain('runtime readback mismatch');
+		expect(log.calls).not.toContain('nm.activate:wwan1');
+	});
+});
+
 /** No nm/mm/at side-effecting call ran, and the actor was never entered. */
 function expectZeroSideEffects(log: SpyLog, steps: readonly string[]): void {
 	expect(log.calls).toEqual([]);
@@ -195,7 +278,7 @@ function expectZeroSideEffects(log: SpyLog, steps: readonly string[]): void {
 }
 
 describe('UsbModeTransition — TIER A: entry refusals fire ZERO actor/lease/AT calls', () => {
-	const cases: Array<[string, Partial<UsbModeTransitionRequest>]> = [
+	const cases: Array<[string, Partial<CatalogUsbModeTransitionRequest>]> = [
 		['unconfirmed (confirm:false)', { confirm: false }],
 		['uncertified SKU (no catalog entry)', { sku: { ...SKU, firmwarePrefix: 'UNKNOWNFW' } }],
 		[

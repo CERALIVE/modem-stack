@@ -11,15 +11,22 @@
 //   8 resolve new ifname → 9 reactivate (uuid, newIfname) → 10 release interlock
 //   (finally, always).
 //
-// THE POSTCONDITION IS THE ONLY PROOF OF SUCCESS. An AT `OK` proves nothing — only a
-// re-enumerated device whose descriptors AND observed mode equal the catalog target
-// counts. On a postcondition MISMATCH the whole transaction fails `degraded`, does NOT
+// THE POSTCONDITION IS THE ONLY PROOF OF SUCCESS. An AT `OK` proves nothing. Tier 1 is
+// the strongest proof and remains unchanged: a reviewed catalog transition must match
+// both descriptors and canonical mode. Tier 2 exists only when no reviewed transition
+// matches: the re-enumerated device must report the raw target through its own vendor READ.
+// Tier 2 is explicitly weaker because it proves reported mode, not descriptor composition.
+// On a postcondition MISMATCH the whole transaction fails `degraded`, does NOT
 // reactivate, and still releases the interlock via `finally`. A hung command trips the
 // AT watchdog, which force-uninhibits so the system reprobes rather than wedging.
 
 import type { DeviceIfname, InhibitLease, ModemManagerPort, NetworkManagerPort } from '../ports';
 import { deviceIfname } from '../ports';
-import { CERTIFIED_CATALOG, type CertifiedCatalog, type PermittedTransition } from '../usb-mode';
+import {
+	CERTIFIED_CATALOG,
+	type CertifiedCatalog,
+	readRuntimeCompositionCurrent,
+} from '../usb-mode';
 import {
 	type AtAuditSink,
 	AtCommandLease,
@@ -33,6 +40,7 @@ import {
 	checkTransitionPreconditions,
 	type TransitionInterlock,
 	type UsbModeTransitionOutcome,
+	type UsbModeTransitionPlan,
 	type UsbModeTransitionRequest,
 } from './transition-preconditions';
 
@@ -118,12 +126,7 @@ export class UsbModeTransition {
 		}
 		const hold = await this.#interlock.hold({ stableKey: request.stableKey });
 		try {
-			return await this.#runTransaction(
-				request,
-				recheck.entry.permittedTransitions,
-				recheck.transition,
-				steps,
-			);
+			return await this.#runTransaction(request, recheck.allowlistedCommands, recheck.plan, steps);
 		} finally {
 			steps.push('release-interlock');
 			await hold.release().catch(() => undefined);
@@ -132,8 +135,8 @@ export class UsbModeTransition {
 
 	async #runTransaction(
 		request: UsbModeTransitionRequest,
-		allCommands: readonly PermittedTransition[],
-		transition: PermittedTransition,
+		allowlistedCommands: readonly string[],
+		plan: UsbModeTransitionPlan,
 		steps: string[],
 	): Promise<UsbModeTransitionOutcome> {
 		let inhibit: InhibitLease | undefined;
@@ -149,11 +152,7 @@ export class UsbModeTransition {
 		};
 		const lease = new AtCommandLease({
 			sender: this.#atSender,
-			allowlist: computeAtAllowlist(
-				allCommands.flatMap((t) =>
-					t.applyCommand === undefined ? [t.atCommand] : [t.atCommand, t.applyCommand],
-				),
-			),
+			allowlist: computeAtAllowlist(allowlistedCommands),
 			timeoutMs: this.#watchdogMs,
 			onWatchdog: forceUninhibit,
 			...(this.#audit !== undefined ? { audit: this.#audit } : {}),
@@ -167,11 +166,11 @@ export class UsbModeTransition {
 
 			// AT `OK` is IGNORED for success — only the postcondition below decides.
 			steps.push('at-command');
-			await lease.run(transition.atCommand, { inhibitUid: request.inhibitUid });
+			await lease.run(plan.atCommand, { inhibitUid: request.inhibitUid });
 
-			if (transition.applyCommand !== undefined) {
+			if (plan.applyCommand !== undefined) {
 				steps.push('apply-command');
-				await lease.run(transition.applyCommand, { inhibitUid: request.inhibitUid });
+				await lease.run(plan.applyCommand, { inhibitUid: request.inhibitUid });
 			}
 
 			steps.push('await-port-drop');
@@ -188,15 +187,31 @@ export class UsbModeTransition {
 			const device = await this.#awaitReenumeration(request.cachedPhysicalUid);
 
 			steps.push('postcondition');
-			const observedMode = detectUsbMode(device);
-			const descriptorsOk = descriptorsMatch(device, transition.expectedDescriptors);
-			if (observedMode !== request.toMode || !descriptorsOk) {
-				return {
-					status: 'failed',
-					degraded: true,
-					reason: `postcondition mismatch: observed ${observedMode ?? 'unknown'} vs target ${request.toMode}; descriptors ${descriptorsOk ? 'ok' : 'mismatch'}`,
-					steps,
-				};
+			if (plan.proof.tier === 'catalog-descriptors') {
+				const observedMode = detectUsbMode(device);
+				const descriptorsOk = descriptorsMatch(device, plan.proof.transition.expectedDescriptors);
+				if (observedMode !== plan.proof.transition.to || !descriptorsOk) {
+					return {
+						status: 'failed',
+						degraded: true,
+						reason: `postcondition mismatch: observed ${observedMode ?? 'unknown'} vs target ${plan.proof.transition.to}; descriptors ${descriptorsOk ? 'ok' : 'mismatch'}`,
+						steps,
+					};
+				}
+			} else {
+				steps.push('postcondition-runtime-read');
+				const response = await lease.run(plan.proof.currentQuery, {
+					inhibitUid: request.inhibitUid,
+				});
+				const observed = readRuntimeCompositionCurrent(plan.proof.vendor, response.raw);
+				if (!Object.is(observed, plan.proof.target)) {
+					return {
+						status: 'failed',
+						degraded: true,
+						reason: `runtime readback mismatch: observed ${observed ?? 'unknown'} vs target ${plan.proof.target}`,
+						steps,
+					};
+				}
 			}
 
 			steps.push('resolve-ifname');

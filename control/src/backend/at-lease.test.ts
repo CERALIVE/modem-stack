@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	AT_BASELINE_ALLOWLIST,
+	AT_RUNTIME_QUERY_ALLOWLIST,
 	AtCommandLease,
 	AtCommandNotAllowedError,
 	type AtCommandSender,
@@ -30,11 +31,28 @@ function recordingSender(): { sender: AtCommandSender; sent: string[] } {
 }
 
 describe('AtCommandLease — allowlist', () => {
-	test('the baseline allowlist is exactly {ATI}; catalog commands union in', () => {
-		expect([...AT_BASELINE_ALLOWLIST]).toEqual(['ATI']);
+	test('the named baseline is ATI plus only the reviewed vendor READ/TEST forms', () => {
+		expect([...AT_RUNTIME_QUERY_ALLOWLIST]).toEqual([
+			'AT+GTUSBMODE?',
+			'AT+GTUSBMODE=?',
+			'AT+QCFG="usbnet"',
+			'AT+QCFG=?',
+			'AT+CUSBPIDSWITCH?',
+			'AT+CUSBPIDSWITCH=?',
+			'AT!USBCOMP?',
+			'AT!USBCOMP=?',
+		]);
+		expect([...AT_BASELINE_ALLOWLIST]).toEqual(['ATI', ...AT_RUNTIME_QUERY_ALLOWLIST]);
 		const allowlist = computeAtAllowlist([CATALOG_COMMAND]);
 		expect(allowlist.has('ATI')).toBe(true);
 		expect(allowlist.has(CATALOG_COMMAND)).toBe(true);
+	});
+
+	test('a SET-shaped neighbour is still refused unless explicitly unioned for one transition', async () => {
+		const { sender, sent } = recordingSender();
+		const lease = new AtCommandLease({ sender, allowlist: computeAtAllowlist([]) });
+		await expect(lease.run('AT+GTUSBMODE=40')).rejects.toBeInstanceOf(AtCommandNotAllowedError);
+		expect(sent).toEqual([]);
 	});
 
 	test('ATI and the catalog command are allowed', async () => {

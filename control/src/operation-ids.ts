@@ -5,6 +5,7 @@ export const MODEM_OPERATION_IDS = Object.freeze([
 	'modemmanager.signal',
 	'modemmanager.sim',
 	'modemmanager.power',
+	'modemmanager.usb-composition',
 	'status',
 	'signal',
 	'mode',

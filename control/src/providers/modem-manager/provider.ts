@@ -32,6 +32,7 @@ import type {
 import { mapModemManagerError } from './errors';
 import { createGenericOperations } from './generic-operations';
 import { ModemManagerModuleOperations } from './module-operations';
+import type { RuntimeCompositionOperationDeps } from './runtime-composition-operation';
 import { buildModemManagerSnapshot } from './snapshot';
 import type {
 	ModemManagerProviderLifecycle,
@@ -62,6 +63,7 @@ export interface ModemManagerProviderOptions {
 	 * hence no band write: fail-closed, which is this module's whole stance.
 	 */
 	readonly bandSku?: (context: ProviderExecutionContext) => BandSku | undefined;
+	readonly runtimeComposition?: RuntimeCompositionOperationDeps;
 }
 
 export class ModemManagerProvider implements ModemManagerProviderLifecycle {
@@ -120,6 +122,9 @@ export class ModemManagerProvider implements ModemManagerProviderLifecycle {
 			...createGenericOperations({
 				backend: this.#backend,
 				readSnapshot: (context) => this.readSnapshot(context),
+				...(options.runtimeComposition === undefined
+					? {}
+					: { runtimeComposition: options.runtimeComposition }),
 			}),
 			...this.#moduleOperations.operations,
 		};

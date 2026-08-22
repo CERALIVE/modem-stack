@@ -8,6 +8,8 @@ export type RuntimeCompositionQuery = {
 	readonly enumerate: string;
 };
 
+export type RuntimeCompositionSetCommand = (target: RuntimeCompositionMode) => string | undefined;
+
 /** Commands only: selecting a port, sending, deadlines, and retries belong to the provider. */
 export const RUNTIME_COMPOSITION_QUERY_REGISTRY = Object.freeze({
 	fibocom: Object.freeze({ current: 'AT+GTUSBMODE?', enumerate: 'AT+GTUSBMODE=?' }),
@@ -15,6 +17,24 @@ export const RUNTIME_COMPOSITION_QUERY_REGISTRY = Object.freeze({
 	simcom: Object.freeze({ current: 'AT+CUSBPIDSWITCH?', enumerate: 'AT+CUSBPIDSWITCH=?' }),
 	sierra: Object.freeze({ current: 'AT!USBCOMP?', enumerate: 'AT!USBCOMP=?' }),
 } satisfies Readonly<Record<RuntimeCompositionVendor, RuntimeCompositionQuery>>);
+
+function decimalSetCommand(prefix: string): RuntimeCompositionSetCommand {
+	return (target) =>
+		typeof target === 'number' && Number.isSafeInteger(target) && target >= 0
+			? `${prefix}${target}`
+			: undefined;
+}
+
+/** Exact reviewed SET forms. Callers still allowlist only the one enumerated target selected. */
+export const RUNTIME_COMPOSITION_SET_REGISTRY = Object.freeze({
+	fibocom: decimalSetCommand('AT+GTUSBMODE='),
+	quectel: decimalSetCommand('AT+QCFG="usbnet",'),
+	simcom: (target: RuntimeCompositionMode) =>
+		typeof target === 'string' && /^[0-9A-Fa-f]{4}$/.test(target)
+			? `AT+CUSBPIDSWITCH=${target.toUpperCase()},1,1`
+			: undefined,
+	sierra: decimalSetCommand('AT!USBCOMP='),
+} satisfies Readonly<Record<RuntimeCompositionVendor, RuntimeCompositionSetCommand>>);
 
 export type RuntimeCompositionCapability =
 	| {
@@ -141,8 +161,45 @@ const PARSERS: Readonly<
 	sierra: parseSierra,
 };
 
-function isRuntimeCompositionVendor(vendor: string): vendor is RuntimeCompositionVendor {
+export function isRuntimeCompositionVendor(vendor: string): vendor is RuntimeCompositionVendor {
 	return Object.hasOwn(RUNTIME_COMPOSITION_QUERY_REGISTRY, vendor);
+}
+
+export function buildRuntimeCompositionSetCommand(
+	vendor: string,
+	target: RuntimeCompositionMode,
+): string | undefined {
+	const normalized = vendor.trim().toLowerCase();
+	return isRuntimeCompositionVendor(normalized)
+		? RUNTIME_COMPOSITION_SET_REGISTRY[normalized](target)
+		: undefined;
+}
+
+/** Parse only the vendor READ response used by the weaker post-switch proof tier. */
+export function readRuntimeCompositionCurrent(
+	vendor: string,
+	response: string,
+): RuntimeCompositionMode | undefined {
+	const normalized = vendor.trim().toLowerCase();
+	if (!isRuntimeCompositionVendor(normalized)) return undefined;
+	switch (normalized) {
+		case 'fibocom': {
+			const match = /^\s*\+GTUSBMODE:\s*(\d+)\s*$/m.exec(response);
+			return match === null ? undefined : Number(match[1]);
+		}
+		case 'quectel': {
+			const match = /^\s*\+QCFG:\s*"usbnet"\s*,\s*(\d+)\s*$/m.exec(response);
+			return match === null ? undefined : Number(match[1]);
+		}
+		case 'simcom': {
+			const match = /^\s*\+CUSBPIDSWITCH:\s*([0-9A-Fa-f]{4})\s*$/m.exec(response);
+			return match === null ? undefined : (match[1] ?? '').toUpperCase();
+		}
+		case 'sierra': {
+			const match = /^\s*!USBCOMP:\s*(\d+)(?:\s*,.*)?$/m.exec(response);
+			return match === null ? undefined : Number(match[1]);
+		}
+	}
 }
 
 /** Derive controls exclusively from the device's current and enumerated response text. */

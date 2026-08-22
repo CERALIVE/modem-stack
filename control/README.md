@@ -161,6 +161,21 @@ ModemManager exposes no USB `vid:pid`, so the package cannot build a `BandSku` a
 Both operations expose `describe(context)` alongside their static `descriptor`, because
 a static descriptor cannot carry a device's own catalog or its certification state.
 
+### USB composition — runtime-derived targets, two proof tiers
+
+`operations().usbComposition` asks a known vendor for its current and enumerated USB
+composition modes and offers only targets from that reply after the reply also proves a
+represented return path. Its suppression vocabulary is `unknown-vendor`,
+`no-return-path`, `blocked-by-state`, and `provisioning-disabled`; suppressed states expose
+no targets. Unknown/disabled/blocked decisions happen before transport contact, and a
+capability read sends only the named READ/TEST forms, never a SET.
+
+A reviewed catalog transition still provides the strongest success proof: canonical mode
+and USB descriptors must both match. Without one, the weaker fallback proof is the
+re-enumerated device's own post-switch READ reporting the target. AT `OK` is never success.
+The write remains disruptive and requires admission, journal, rollback, and readback hooks.
+Band writes do not share this policy and remain behind their four-proof certification gate.
+
 ### SIM presence is evidence, never inference
 
 `readSimPresence` returns the presence together with the `SimPresenceEvidence` that

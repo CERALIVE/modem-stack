@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import { MODEM_OPERATION_IDS } from '../operation-ids';
 import {
+	buildRuntimeCompositionSetCommand,
 	RUNTIME_COMPOSITION_QUERY_REGISTRY,
+	RUNTIME_COMPOSITION_SET_REGISTRY,
+	readRuntimeCompositionCurrent,
 	resolveRuntimeCompositionCapability,
 } from './runtime-capability';
 
@@ -129,12 +132,34 @@ describe('runtime composition capability', () => {
 			sierra: { current: 'AT!USBCOMP?', enumerate: 'AT!USBCOMP=?' },
 		});
 	});
+
+	test('the reviewed SET registry emits only each vendor exact command form', () => {
+		expect(Object.keys(RUNTIME_COMPOSITION_SET_REGISTRY)).toEqual([
+			'fibocom',
+			'quectel',
+			'simcom',
+			'sierra',
+		]);
+		expect(buildRuntimeCompositionSetCommand('fibocom', 40)).toBe('AT+GTUSBMODE=40');
+		expect(buildRuntimeCompositionSetCommand('quectel', 2)).toBe('AT+QCFG="usbnet",2');
+		expect(buildRuntimeCompositionSetCommand('simcom', '9001')).toBe('AT+CUSBPIDSWITCH=9001,1,1');
+		expect(buildRuntimeCompositionSetCommand('sierra', 8)).toBe('AT!USBCOMP=8');
+		expect(buildRuntimeCompositionSetCommand('simcom', '9001;AT+BAD')).toBeUndefined();
+		expect(buildRuntimeCompositionSetCommand('fibocom', '40')).toBeUndefined();
+	});
+
+	test('a post-switch READ parses the device reported current mode without a TEST query', () => {
+		expect(readRuntimeCompositionCurrent('fibocom', '+GTUSBMODE: 40\r\nOK')).toBe(40);
+		expect(readRuntimeCompositionCurrent('simcom', '+CUSBPIDSWITCH: 9001\r\nOK')).toBe('9001');
+		expect(readRuntimeCompositionCurrent('unknown', '+MODE: 1\r\nOK')).toBeUndefined();
+	});
 });
 
 describe('MODEM_OPERATION_IDS', () => {
 	test('equals the non-vacuous union of concrete IDs declared by all four providers', async () => {
 		const sourceFiles = [
 			'../providers/modem-manager/generic-operations.ts',
+			'../providers/modem-manager/runtime-composition-operation.ts',
 			'../radio/mode-truth.ts',
 			'../radio/band-truth.ts',
 			'../providers/huawei-hilink/runtime.ts',
@@ -154,9 +179,9 @@ describe('MODEM_OPERATION_IDS', () => {
 			).filter((id) => id !== undefined),
 		);
 
-		expect(declared.size).toBe(23);
+		expect(declared.size).toBe(24);
 		expect(new Set<string>(MODEM_OPERATION_IDS)).toEqual(declared);
-		expect(MODEM_OPERATION_IDS).toHaveLength(23);
+		expect(MODEM_OPERATION_IDS).toHaveLength(24);
 		expect(Object.isFrozen(MODEM_OPERATION_IDS)).toBe(true);
 	});
 });
