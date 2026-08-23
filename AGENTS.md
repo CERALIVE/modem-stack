@@ -14,18 +14,19 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 |-----------|----------|------|
 | `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, injected admission/ownership/USB-hub ports, USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface**, capability-module **support-claim taxonomy + detection**, and the **band-lock** vocabulary + certification catalog (see §§ below). Published to public npm under `@ceralive` as **built ESM + `.d.ts`** across seven entry points (see § PUBLISHED PACKAGE SURFACE). |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
-| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets so those four never absorb one. |
+| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, not a fork. libmbim/libqmi/libqrtr-glib remain source-unmodified; ModemManager carries exactly three owner-approved, BELABOX-derived FM350-GL patches (see `POLICY.md` and `docs/adr/ADR-FM350-RNDIS-BEARER.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets. |
 
 `control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a bookworm container.
 
 ## FIRST-PARTY COMPANION — `ceralive-modem-support`
 
-The four upstream sources are byte-faithful, zero-patch rebuilds. `ceralive-modem-support`
-(`packaging/ceralive-modem-support/`, `Architecture: all`) is the first-party package that
-keeps them that way: it owns the UNCONDITIONAL, generic modem system assets — CeraLive's
-identification-only udev rules, Zero-CD usb-modeswitch device data, and the FCC
-policy-reconciliation helper plus its oneshot unit. It ships **no FCC-unlock script at
-all**; an absent `/data/ceralive/fcc-unlock-policy.json` exits 0 and activates nothing,
+The first-party `ceralive-modem-support` package keeps CeraLive-owned system assets out of
+all four upstream recipes; the ModemManager FM350-GL source series is a separate, narrowly
+approved exception and owns no companion asset. The companion
+(`packaging/ceralive-modem-support/`, `Architecture: all`) owns the UNCONDITIONAL, generic
+modem system assets — CeraLive's identification-only udev rules, Zero-CD usb-modeswitch
+device data, and the FCC policy-reconciliation helper plus its oneshot unit. It ships **no
+FCC-unlock script at all**; an absent `/data/ceralive/fcc-unlock-policy.json` exits 0 and activates nothing,
 which is also the correct behaviour on generic Debian with no CeraLive partition layout.
 
 **Board-gated generated assets stay image-owned** — M.2 SIM quirk rows and per-slot modem UID
@@ -1335,10 +1336,12 @@ own-number blocks in `control/src/redact.test.ts`.
 
 ## POLICY
 
-`packaging/` is a **no-fork** effort: the first release carries zero quilt patches; adding a
-patch later is an architecture gate (rationale + filed upstream MR + review);
-udev/plugin/device-support improvements go **upstream first** — this binds permanently,
-independent of phase. The Phase A → Phase B scope boundary is **version-gated at
+`packaging/` is a **no-fork** effort: the first release carried zero quilt patches; adding a
+patch later is an architecture gate (rationale + filed upstream MR + review). The sole current
+exception is the exact three-patch BELABOX-derived FM350-GL series approved by the project
+owner on 2026-08-22; its MR is still drafted, not filed, and its hardware drill remains open.
+This narrow exception does not weaken the default that udev/plugin/device-support improvements
+go **upstream first**. The Phase A → Phase B scope boundary is **version-gated at
 `v1.0.0`**: CeraUI / device-image / apt integration is out of scope through `v0.2.0` and
 authorized from the `v1.0.0` tag forward. Full terms: `POLICY.md` §4.
 The Fibocom **FM350** modem (PCIe / `mtk_t7xx`) is documented-**deferred**, not supported —
@@ -1376,9 +1379,10 @@ bun run verify:consumers  # install the tarball into standalone Node 26 + Bun pr
 
 `packaging/` runs in a `debian:bookworm` container; its contract/verification scripts live
 under `packaging/ci/`. The four sources' `debian/` recipes are checked in at
-`packaging/<Source>/debian/` (`ModemManager`, `libmbim`, `libqmi`, `libqrtr-glib` —
-byte-identical to their pinned salsa commits except the bookworm adaptations documented in
-`packaging/BOOKWORM-ADAPTATIONS.md`). `packaging/ci/build-bookworm.sh <amd64|arm64>` rebuilds
+`packaging/<Source>/debian/` (`ModemManager`, `libmbim`, `libqmi`, `libqrtr-glib` — matching
+their pinned salsa commits except the bookworm adaptations and the approved ModemManager
+FM350-GL series documented in `packaging/BOOKWORM-ADAPTATIONS.md`).
+`packaging/ci/build-bookworm.sh <amd64|arm64>` rebuilds
 them from source in the mandatory bootstrap order (`libqrtr-glib → libmbim → libqmi →
 modemmanager`) via a temporary local apt repo, on native amd64 or full-system-QEMU arm64
 (never cross-built), and asserts the 9-package runtime closure. `.deb` output lands in the

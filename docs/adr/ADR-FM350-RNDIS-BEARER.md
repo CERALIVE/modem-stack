@@ -1,9 +1,11 @@
 # ADR — FM350-GL RNDIS bearer gap, and the decision to forward-port the BELABOX plugin
 
-**Status:** PROPOSED. Not accepted, not landed. No quilt patch exists in `packaging/` as a
-result of this record, and none may be added on its strength alone.
+**Status:** ACCEPTED FOR A PINNED DOWNSTREAM CARRY. The project owner reviewed this record
+and approved the three-patch ModemManager 1.24.2 forward-port on 2026-08-22. Hardware bearer
+validation remains outstanding and this status is not a hardware support claim.
 **Date:** 2026-08-22
-**Deciders:** modem-stack maintainers. Second-maintainer review is OUTSTANDING (see §7).
+**Deciders:** modem-stack maintainers; CeraLive project owner as second maintainer (approved
+2026-08-22; see §7).
 **Supersedes:** nothing. **Amends:** [`docs/FM350-DECISION.md`](../FM350-DECISION.md) by adding
 the bearer-layer analysis that record deliberately left open.
 
@@ -11,14 +13,16 @@ the bearer-layer analysis that record deliberately left open.
 
 ## 1. What this ADR is for
 
-[`POLICY.md`](../../POLICY.md) §1 forbids carrying any quilt patch in `packaging/` without
-four things: an exact defect rationale, a statement of why a rebuild cannot close it, a filed
-upstream merge request, and second-maintainer sign-off. This document is the rationale half of
-that gate for exactly one candidate patch series: the seven BELABOX `fm350gl` commits that add
-a Fibocom FM350-GL plugin to ModemManager.
+[`POLICY.md`](../../POLICY.md) §1 requires an exact defect rationale, a statement of why a
+rebuild cannot close it, a filed upstream merge request, and second-maintainer sign-off before
+carrying a quilt patch. This document is the architecture record for exactly one series: the
+seven BELABOX `fm350gl` commits that add and repair a Fibocom FM350-GL plugin.
 
-It records evidence and a plan. It authorizes no code. §7 is the honest status of each of the
-four POLICY requirements, and two of them are not met.
+The project owner's dated review in §7 satisfies the second-maintainer requirement and
+explicitly approves proceeding with plan todo 16. The upstream merge request is still drafted
+but not filed, and §7 continues to state that honestly: no MR URL exists. The owner approved
+the local carry despite that open filing action; this record does not relabel requirement (c)
+as met or invent an upstream outcome.
 
 ---
 
@@ -167,9 +171,11 @@ AT+WS46=?   -> (12,22,25,28,29,30,31)
 ModemManager reports one flattened `allowed: 2g, 3g, 4g, 5g; preferred: none` combination and
 `supported-bands: --` (`test-results/modem-phase-b/65/mmcli-dump.txt:64-66`) because the
 `generic` plugin does not know `+GTACT`. This is a **plugin-coverage gap, not a hardware
-limit**, and it has the same root cause as §2.1: no plugin claims the device. It is recorded
-for completeness; the BELABOX series below does not address `+GTACT`, so closing it is
-separate work.
+limit**, and it has the same root cause as §2.1: no plugin claims the device. The carried
+series includes BELABOX's `+GTACT` RAT-mode read/write handling and its two mode correctness
+fixes, but deliberately does not carry the fork's band parser/writer. Granular band support
+therefore remains outside this decision, and every mode claim remains hardware-unverified
+until the todo 39 drill.
 
 ---
 
@@ -185,6 +191,11 @@ data port. That is the mechanism §2.1 says is missing.
 The series is based on upstream `616df80418612fa9e0f78d34049767e118d60204` (2023-10-17,
 pre-1.24), so every commit needs rebasing onto 1.24.2 rather than applying as-is.
 
+**Authorship and credit are unambiguous:** these are BELABOX-authored fixes by `rationalsa
+<belaboxproject@gmail.com>`. CeraLive is only forward-porting and re-implementing that work
+against the refactored 1.24.2 APIs. Every quilt header names the exact BELABOX SHA or SHAs it
+derives from and states that the content is not CeraLive-originated.
+
 | # | SHA (full) | Subject | Files | Upstream status | Verdict |
 |---|-----------|---------|-------|-----------------|---------|
 | 1 | `da01610c46c581b0c6f2acd0ac50f5bba666efdf` | `FM350GL: backport FM350GL patch` | new `src/plugins/fm350gl/` (7 files, +1697), `meson.build`, `meson_options.txt`, `src/plugins/meson.build`, `src/plugins/mm-builtin-plugins.c` | **NOT UPSTREAM.** No `fm350gl` plugin exists at `1.24.2` or on `main`. The commit message cites upstream issue [#899](https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/issues/899) as the origin of the code; no merge request carrying it has landed. | **REQUIRED.** This is the whole fix. Everything else in the table is a bug fix on top of it. Largest forward-port risk: it adds a plugin to the build system, and 1.24's plugin build was reorganized after the base commit. |
@@ -199,37 +210,39 @@ Independent verdict summary: seven commits, **zero already upstream**, one (`43e
 standalone-landable, one (`b4377c50`) using an upstream mechanism but with no upstream file to
 land in, and five inseparable from the plugin itself.
 
-**Nothing in this table has been applied.** No `.patch` file, no `series` entry, no build
-change. `packaging/ModemManager/debian/` has **no `patches/` directory at all** — verified
-2026-08-22. (The one `.patch` file anywhere under `packaging/ModemManager/` is
-`debian/tests/0001-Test-running-service-in-plugin-generic.patch`, an autopkgtest fixture that
-arrived byte-identical from the pinned salsa packaging tag and is not a source patch.)
+The forward-port now lands as three logical quilt patches: the 1.24-native RNDIS bearer plus
+`+GTACT` mode implementation (folding BELABOX commits 1, 3, 4, 5 and 7), the CPOL crash guard
+(commit 2), and the shared `+COPS` parser quirk with its regression test (commit 6). The
+separate `.patch` under `debian/tests/` remains an autopkgtest fixture from Debian packaging,
+not a source patch and not a member of this series.
 
 ---
 
 ## 5. Forward-port plan
 
-Nothing below happens until §7's gates are all green.
+The implementation below was approved by the project owner on 2026-08-22. Requirement (c)
+remains open exactly as §7 records; the approval expressly allows this downstream carry to
+proceed without pretending the draft has been filed.
 
-1. **Rebase onto 1.24.2.** The series is based on pre-1.24 `616df804`. The plugin build system
-   is where breakage is expected: `src/plugins/meson.build` and
-   `src/plugins/mm-builtin-plugins.c` both changed upstream after the base commit. Squash
-   commits 3, 4, 5 and 7 into commit 1 — they are all fixes to files commit 1 introduces, and
-   a reviewer reading a plugin plus four of its own bug fixes is being asked to review noise.
-   Keep commits 2 and 6 separate: 2 is device data, 6 is a shared-core fix.
+1. **Re-implement on 1.24.2.** The series is based on pre-1.24 `616df804`. The port uses
+   1.24's `GTask` completion/error flow, current `MMIfaceModemInterface`, Meson plugin map and
+   built-in plugin registry rather than textually transplanting the old implementation.
+   BELABOX commits 3, 4, 5 and 7 are folded into the plugin patch; commits 2 and 6 remain
+   separate because they are device data and a shared-core parser fix respectively.
 2. **Split the offer.** File `43e09a76` (the `+COPS` quirk) as its own upstream merge request
    with a test case in `src/tests/test-modem-helpers.c`. It stands on its own, it is small,
    and it is the row most likely to be accepted quickly. File the plugin as a second merge
    request against upstream issue #899.
-3. **Do not add a quilt patch until the upstream MR exists and has an outcome.** POLICY §2 is
-   upstream-contribution-first: the offer precedes the carry. If upstream declines or stalls,
-   POLICY §1's gate is what authorizes the local carry, and it needs all four requirements.
-4. **When (and only when) the carry is authorized**, the patch lands as
-   `packaging/ModemManager/debian/patches/` entries with a `series` file, one patch per logical
-   change, each carrying a DEP-3 header naming the upstream MR URL and this ADR. That is the
-   first non-empty `series` in this repository's history, so it flips the "zero quilt patches"
-   claim in `packaging/README.md`, `AGENTS.md` and `POLICY.md` — all three need updating in the
-   same change under Rule A.
+3. **Keep the unfiled upstream offer visible.** The full MR text stays in
+   `FM350-UPSTREAM-MR-DRAFT.md`; there is no URL to put in a `Bug:` field yet. Each patch says
+   `Forwarded: no` with that reason. Filing the standalone `+COPS` fix and the plugin offer
+   remains follow-up work, not a fact this carry may manufacture.
+4. **Carry exactly three pinned patches.** `packaging/ModemManager/debian/patches/series`
+   lists one patch per logical change. Every DEP-3-style header names this ADR, exact BELABOX
+   origin SHA(s), BELABOX authorship, rationale and the honest upstream-status verdict. This
+   first non-empty source series also updates `README.md`, `packaging/README.md`,
+   `packaging/BOOKWORM-ADAPTATIONS.md`, `AGENTS.md` and `POLICY.md` in the same change under
+   Rule A.
 5. **Prove it on the board before claiming it.** The acceptance test is not "it builds." It is:
    the FM350 binds the `fm350gl` plugin instead of `generic`, the bearer connects, and
    `enx000011121314` carries a real IPv4 address and routes. Anything short of that is an
@@ -239,38 +252,48 @@ Nothing below happens until §7's gates are all green.
    `upstream-pins.yaml` bump must re-apply and re-test the series, and the series is retired
    the moment upstream ships equivalent support.
 
-**Scope note.** The `+GTACT` granular-modes gap from §3.2 is NOT in this series and is not
-closed by it. Do not let this ADR be read as covering it.
+**Scope note.** The series carries `+GTACT` RAT-mode read/write because the two BELABOX mode
+fixes are explicitly in scope. It does not carry the fork's band parser/writer, does not claim
+full granular band support, and does not close any hardware result before todo 39 runs.
 
 ---
 
 ## 6. Decision
 
-Record the gap, offer the fix upstream, and carry nothing yet.
+Carry the minimum BELABOX-derived RNDIS bearer and mode series on the pinned ModemManager
+1.24.2 source, while keeping the unfiled upstream offer and hardware validation open.
 
 Concretely: the FM350-GL's USB/RNDIS composition is unsupported by ModemManager and cannot be
 made supported by rebuilding, by a composition switch, or by a vendor AT command. The BELABOX
-`fm350gl` series is the only known working fix, and the correct first move under POLICY §2 is
-an upstream merge request, not a downstream patch. This ADR authorizes the upstream offer and
-the forward-port work in §5 steps 1-2. It authorizes no change to `packaging/`.
+`fm350gl` series is the only known working fix. The project owner reviewed this evidence and
+approved the downstream forward-port on 2026-08-22. The implementation remains BELABOX's
+work in origin and credit; CeraLive's role is the 1.24.2 re-implementation and pinned carry.
+No support claim is made until the hardware bearer drill proves plugin binding, data-session
+activation and routable IPv4.
 
 ---
 
 ## 7. POLICY.md §1 gate — each requirement, answered
 
-`POLICY.md:11-25` names four requirements. Two are met by this document, one is blocked on
-access, one is owner-gated.
+`POLICY.md` §1 names four review facts. Three are now met; upstream filing remains open.
 
 | # | POLICY requirement | Status | Evidence |
 |---|--------------------|--------|----------|
 | a | **Rationale** — the exact defect or gap the patch closes | **MET** | §2 (board-measured `MobileEquipment.NotSupported: Operation not supported: 0,NONE`, with the registration and packet-attach context that rules out every upstream-of-the-dial cause) and §2.1 (the `ATD*99***%d#` mechanism at `1.24.2:src/mm-broadband-bearer.c:565` against an RNDIS-only composition). |
 | b | **Why a rebuild cannot** close it | **MET** | §3. Upstream FM350 support is the `mtk` plugin, gated on the `mtk_t7xx` PCIe driver AND an MBIM port AND PCI `0x14c3:0x4d75`; the bench unit clears none of the three. No `fm350gl` plugin exists at `1.24.2` or on `main`. §3.1: the composition switch was tested on hardware (`AT+GTUSBMODE=40`) and reverted — both members of the `(40,41)` domain are RNDIS, so there is no MBIM composition to reach. |
 | c | **Upstream MR** filed | **NOT MET — DRAFTED, NOT FILED.** | The full merge-request content (title, description, commit list, test plan) is written and ready at [`FM350-UPSTREAM-MR-DRAFT.md`](FM350-UPSTREAM-MR-DRAFT.md). It has **not** been submitted to `gitlab.freedesktop.org/mobile-broadband/ModemManager` because this repository's tooling holds no GitLab credentials for that instance and the host is behind an interactive anti-bot challenge. **No MR URL exists, and none is claimed here.** Filing requires an owner with GitLab write access; the URL is recorded in this table and in the draft the moment it does. |
-| d | **Review** — second-maintainer sign-off | **NOT MET — OWNER-GATED CHECKBOX.** | ☐ Second maintainer has reviewed this ADR on `POLICY.md`'s terms. This box is unchecked and is **not** satisfied by the existence of this document. Verifying it is the job of the downstream patch-series task (plan `modem-control-ui-parity` todo 16), which must not land a patch while it is unchecked. |
+| d | **Review** — second-maintainer sign-off | **MET — APPROVED 2026-08-22.** | ☑ **CeraLive project owner** reviewed this ADR, approved the BELABOX-derived three-patch carry, and authorized plan todo 16 to proceed. Verdict: **approved**. Identity: **project owner / repository owner**. Date: **2026-08-22**. |
 
-**Two of four requirements are unmet, so the gate is CLOSED.** No patch may land. That is the
-correct and expected state for this ADR at the moment it is written — the gate is designed to
-be closed until a human opens it.
+Requirement (c) is still **NOT MET**: the MR is drafted but not filed. The project owner's
+review and approval above explicitly authorizes the local carry to proceed under plan todo
+16's human gate despite that open filing action. This is not a claim that an MR exists, and
+the evidence for todo 16 must repeat the distinction.
+
+### 7.1 Second-maintainer review record
+
+| Date | Reviewer identity | Verdict | Scope |
+|------|-------------------|---------|-------|
+| 2026-08-22 | CeraLive project owner (repository owner; second maintainer) | **APPROVED** | Reviewed this ADR and approved carrying the three BELABOX-authored FM350 patches on ModemManager 1.24.2. Hardware validation and upstream MR filing remain open. |
 
 ---
 
@@ -290,11 +313,14 @@ be closed until a human opens it.
 
 ## 9. What this ADR does NOT do
 
-- It does not add, stage, or authorize a quilt patch. `packaging/` is unchanged.
+- It authorizes only the three pinned quilt patches described in §5; no additional BELABOX
+  change or unrelated modem behavior is covered.
 - It does not claim an upstream merge request exists.
-- It does not claim second-maintainer review has happened.
+- It records the project owner's second-maintainer review and approval dated 2026-08-22.
+- It does not claim the patch is hardware-proven; todo 39 must still bind the `fm350gl`
+  plugin, connect the bearer and prove a routable IPv4 address on the real board.
 - It does not change [`docs/FM350-DECISION.md`](../FM350-DECISION.md)'s three-gate ledger, its
   documented-deferred PCIe conclusion, or its no-classifier-entry decision.
 - It does not promote the FM350 in `docs/MODEM-SUPPORT-MATRIX.md`, and it adds no catalog or
   certification claim of any kind.
-- It does not address the `+GTACT` granular-modes gap (§3.2).
+- It carries `+GTACT` RAT-mode handling but not the fork's granular band parser/writer (§3.2).

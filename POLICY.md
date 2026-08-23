@@ -24,10 +24,21 @@ libqrtr-glib. It is a **repackaging** effort, **not a source fork**.
 - Until all three exist, the patch does not land. A rebuild that needs a patch to build
   at all is a STOP-and-surface event, not a silent local fix.
 
+**Narrow approved exception — FM350-GL, 2026-08-22.** The CeraLive project owner reviewed
+[`ADR-FM350-RNDIS-BEARER.md`](docs/adr/ADR-FM350-RNDIS-BEARER.md) as the second maintainer and
+approved its exact three-patch BELABOX-derived ModemManager 1.24.2 carry while the upstream
+merge-request draft remains unfiled. Requirement 2 above is therefore still honestly
+**not met**; the dated owner decision is an explicit exception for this series, not a claim
+that an MR exists and not a general waiver of the upstream-first gate. Every patch must retain
+the BELABOX author, originating commit SHA(s), rationale, and `Forwarded: no` status. The
+series remains hardware-unverified until its board drill passes and must be retired when
+upstream ships equivalent support.
+
 ## 2. Upstream-contribution-first
 
 For anything that is genuinely a modem-support improvement — udev rules, ModemManager
-plugins, device quirks, port-type hints — **the contribution goes upstream first**.
+plugins, device quirks, port-type hints — **the contribution goes upstream first**, except
+for the single dated FM350-GL owner exception recorded in §1.
 
 - New device support, mode-switch quirks, and plugin changes are proposed to upstream
   ModemManager / the Debian packaging, not accreted as local carry.
@@ -40,9 +51,10 @@ plugins, device quirks, port-type hints — **the contribution goes upstream fir
 
 ModemManager's value is its enormous, well-maintained device database and its plugin
 ecosystem. Every downstream patch we carry is a merge liability against that database and
-a step away from `apt`-clean rebuilds. Keeping the packaging patch-free — and pushing real
-fixes upstream — is what lets the bench track current ModemManager (1.24 and beyond)
-without inheriting a fork's maintenance debt.
+a step away from `apt`-clean rebuilds. Keeping the patch surface zero by default and narrowly
+attributed, reviewed, tested, and retired when an exception is unavoidable is what lets the
+bench track current ModemManager (1.24 and beyond) without inheriting a fork's maintenance
+debt.
 
 ## 4. Scope boundary (Phase A → Phase B, version-gated at v1.0.0)
 

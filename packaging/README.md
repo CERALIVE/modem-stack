@@ -1,15 +1,20 @@
 # packaging
 
-Bookworm rebuilds of the ModemManager stack — **packaging only, not a fork, zero source
-patches** (see `POLICY.md` at the repo root). Bench devices install the resulting `.deb`s
-from CI artifacts; nothing is published to `apt.ceralive.tv` yet — apt publication is part
-of Phase B adoption, authorized from the `v1.0.0` release tag forward (`POLICY.md` §4).
+Bookworm rebuilds of the ModemManager stack — **packaging only, not a fork**. libmbim,
+libqmi, and libqrtr-glib remain source-unmodified; ModemManager carries one owner-approved,
+three-patch BELABOX-derived FM350-GL series (see `POLICY.md` and
+[`ADR-FM350-RNDIS-BEARER.md`](../docs/adr/ADR-FM350-RNDIS-BEARER.md)). Bench devices install
+the resulting `.deb`s from CI artifacts; nothing is published to `apt.ceralive.tv` yet — apt
+publication is part of Phase B adoption, authorized from the `v1.0.0` release tag forward
+(`POLICY.md` §4).
 
 ## Sources (4 upstream rebuilds + 1 first-party companion)
 
-The four sources below are **zero-patch upstream rebuilds** and stay that way. The
-first-party [`ceralive-modem-support`](ceralive-modem-support/) companion exists so they
-never have to absorb a CeraLive-specific asset — see [First-party companion](#first-party-companion-ceralive-modem-support).
+The four sources below remain pinned upstream rebuilds. Three carry no source patch;
+ModemManager carries only the reviewed FM350-GL series described below. The first-party
+[`ceralive-modem-support`](ceralive-modem-support/) companion keeps CeraLive-owned generic
+system assets out of every upstream recipe — see
+[First-party companion](#first-party-companion-ceralive-modem-support).
 
 
 | Source | Provides |
@@ -34,8 +39,11 @@ re-verified end-to-end by [`ci/verify-upstream-pins.sh`](ci/verify-upstream-pins
 ## Recipes & build
 
 Each source's `debian/` dir is checked in at `<Source>/debian/` (`ModemManager`, `libmbim`,
-`libqmi`, `libqrtr-glib`), copied byte-for-byte from its pinned salsa commit
-([`upstream-pins.yaml`](upstream-pins.yaml) `salsa_commit_sha`) with **zero source patches**.
+`libqmi`, `libqrtr-glib`), based on its pinned salsa commit
+([`upstream-pins.yaml`](upstream-pins.yaml) `salsa_commit_sha`). libmbim, libqmi, and
+libqrtr-glib carry no source patches. ModemManager adds only the three entries in
+`ModemManager/debian/patches/series`, each attributed to exact BELABOX commits and governed
+by the accepted FM350 ADR.
 All four sources carry one shared bookworm adaptation — the GObject-introspection build-deps
 are swapped from the sid GI-1.80 set (`gir1.2-*-2.0-dev` + `gobject-introspection (>= 1.80)`)
 to bookworm's GI-1.74 equivalent (`gobject-introspection` + `libgirepository1.0-dev`), mirroring
@@ -43,6 +51,17 @@ stock bookworm's own packaging of each source. ModemManager additionally carries
 adaptations (debhelper relax, `systemd-dev → udev`, and systemd/udev install-dir pins) — all
 documented, with rationale, stock-bookworm citation, and diff shape, in
 [`BOOKWORM-ADAPTATIONS.md`](BOOKWORM-ADAPTATIONS.md).
+
+### Approved ModemManager source series
+
+`ModemManager/debian/patches/series` is intentionally non-empty and contains exactly three
+logical changes: the 1.24-native FM350-GL RNDIS bearer plus `+GTACT` mode support, the CPOL
+crash-disable device row, and the standalone extended-`+COPS` parser fix with its regression
+test. Each DEP-3-style header credits `rationalsa <belaboxproject@gmail.com>`, names the exact
+BELABOX origin SHA(s), and records `Forwarded: no` because the upstream MR is drafted but not
+filed. Project-owner approval is dated 2026-08-22 in the ADR and POLICY exception. The series
+is build-tested but hardware-unverified; no FM350 support claim exists until the board drill
+proves plugin binding, bearer activation, and routable IPv4.
 
 [`ci/build-bookworm.sh`](ci/build-bookworm.sh) `<amd64|arm64>` rebuilds the **selected**
 sources in a `debian:bookworm` container in the mandatory bootstrap order
@@ -127,8 +146,9 @@ ModemManager 1.24.2, libmbim 1.34.0, libqmi 1.38.0, libqrtr-glib 1.4.0 (salsa
 
 `ceralive-modem-support` is a **first-party, `Architecture: all`** package built from
 [`ceralive-modem-support/`](ceralive-modem-support/). It owns CeraLive's UNCONDITIONAL,
-generic, board-independent modem system assets. The four upstream sources remain
-byte-faithful zero-patch rebuilds; that is the entire reason this package exists.
+generic, board-independent modem system assets. The companion still keeps CeraLive-owned
+system assets out of all four upstream recipes. The reviewed ModemManager FM350-GL source
+carry is a separate exception and moves none of those assets into ModemManager.
 
 ### Ownership boundary
 

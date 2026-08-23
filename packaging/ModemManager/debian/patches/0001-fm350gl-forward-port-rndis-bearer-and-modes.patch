@@ -1,0 +1,1487 @@
+From 55d1b9bde66467d5316ae3a498a4bb25367ebe7a Mon Sep 17 00:00:00 2001
+From: rationalsa <belaboxproject@gmail.com>
+Date: Sat, 22 Aug 2026 19:02:33 -0500
+Subject: [PATCH 1/3] fm350gl: forward-port USB RNDIS bearer and mode handling
+
+Description: Add the FM350-GL USB/RNDIS bearer and GTACT mode handling on 1.24.2
+ This is a source-level re-implementation of BELABOX's FM350-GL plugin against
+ ModemManager 1.24.2. It uses the current MMIfaceModemInterface and GTask APIs,
+ activates/deactivates the RNDIS PDP context with +CGACT, obtains addressing
+ through +CGPADDR/+CGCONTRDP, and returns the network port instead of attempting
+ the generic PPP ATD path. The 4-second GMR guard, IPv4-only DNS relaxation,
+ set-mode completion fix, and single-RAT stale-preference fix are folded here.
+Author: rationalsa <belaboxproject@gmail.com>
+Origin: vendor, https://github.com/BELABOX/modemmanager/commit/da01610c46c581b0c6f2acd0ac50f5bba666efdf
+Origin-Commit: da01610c46c581b0c6f2acd0ac50f5bba666efdf
+Origin-Commit: 419dc598d3f2c11f479dacdc2f6ef0e787e6ea3b
+Origin-Commit: 90bcd376405906d3a94b0c239689eef1a3899ed2
+Origin-Commit: 9e2bc4992a251b02f75280a2d2b1020227d2bfe8
+Origin-Commit: 9716d38b6a81a79b47a16ea96c27164219de6739
+Bug: https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/issues/899
+Forwarded: no (merge request drafted but not filed; no upstream MR URL exists)
+Applied-Upstream: no
+Upstream-Status: NOT UPSTREAM; no USB/RNDIS fm350gl plugin exists in 1.24.2 or upstream main
+Rationale: The USB 0e8d:7126/7127 compositions expose RNDIS plus AT ports but no MBIM/QMI port. Generic ModemManager therefore issues ATD*99***N# and the modem returns 0,NONE. The bearer must use +CGACT and the RNDIS net port.
+Credit: BELABOX-authored fixes forward-ported by CeraLive; this patch is not CeraLive-originated work.
+Last-Update: 2026-08-22
+
+---
+ meson.build                                   |   1 +
+ meson_options.txt                             |   1 +
+ src/plugins/fm350gl/77-mm-fm350gl.rules       |  32 ++
+ .../fm350gl/mm-broadband-bearer-fm350gl.c     | 525 ++++++++++++++++++
+ .../fm350gl/mm-broadband-bearer-fm350gl.h     |  46 ++
+ .../fm350gl/mm-broadband-modem-fm350gl.c      | 297 ++++++++++
+ .../fm350gl/mm-broadband-modem-fm350gl.h      |  44 ++
+ .../fm350gl/mm-modem-helpers-fm350gl.c        | 162 ++++++
+ .../fm350gl/mm-modem-helpers-fm350gl.h        |  25 +
+ src/plugins/fm350gl/mm-plugin-fm350gl.c       |  74 +++
+ .../tests/test-modem-helpers-fm350gl.c        |  96 ++++
+ src/plugins/meson.build                       |  21 +
+ src/plugins/mm-builtin-plugins.c              |   6 +
+ 13 files changed, 1330 insertions(+)
+ create mode 100644 src/plugins/fm350gl/77-mm-fm350gl.rules
+ create mode 100644 src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c
+ create mode 100644 src/plugins/fm350gl/mm-broadband-bearer-fm350gl.h
+ create mode 100644 src/plugins/fm350gl/mm-broadband-modem-fm350gl.c
+ create mode 100644 src/plugins/fm350gl/mm-broadband-modem-fm350gl.h
+ create mode 100644 src/plugins/fm350gl/mm-modem-helpers-fm350gl.c
+ create mode 100644 src/plugins/fm350gl/mm-modem-helpers-fm350gl.h
+ create mode 100644 src/plugins/fm350gl/mm-plugin-fm350gl.c
+ create mode 100644 src/plugins/fm350gl/tests/test-modem-helpers-fm350gl.c
+
+diff --git a/meson.build b/meson.build
+index d815ec379eb9b5a6527ac4b1af53ad77525d6dcf..cabdd5dbe09bb37ae87cdf549f55fa3cf2f11d28 100644
+--- a/meson.build
++++ b/meson.build
+@@ -333,6 +333,7 @@ plugins_options_reqs = {
+   'dell': {'available': true, 'shared': dell_shared_reqs},
+   'dlink': {'available': true, 'shared': []},
+   'fibocom': {'available': true, 'shared': ['xmm', 'fibocom']},
++  'fm350gl': {'available': true, 'shared': []},
+   'foxconn': {'available': enable_mbim, 'shared': ['foxconn']},
+   'generic': {'available': true, 'shared': []},
+   'gosuncn': {'available': true, 'shared': []},
+diff --git a/meson_options.txt b/meson_options.txt
+index c0609fe84e81d27a6e578e6c4e5bbc78abbf3a77..aa4d17da60f2b1b7e74a8794d3c2a9b3fb8a063d 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -35,6 +35,7 @@ option('plugin_cinterion', type: 'feature', value: 'auto', description: 'enable
+ option('plugin_dell', type: 'feature', value: 'auto', description: 'enable dell plugin support')
+ option('plugin_dlink', type: 'feature', value: 'auto', description: 'enable dlink plugin support')
+ option('plugin_fibocom', type: 'feature', value: 'auto', description: 'enable fibocom plugin support')
++option('plugin_fm350gl', type: 'feature', value: 'auto', description: 'enable Fibocom FM350-GL USB/RNDIS plugin support')
+ option('plugin_foxconn', type: 'feature', value: 'auto', description: 'enable foxconn plugin support')
+ option('plugin_gosuncn', type: 'feature', value: 'auto', description: 'enable gosuncn plugin support')
+ option('plugin_haier', type: 'feature', value: 'auto', description: 'enable haier plugin support')
+diff --git a/src/plugins/fm350gl/77-mm-fm350gl.rules b/src/plugins/fm350gl/77-mm-fm350gl.rules
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0ab95930cf6e725d2acad3d416c0ec16040207a
+--- /dev/null
++++ b/src/plugins/fm350gl/77-mm-fm350gl.rules
+@@ -0,0 +1,32 @@
++# Fibocom FM350-GL USB/RNDIS compositions
++
++ACTION!="add|change|move|bind", GOTO="mm_fm350gl_port_types_end"
++SUBSYSTEMS=="usb", ATTRS{idVendor}=="0e8d", GOTO="mm_fm350gl_port_types_vendorcheck"
++GOTO="mm_fm350gl_port_types_end"
++
++LABEL="mm_fm350gl_port_types_vendorcheck"
++SUBSYSTEMS=="usb", ATTRS{bInterfaceNumber}=="?*", ENV{.MM_USBIFNUM}="$attr{bInterfaceNumber}"
++
++# AT+GTUSBMODE=40 (0e8d:7126): RNDIS+AT+AP(GNSS)+META+DEBUG+NPT+ADB
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="00", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="01", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="02", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="03", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="04", SUBSYSTEM=="tty", ENV{ID_MM_PORT_TYPE_AT_PRIMARY}="1"
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="05", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="06", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="07", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++
++# AT+GTUSBMODE=41 (0e8d:7127): RNDIS+AT+AP(GNSS)+META+DEBUG+NPT+ADB+AP(LOG)+AP(META)
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="00", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="01", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="02", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="03", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="04", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="05", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="06", SUBSYSTEM=="tty", ENV{ID_MM_PORT_TYPE_AT_PRIMARY}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="07", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="08", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++ATTRS{idProduct}=="7127", ENV{.MM_USBIFNUM}=="09", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"
++
++LABEL="mm_fm350gl_port_types_end"
+diff --git a/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c b/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..8e5ee961b7ab70cce4e8ea7e8d3e900f9e9b8736
+--- /dev/null
++++ b/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c
+@@ -0,0 +1,525 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * Copyright (C) PMGZED
++ * Copyright (C) ModemManager Team
++ */
++
++#include <config.h>
++
++#include <gio/gio.h>
++
++#define _LIBMM_INSIDE_MM
++#include <libmm-glib.h>
++
++#include "mm-base-modem-at.h"
++#include "mm-broadband-bearer-fm350gl.h"
++#include "mm-iface-modem-3gpp.h"
++#include "mm-log-object.h"
++#include "mm-modem-helpers.h"
++
++G_DEFINE_TYPE (MMBroadbandBearerFm350gl, mm_broadband_bearer_fm350gl, MM_TYPE_BROADBAND_BEARER)
++
++typedef struct {
++    MMBroadbandModem *modem;
++    MMPortSerialAt   *primary;
++    MMPort           *data;
++    guint             cid;
++    MMBearerIpFamily  ip_family;
++    MMBearerIpConfig *ipv4_config;
++    MMBearerIpConfig *ipv6_config;
++} ConnectContext;
++
++static void
++connect_context_free (ConnectContext *ctx)
++{
++    g_clear_object (&ctx->modem);
++    g_clear_object (&ctx->primary);
++    g_clear_object (&ctx->data);
++    g_clear_object (&ctx->ipv4_config);
++    g_clear_object (&ctx->ipv6_config);
++    g_slice_free (ConnectContext, ctx);
++}
++
++static GTask *
++connect_task_new (MMBroadbandBearerFm350gl *self,
++                  MMBroadbandModem         *modem,
++                  MMPortSerialAt           *primary,
++                  MMPort                   *data,
++                  guint                     cid,
++                  MMBearerIpFamily          ip_family,
++                  GCancellable             *cancellable,
++                  GAsyncReadyCallback       callback,
++                  gpointer                  user_data)
++{
++    ConnectContext *ctx;
++    GTask          *task;
++
++    ctx = g_slice_new0 (ConnectContext);
++    ctx->modem = g_object_ref (modem);
++    ctx->primary = g_object_ref (primary);
++    ctx->data = data ? g_object_ref (data) :
++                       mm_base_modem_get_best_data_port (MM_BASE_MODEM (modem), MM_PORT_TYPE_NET);
++    ctx->cid = cid;
++    ctx->ip_family = ip_family;
++    mm_3gpp_normalize_ip_family (&ctx->ip_family, TRUE);
++
++    task = g_task_new (self, cancellable, callback, user_data);
++    g_task_set_task_data (task, ctx, (GDestroyNotify) connect_context_free);
++
++    if (!ctx->data) {
++        g_task_return_new_error (task,
++                                 MM_CORE_ERROR,
++                                 MM_CORE_ERROR_NOT_FOUND,
++                                 "No RNDIS network port found for the FM350 bearer");
++        g_object_unref (task);
++        return NULL;
++    }
++
++    return task;
++}
++
++static gboolean
++wants_ipv4 (MMBearerIpFamily family)
++{
++    return family == MM_BEARER_IP_FAMILY_IPV4 ||
++           family == MM_BEARER_IP_FAMILY_IPV4V6 ||
++           family == MM_BEARER_IP_FAMILY_ANY;
++}
++
++static gboolean
++wants_ipv6 (MMBearerIpFamily family)
++{
++    return family == MM_BEARER_IP_FAMILY_IPV6 ||
++           family == MM_BEARER_IP_FAMILY_IPV4V6 ||
++           family == MM_BEARER_IP_FAMILY_ANY;
++}
++
++/*****************************************************************************/
++/* 3GPP dial and disconnect                                                  */
++
++static MMPort *
++dial_3gpp_finish (MMBroadbandBearer  *self,
++                  GAsyncResult       *res,
++                  GError            **error)
++{
++    return MM_PORT (g_task_propagate_pointer (G_TASK (res), error));
++}
++
++static void
++cgact_activate_ready (MMBaseModem  *modem,
++                      GAsyncResult *res,
++                      GTask        *task)
++{
++    ConnectContext    *ctx;
++    g_autoptr(GError)  error = NULL;
++
++    ctx = g_task_get_task_data (task);
++    if (!mm_base_modem_at_command_finish (modem, res, &error))
++        g_task_return_error (task, g_steal_pointer (&error));
++    else
++        g_task_return_pointer (task, g_object_ref (ctx->data), g_object_unref);
++    g_object_unref (task);
++}
++
++static void
++dial_3gpp (MMBroadbandBearer   *_self,
++           MMBaseModem         *modem,
++           MMPortSerialAt      *primary,
++           guint                cid,
++           GCancellable        *cancellable,
++           GAsyncReadyCallback  callback,
++           gpointer             user_data)
++{
++    MMBroadbandBearerFm350gl *self = MM_BROADBAND_BEARER_FM350GL (_self);
++    g_autofree gchar         *command = NULL;
++    GTask                    *task;
++
++    task = connect_task_new (self,
++                             MM_BROADBAND_MODEM (modem),
++                             primary,
++                             NULL,
++                             cid,
++                             MM_BEARER_IP_FAMILY_NONE,
++                             cancellable,
++                             callback,
++                             user_data);
++    if (!task)
++        return;
++
++    command = g_strdup_printf ("+CGACT=1,%u", cid);
++    mm_obj_dbg (self, "activating PDP context #%u over RNDIS", cid);
++    mm_base_modem_at_command (modem,
++                              command,
++                              MM_BASE_BEARER_DEFAULT_CONNECTION_TIMEOUT,
++                              FALSE,
++                              (GAsyncReadyCallback) cgact_activate_ready,
++                              task);
++}
++
++static gboolean
++disconnect_3gpp_finish (MMBroadbandBearer  *self,
++                        GAsyncResult       *res,
++                        GError            **error)
++{
++    return g_task_propagate_boolean (G_TASK (res), error);
++}
++
++static void
++cgact_deactivate_ready (MMBaseModem  *modem,
++                        GAsyncResult *res,
++                        GTask        *task)
++{
++    g_autoptr(GError) error = NULL;
++
++    if (!mm_base_modem_at_command_finish (modem, res, &error))
++        g_task_return_error (task, g_steal_pointer (&error));
++    else
++        g_task_return_boolean (task, TRUE);
++    g_object_unref (task);
++}
++
++static void
++disconnect_3gpp (MMBroadbandBearer   *self,
++                 MMBroadbandModem    *modem,
++                 MMPortSerialAt      *primary,
++                 MMPortSerialAt      *secondary,
++                 MMPort              *data,
++                 guint                cid,
++                 GAsyncReadyCallback  callback,
++                 gpointer             user_data)
++{
++    g_autofree gchar *command = NULL;
++    GTask            *task;
++
++    task = g_task_new (self, NULL, callback, user_data);
++    command = g_strdup_printf ("+CGACT=0,%u", cid);
++    mm_base_modem_at_command (MM_BASE_MODEM (modem),
++                              command,
++                              MM_BASE_BEARER_DEFAULT_DISCONNECTION_TIMEOUT,
++                              FALSE,
++                              (GAsyncReadyCallback) cgact_deactivate_ready,
++                              task);
++}
++
++/*****************************************************************************/
++/* IP configuration                                                          */
++
++static gchar *
++unquote_field (const gchar *field)
++{
++    g_autofree gchar *copy = NULL;
++    gsize             len;
++
++    copy = g_strdup (field);
++    g_strstrip (copy);
++    len = strlen (copy);
++    if (len >= 2 && copy[0] == '"' && copy[len - 1] == '"')
++        return g_strndup (&copy[1], len - 2);
++    return g_steal_pointer (&copy);
++}
++
++static GInetAddress *
++parse_decimal_ipv6 (const gchar *field)
++{
++    g_auto(GStrv) parts = NULL;
++    guint8        bytes[16];
++    guint         i;
++
++    parts = g_strsplit (field, ".", -1);
++    if (g_strv_length (parts) != G_N_ELEMENTS (bytes))
++        return NULL;
++
++    for (i = 0; i < G_N_ELEMENTS (bytes); i++) {
++        guint value;
++
++        if (!mm_get_uint_from_str (parts[i], &value) || value > G_MAXUINT8)
++            return NULL;
++        bytes[i] = (guint8) value;
++    }
++    return g_inet_address_new_from_bytes (bytes, G_SOCKET_FAMILY_IPV6);
++}
++
++static gboolean
++parse_cgpaddr_response (const gchar  *response,
++                        guint         expected_cid,
++                        gchar       **out_ipv4,
++                        gboolean     *out_has_ipv6,
++                        GError      **error)
++{
++    g_auto(GStrv) fields = NULL;
++    const gchar  *payload;
++    guint         cid;
++    guint         i;
++
++    if (!response || !g_str_has_prefix (response, "+CGPADDR:")) {
++        g_set_error_literal (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                             "Missing +CGPADDR prefix");
++        return FALSE;
++    }
++
++    payload = mm_strip_tag (response, "+CGPADDR:");
++    fields = g_strsplit (payload, ",", -1);
++    if (!fields[0] || !mm_get_uint_from_str (g_strstrip (fields[0]), &cid) || cid != expected_cid) {
++        g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                     "Unexpected PDP context in +CGPADDR response: '%s'", response);
++        return FALSE;
++    }
++
++    for (i = 1; fields[i]; i++) {
++        g_autofree gchar      *field = NULL;
++        g_autoptr(GInetAddress) address = NULL;
++
++        field = unquote_field (fields[i]);
++        if (!field[0])
++            continue;
++        address = g_inet_address_new_from_string (field);
++        if (!address)
++            address = parse_decimal_ipv6 (field);
++        if (!address) {
++            g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                         "Invalid address in +CGPADDR response: '%s'", field);
++            return FALSE;
++        }
++
++        if (g_inet_address_get_family (address) == G_SOCKET_FAMILY_IPV4) {
++            if (!*out_ipv4)
++                *out_ipv4 = g_inet_address_to_string (address);
++        } else if (g_inet_address_get_family (address) == G_SOCKET_FAMILY_IPV6)
++            *out_has_ipv6 = TRUE;
++    }
++
++    if (!*out_ipv4 && !*out_has_ipv6) {
++        g_set_error_literal (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                             "No usable address in +CGPADDR response");
++        return FALSE;
++    }
++    return TRUE;
++}
++
++static gboolean
++get_ip_config_3gpp_finish (MMBroadbandBearer  *self,
++                           GAsyncResult       *res,
++                           MMBearerIpConfig  **ipv4_config,
++                           MMBearerIpConfig  **ipv6_config,
++                           GError            **error)
++{
++    MMBearerConnectResult *configs;
++    MMBearerIpConfig      *ipv4;
++    MMBearerIpConfig      *ipv6;
++
++    configs = g_task_propagate_pointer (G_TASK (res), error);
++    if (!configs)
++        return FALSE;
++
++    ipv4 = mm_bearer_connect_result_peek_ipv4_config (configs);
++    ipv6 = mm_bearer_connect_result_peek_ipv6_config (configs);
++    if (ipv4_config)
++        *ipv4_config = ipv4 ? g_object_ref (ipv4) : NULL;
++    if (ipv6_config)
++        *ipv6_config = ipv6 ? g_object_ref (ipv6) : NULL;
++    mm_bearer_connect_result_unref (configs);
++    return TRUE;
++}
++
++static void
++cgcontrdp_ready (MMBaseModem  *modem,
++                 GAsyncResult *res,
++                 GTask        *task)
++{
++    MMBroadbandBearerFm350gl *self;
++    ConnectContext          *ctx;
++    const gchar             *response;
++    g_autoptr(GError)        error = NULL;
++    g_autofree gchar        *local_address = NULL;
++    g_autofree gchar        *subnet = NULL;
++    g_autofree gchar        *gateway = NULL;
++    g_autofree gchar        *dns_primary = NULL;
++    g_autofree gchar        *dns_secondary = NULL;
++    const gchar             *dns[3] = { NULL, NULL, NULL };
++
++    self = g_task_get_source_object (task);
++    ctx = g_task_get_task_data (task);
++    response = mm_base_modem_at_command_finish (modem, res, &error);
++    if (!response || !mm_3gpp_parse_cgcontrdp_response (response,
++                                                         NULL,
++                                                         NULL,
++                                                         NULL,
++                                                         &local_address,
++                                                         &subnet,
++                                                         &gateway,
++                                                         &dns_primary,
++                                                         &dns_secondary,
++                                                         &error)) {
++        g_task_return_error (task, g_steal_pointer (&error));
++        g_object_unref (task);
++        return;
++    }
++
++    if (ctx->ipv4_config) {
++        const gchar *address;
++
++        address = mm_bearer_ip_config_get_address (ctx->ipv4_config);
++        if (subnet && subnet[0])
++            mm_bearer_ip_config_set_prefix (ctx->ipv4_config, mm_netmask_to_cidr (subnet));
++        else
++            mm_bearer_ip_config_set_prefix (ctx->ipv4_config, 32);
++        if (gateway && gateway[0] && !g_str_equal (gateway, "0.0.0.0"))
++            mm_bearer_ip_config_set_gateway (ctx->ipv4_config, gateway);
++        else
++            mm_bearer_ip_config_set_gateway (ctx->ipv4_config, address);
++
++        if (dns_primary && dns_primary[0] && !g_str_equal (dns_primary, "0.0.0.0"))
++            dns[0] = dns_primary;
++        if (dns_secondary && dns_secondary[0] && !g_str_equal (dns_secondary, "0.0.0.0"))
++            dns[dns[0] ? 1 : 0] = dns_secondary;
++        if (dns[0])
++            mm_bearer_ip_config_set_dns (ctx->ipv4_config, dns);
++    }
++
++    mm_obj_dbg (self, "IP settings loaded for RNDIS PDP context #%u", ctx->cid);
++    g_task_return_pointer (
++        task,
++        mm_bearer_connect_result_new (ctx->data, ctx->ipv4_config, ctx->ipv6_config),
++        (GDestroyNotify) mm_bearer_connect_result_unref);
++    g_object_unref (task);
++}
++
++static void
++cgpaddr_ready (MMBaseModem  *modem,
++               GAsyncResult *res,
++               GTask        *task)
++{
++    ConnectContext   *ctx;
++    const gchar      *response;
++    g_autoptr(GError) error = NULL;
++    g_autofree gchar *ipv4 = NULL;
++    g_autofree gchar *command = NULL;
++    gboolean          has_ipv6 = FALSE;
++
++    ctx = g_task_get_task_data (task);
++    response = mm_base_modem_at_command_finish (modem, res, &error);
++    if (!response || !parse_cgpaddr_response (response, ctx->cid, &ipv4, &has_ipv6, &error)) {
++        g_task_return_error (task, g_steal_pointer (&error));
++        g_object_unref (task);
++        return;
++    }
++
++    if (ipv4 && wants_ipv4 (ctx->ip_family)) {
++        ctx->ipv4_config = mm_bearer_ip_config_new ();
++        mm_bearer_ip_config_set_method (ctx->ipv4_config, MM_BEARER_IP_METHOD_STATIC);
++        mm_bearer_ip_config_set_address (ctx->ipv4_config, ipv4);
++    }
++    if (has_ipv6 && wants_ipv6 (ctx->ip_family)) {
++        ctx->ipv6_config = mm_bearer_ip_config_new ();
++        mm_bearer_ip_config_set_method (ctx->ipv6_config, MM_BEARER_IP_METHOD_DHCP);
++    }
++    if (!ctx->ipv4_config && !ctx->ipv6_config) {
++        g_task_return_new_error (task, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                                 "+CGPADDR returned no address for the requested IP family");
++        g_object_unref (task);
++        return;
++    }
++
++    command = g_strdup_printf ("+CGCONTRDP=%u", ctx->cid);
++    mm_base_modem_at_command (modem,
++                              command,
++                              10,
++                              FALSE,
++                              (GAsyncReadyCallback) cgcontrdp_ready,
++                              task);
++}
++
++static void
++get_ip_config_3gpp (MMBroadbandBearer   *_self,
++                    MMBroadbandModem    *modem,
++                    MMPortSerialAt      *primary,
++                    MMPortSerialAt      *secondary,
++                    MMPort              *data,
++                    guint                cid,
++                    MMBearerIpFamily     ip_family,
++                    GAsyncReadyCallback  callback,
++                    gpointer             user_data)
++{
++    MMBroadbandBearerFm350gl *self = MM_BROADBAND_BEARER_FM350GL (_self);
++    g_autofree gchar         *command = NULL;
++    GTask                    *task;
++
++    task = connect_task_new (self,
++                             modem,
++                             primary,
++                             data,
++                             cid,
++                             ip_family,
++                             NULL,
++                             callback,
++                             user_data);
++    if (!task)
++        return;
++
++    command = g_strdup_printf ("+CGPADDR=%u", cid);
++    mm_base_modem_at_command (MM_BASE_MODEM (modem),
++                              command,
++                              10,
++                              FALSE,
++                              (GAsyncReadyCallback) cgpaddr_ready,
++                              task);
++}
++
++/*****************************************************************************/
++
++MMBaseBearer *
++mm_broadband_bearer_fm350gl_new_finish (GAsyncResult  *res,
++                                        GError       **error)
++{
++    GObject *bearer;
++    GObject *source;
++
++    source = g_async_result_get_source_object (res);
++    bearer = g_async_initable_new_finish (G_ASYNC_INITABLE (source), res, error);
++    g_object_unref (source);
++    if (!bearer)
++        return NULL;
++
++    mm_base_bearer_export (MM_BASE_BEARER (bearer));
++    return MM_BASE_BEARER (bearer);
++}
++
++void
++mm_broadband_bearer_fm350gl_new (MMBroadbandModemFm350gl *modem,
++                                 MMBearerProperties       *properties,
++                                 GCancellable             *cancellable,
++                                 GAsyncReadyCallback       callback,
++                                 gpointer                  user_data)
++{
++    g_async_initable_new_async (MM_TYPE_BROADBAND_BEARER_FM350GL,
++                                G_PRIORITY_DEFAULT,
++                                cancellable,
++                                callback,
++                                user_data,
++                                MM_BASE_BEARER_MODEM, modem,
++                                MM_BASE_BEARER_CONFIG, properties,
++                                NULL);
++}
++
++static void
++mm_broadband_bearer_fm350gl_init (MMBroadbandBearerFm350gl *self)
++{
++}
++
++static void
++mm_broadband_bearer_fm350gl_class_init (MMBroadbandBearerFm350glClass *klass)
++{
++    MMBroadbandBearerClass *bearer_class = MM_BROADBAND_BEARER_CLASS (klass);
++
++    bearer_class->dial_3gpp = dial_3gpp;
++    bearer_class->dial_3gpp_finish = dial_3gpp_finish;
++    bearer_class->get_ip_config_3gpp = get_ip_config_3gpp;
++    bearer_class->get_ip_config_3gpp_finish = get_ip_config_3gpp_finish;
++    bearer_class->disconnect_3gpp = disconnect_3gpp;
++    bearer_class->disconnect_3gpp_finish = disconnect_3gpp_finish;
++}
+diff --git a/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.h b/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..85f0508ae955b4d5bb1dbf15d46451cc7ec9e78c
+--- /dev/null
++++ b/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.h
+@@ -0,0 +1,46 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * Copyright (C) PMGZED
++ * Copyright (C) ModemManager Team
++ */
++
++#ifndef MM_BROADBAND_BEARER_FM350GL_H
++#define MM_BROADBAND_BEARER_FM350GL_H
++
++#include "mm-broadband-bearer.h"
++#include "mm-broadband-modem-fm350gl.h"
++
++#define MM_TYPE_BROADBAND_BEARER_FM350GL            (mm_broadband_bearer_fm350gl_get_type ())
++#define MM_BROADBAND_BEARER_FM350GL(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), MM_TYPE_BROADBAND_BEARER_FM350GL, MMBroadbandBearerFm350gl))
++#define MM_BROADBAND_BEARER_FM350GL_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass),  MM_TYPE_BROADBAND_BEARER_FM350GL, MMBroadbandBearerFm350glClass))
++#define MM_IS_BROADBAND_BEARER_FM350GL(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), MM_TYPE_BROADBAND_BEARER_FM350GL))
++#define MM_IS_BROADBAND_BEARER_FM350GL_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass),  MM_TYPE_BROADBAND_BEARER_FM350GL))
++#define MM_BROADBAND_BEARER_FM350GL_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj),  MM_TYPE_BROADBAND_BEARER_FM350GL, MMBroadbandBearerFm350glClass))
++
++typedef struct _MMBroadbandBearerFm350gl      MMBroadbandBearerFm350gl;
++typedef struct _MMBroadbandBearerFm350glClass MMBroadbandBearerFm350glClass;
++
++struct _MMBroadbandBearerFm350gl {
++    MMBroadbandBearer parent;
++};
++
++struct _MMBroadbandBearerFm350glClass {
++    MMBroadbandBearerClass parent;
++};
++
++GType mm_broadband_bearer_fm350gl_get_type (void);
++
++void          mm_broadband_bearer_fm350gl_new        (MMBroadbandModemFm350gl *modem,
++                                                       MMBearerProperties       *properties,
++                                                       GCancellable             *cancellable,
++                                                       GAsyncReadyCallback       callback,
++                                                       gpointer                  user_data);
++MMBaseBearer *mm_broadband_bearer_fm350gl_new_finish (GAsyncResult             *res,
++                                                       GError                  **error);
++
++#endif /* MM_BROADBAND_BEARER_FM350GL_H */
+diff --git a/src/plugins/fm350gl/mm-broadband-modem-fm350gl.c b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..6b061b88e04ab658021baa63321a1f0ded48684f
+--- /dev/null
++++ b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.c
+@@ -0,0 +1,297 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * Copyright (C) PMGZED
++ * Copyright (C) ModemManager Team
++ */
++
++#include <config.h>
++
++#include "mm-base-modem-at.h"
++#include "mm-broadband-bearer-fm350gl.h"
++#include "mm-broadband-modem-fm350gl.h"
++#include "mm-iface-modem.h"
++#include "mm-log-object.h"
++#include "mm-modem-helpers-fm350gl.h"
++
++static void iface_modem_init (MMIfaceModemInterface *iface);
++
++static MMIfaceModemInterface *iface_modem_parent;
++
++G_DEFINE_TYPE_EXTENDED (MMBroadbandModemFm350gl, mm_broadband_modem_fm350gl, MM_TYPE_BROADBAND_MODEM, 0,
++                        G_IMPLEMENT_INTERFACE (MM_TYPE_IFACE_MODEM, iface_modem_init))
++
++/*****************************************************************************/
++/* Delayed current-capabilities load                                         */
++
++static MMModemCapability
++load_current_capabilities_finish (MMIfaceModem  *self,
++                                  GAsyncResult  *res,
++                                  GError       **error)
++{
++    return (MMModemCapability) g_task_propagate_int (G_TASK (res), error);
++}
++
++static void
++parent_load_current_capabilities_ready (MMIfaceModem *self,
++                                        GAsyncResult *res,
++                                        GTask        *task)
++{
++    g_autoptr(GError) error = NULL;
++    MMModemCapability capabilities;
++
++    capabilities = iface_modem_parent->load_current_capabilities_finish (self, res, &error);
++    if (error)
++        g_task_return_error (task, g_steal_pointer (&error));
++    else
++        g_task_return_int (task, capabilities);
++    g_object_unref (task);
++}
++
++static gboolean
++load_current_capabilities_timeout (GTask *task)
++{
++    MMIfaceModem *self;
++
++    self = g_task_get_source_object (task);
++    iface_modem_parent->load_current_capabilities (
++        self,
++        (GAsyncReadyCallback) parent_load_current_capabilities_ready,
++        task);
++    return G_SOURCE_REMOVE;
++}
++
++static void
++load_current_capabilities (MMIfaceModem        *self,
++                           GAsyncReadyCallback  callback,
++                           gpointer             user_data)
++{
++    GTask *task;
++
++    task = g_task_new (self, NULL, callback, user_data);
++
++    /* The FM350 may reset if +GMR/+CGMR is issued immediately after USB
++     * enumeration. BELABOX observed a 2.5s worst case and uses a 4s guard. */
++    g_timeout_add (4000, (GSourceFunc) load_current_capabilities_timeout, task);
++}
++
++/*****************************************************************************/
++/* Modes                                                                     */
++
++static GArray *
++load_supported_modes_finish (MMIfaceModem  *self,
++                             GAsyncResult  *res,
++                             GError       **error)
++{
++    return g_task_propagate_pointer (G_TASK (res), error);
++}
++
++static void
++append_mode (GArray      *combinations,
++             MMModemMode  allowed,
++             MMModemMode  preferred)
++{
++    MMModemModeCombination mode = {
++        .allowed = allowed,
++        .preferred = preferred,
++    };
++
++    g_array_append_val (combinations, mode);
++}
++
++static void
++load_supported_modes (MMIfaceModem        *self,
++                      GAsyncReadyCallback  callback,
++                      gpointer             user_data)
++{
++    GArray *combinations;
++    GTask  *task;
++
++    combinations = g_array_sized_new (FALSE, FALSE, sizeof (MMModemModeCombination), 12);
++    append_mode (combinations, MM_MODEM_MODE_3G, MM_MODEM_MODE_NONE);
++    append_mode (combinations, MM_MODEM_MODE_4G, MM_MODEM_MODE_NONE);
++    append_mode (combinations, MM_MODEM_MODE_5G, MM_MODEM_MODE_NONE);
++    append_mode (combinations, MM_MODEM_MODE_3G | MM_MODEM_MODE_4G, MM_MODEM_MODE_3G);
++    append_mode (combinations, MM_MODEM_MODE_3G | MM_MODEM_MODE_4G, MM_MODEM_MODE_4G);
++    append_mode (combinations, MM_MODEM_MODE_3G | MM_MODEM_MODE_5G, MM_MODEM_MODE_3G);
++    append_mode (combinations, MM_MODEM_MODE_3G | MM_MODEM_MODE_5G, MM_MODEM_MODE_5G);
++    append_mode (combinations, MM_MODEM_MODE_4G | MM_MODEM_MODE_5G, MM_MODEM_MODE_4G);
++    append_mode (combinations, MM_MODEM_MODE_4G | MM_MODEM_MODE_5G, MM_MODEM_MODE_5G);
++    append_mode (combinations, MM_MODEM_MODE_3G | MM_MODEM_MODE_4G | MM_MODEM_MODE_5G, MM_MODEM_MODE_3G);
++    append_mode (combinations, MM_MODEM_MODE_3G | MM_MODEM_MODE_4G | MM_MODEM_MODE_5G, MM_MODEM_MODE_4G);
++    append_mode (combinations, MM_MODEM_MODE_3G | MM_MODEM_MODE_4G | MM_MODEM_MODE_5G, MM_MODEM_MODE_5G);
++
++    task = g_task_new (self, NULL, callback, user_data);
++    g_task_return_pointer (task, combinations, (GDestroyNotify) g_array_unref);
++    g_object_unref (task);
++}
++
++static gboolean
++load_current_modes_finish (MMIfaceModem  *self,
++                           GAsyncResult  *res,
++                           MMModemMode   *allowed,
++                           MMModemMode   *preferred,
++                           GError       **error)
++{
++    const gchar *response;
++
++    response = mm_base_modem_at_command_finish (MM_BASE_MODEM (self), res, error);
++    if (!response)
++        return FALSE;
++    return mm_fm350gl_parse_current_modes (response, allowed, preferred, error);
++}
++
++static void
++load_current_modes (MMIfaceModem        *self,
++                    GAsyncReadyCallback  callback,
++                    gpointer             user_data)
++{
++    mm_base_modem_at_command (MM_BASE_MODEM (self), "+GTACT?", 3, FALSE, callback, user_data);
++}
++
++static gboolean
++set_current_modes_finish (MMIfaceModem  *self,
++                          GAsyncResult  *res,
++                          GError       **error)
++{
++    return g_task_propagate_boolean (G_TASK (res), error);
++}
++
++static void
++set_current_modes_ready (MMBaseModem  *self,
++                         GAsyncResult *res,
++                         GTask        *task)
++{
++    g_autoptr(GError) error = NULL;
++
++    if (!mm_base_modem_at_command_finish (self, res, &error))
++        g_task_return_error (task, g_steal_pointer (&error));
++    else
++        g_task_return_boolean (task, TRUE);
++    g_object_unref (task);
++}
++
++static void
++set_current_modes (MMIfaceModem        *self,
++                   MMModemMode         allowed,
++                   MMModemMode         preferred,
++                   GAsyncReadyCallback callback,
++                   gpointer            user_data)
++{
++    g_autoptr(GError) error = NULL;
++    g_autofree gchar *command = NULL;
++    GTask            *task;
++
++    task = g_task_new (self, NULL, callback, user_data);
++    command = mm_fm350gl_build_set_modes_command (allowed, preferred, &error);
++    if (!command) {
++        g_task_return_error (task, g_steal_pointer (&error));
++        g_object_unref (task);
++        return;
++    }
++
++    mm_base_modem_at_command (
++        MM_BASE_MODEM (self),
++        command,
++        30,
++        FALSE,
++        (GAsyncReadyCallback) set_current_modes_ready,
++        task);
++}
++
++/*****************************************************************************/
++/* Bearer creation                                                           */
++
++static MMBaseBearer *
++create_bearer_finish (MMIfaceModem  *self,
++                      GAsyncResult  *res,
++                      GError       **error)
++{
++    return g_task_propagate_pointer (G_TASK (res), error);
++}
++
++static void
++bearer_new_ready (GObject      *source,
++                  GAsyncResult *res,
++                  GTask        *task)
++{
++    g_autoptr(GError) error = NULL;
++    MMBaseBearer     *bearer;
++
++    bearer = mm_broadband_bearer_fm350gl_new_finish (res, &error);
++    if (!bearer)
++        g_task_return_error (task, g_steal_pointer (&error));
++    else
++        g_task_return_pointer (task, bearer, g_object_unref);
++    g_object_unref (task);
++}
++
++static void
++create_bearer (MMIfaceModem        *self,
++               MMBearerProperties *properties,
++               GAsyncReadyCallback callback,
++               gpointer            user_data)
++{
++    GTask *task;
++
++    task = g_task_new (self, NULL, callback, user_data);
++    mm_broadband_bearer_fm350gl_new (
++        MM_BROADBAND_MODEM_FM350GL (self),
++        properties,
++        NULL,
++        (GAsyncReadyCallback) bearer_new_ready,
++        task);
++}
++
++/*****************************************************************************/
++
++MMBroadbandModemFm350gl *
++mm_broadband_modem_fm350gl_new (const gchar  *device,
++                                const gchar  *physdev,
++                                const gchar **drivers,
++                                const gchar  *plugin,
++                                guint16       vendor_id,
++                                guint16       product_id)
++{
++    return g_object_new (MM_TYPE_BROADBAND_MODEM_FM350GL,
++                         MM_BASE_MODEM_DEVICE, device,
++                         MM_BASE_MODEM_PHYSDEV, physdev,
++                         MM_BASE_MODEM_DRIVERS, drivers,
++                         MM_BASE_MODEM_PLUGIN, plugin,
++                         MM_BASE_MODEM_VENDOR_ID, vendor_id,
++                         MM_BASE_MODEM_PRODUCT_ID, product_id,
++                         MM_BASE_MODEM_DATA_NET_SUPPORTED, TRUE,
++                         MM_BASE_MODEM_DATA_TTY_SUPPORTED, FALSE,
++                         NULL);
++}
++
++static void
++iface_modem_init (MMIfaceModemInterface *iface)
++{
++    iface_modem_parent = g_type_interface_peek_parent (iface);
++
++    iface->load_current_capabilities = load_current_capabilities;
++    iface->load_current_capabilities_finish = load_current_capabilities_finish;
++    iface->load_supported_modes = load_supported_modes;
++    iface->load_supported_modes_finish = load_supported_modes_finish;
++    iface->load_current_modes = load_current_modes;
++    iface->load_current_modes_finish = load_current_modes_finish;
++    iface->set_current_modes = set_current_modes;
++    iface->set_current_modes_finish = set_current_modes_finish;
++    iface->create_bearer = create_bearer;
++    iface->create_bearer_finish = create_bearer_finish;
++}
++
++static void
++mm_broadband_modem_fm350gl_init (MMBroadbandModemFm350gl *self)
++{
++}
++
++static void
++mm_broadband_modem_fm350gl_class_init (MMBroadbandModemFm350glClass *klass)
++{
++}
+diff --git a/src/plugins/fm350gl/mm-broadband-modem-fm350gl.h b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..babc65f849c1069bc2af80399c69c9f7c0abb4f4
+--- /dev/null
++++ b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.h
+@@ -0,0 +1,44 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * Copyright (C) PMGZED
++ * Copyright (C) ModemManager Team
++ */
++
++#ifndef MM_BROADBAND_MODEM_FM350GL_H
++#define MM_BROADBAND_MODEM_FM350GL_H
++
++#include "mm-broadband-modem.h"
++
++#define MM_TYPE_BROADBAND_MODEM_FM350GL            (mm_broadband_modem_fm350gl_get_type ())
++#define MM_BROADBAND_MODEM_FM350GL(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), MM_TYPE_BROADBAND_MODEM_FM350GL, MMBroadbandModemFm350gl))
++#define MM_BROADBAND_MODEM_FM350GL_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass),  MM_TYPE_BROADBAND_MODEM_FM350GL, MMBroadbandModemFm350glClass))
++#define MM_IS_BROADBAND_MODEM_FM350GL(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), MM_TYPE_BROADBAND_MODEM_FM350GL))
++#define MM_IS_BROADBAND_MODEM_FM350GL_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass),  MM_TYPE_BROADBAND_MODEM_FM350GL))
++#define MM_BROADBAND_MODEM_FM350GL_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS ((obj),  MM_TYPE_BROADBAND_MODEM_FM350GL, MMBroadbandModemFm350glClass))
++
++typedef struct _MMBroadbandModemFm350gl      MMBroadbandModemFm350gl;
++typedef struct _MMBroadbandModemFm350glClass MMBroadbandModemFm350glClass;
++
++struct _MMBroadbandModemFm350gl {
++    MMBroadbandModem parent;
++};
++
++struct _MMBroadbandModemFm350glClass {
++    MMBroadbandModemClass parent;
++};
++
++GType mm_broadband_modem_fm350gl_get_type (void);
++
++MMBroadbandModemFm350gl *mm_broadband_modem_fm350gl_new (const gchar  *device,
++                                                          const gchar  *physdev,
++                                                          const gchar **drivers,
++                                                          const gchar  *plugin,
++                                                          guint16       vendor_id,
++                                                          guint16       product_id);
++
++#endif /* MM_BROADBAND_MODEM_FM350GL_H */
+diff --git a/src/plugins/fm350gl/mm-modem-helpers-fm350gl.c b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..01de53e766606fc57011b4cc5f2d347b2f13196b
+--- /dev/null
++++ b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.c
+@@ -0,0 +1,162 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * Copyright (C) PMGZED
++ * Copyright (C) ModemManager Team
++ */
++
++#include <config.h>
++
++#define _LIBMM_INSIDE_MM
++#include <libmm-glib.h>
++
++#include "mm-common-helpers.h"
++#include "mm-modem-helpers.h"
++#include "mm-modem-helpers-fm350gl.h"
++
++typedef struct {
++    guint       value;
++    MMModemMode mode;
++} ModeMap;
++
++static const ModeMap allowed_map[] = {
++    { 1,  MM_MODEM_MODE_3G },
++    { 2,  MM_MODEM_MODE_4G },
++    { 4,  MM_MODEM_MODE_3G | MM_MODEM_MODE_4G },
++    { 14, MM_MODEM_MODE_5G },
++    { 16, MM_MODEM_MODE_3G | MM_MODEM_MODE_5G },
++    { 17, MM_MODEM_MODE_4G | MM_MODEM_MODE_5G },
++    { 20, MM_MODEM_MODE_3G | MM_MODEM_MODE_4G | MM_MODEM_MODE_5G },
++};
++
++static const ModeMap preferred_map[] = {
++    { 2, MM_MODEM_MODE_3G },
++    { 3, MM_MODEM_MODE_4G },
++    { 6, MM_MODEM_MODE_5G },
++};
++
++static gboolean
++lookup_mode (const ModeMap *map,
++             gsize          map_len,
++             guint          value,
++             MMModemMode   *out_mode)
++{
++    guint i;
++
++    for (i = 0; i < map_len; i++) {
++        if (map[i].value == value) {
++            *out_mode = map[i].mode;
++            return TRUE;
++        }
++    }
++    return FALSE;
++}
++
++static gboolean
++lookup_value (const ModeMap *map,
++              gsize          map_len,
++              MMModemMode    mode,
++              guint         *out_value)
++{
++    guint i;
++
++    for (i = 0; i < map_len; i++) {
++        if (map[i].mode == mode) {
++            *out_value = map[i].value;
++            return TRUE;
++        }
++    }
++    return FALSE;
++}
++
++gboolean
++mm_fm350gl_parse_current_modes (const gchar  *response,
++                                MMModemMode *allowed,
++                                MMModemMode *preferred,
++                                GError     **error)
++{
++    g_auto(GStrv) fields = NULL;
++    const gchar  *payload;
++    guint         value;
++
++    g_return_val_if_fail (response != NULL, FALSE);
++    g_return_val_if_fail (allowed != NULL, FALSE);
++    g_return_val_if_fail (preferred != NULL, FALSE);
++
++    if (!g_str_has_prefix (response, "+GTACT:")) {
++        g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                     "Missing +GTACT prefix in response: '%s'", response);
++        return FALSE;
++    }
++
++    payload = mm_strip_tag (response, "+GTACT:");
++    fields = g_strsplit (payload, ",", -1);
++    if (!fields[0] || !mm_get_uint_from_str (g_strstrip (fields[0]), &value) ||
++        !lookup_mode (allowed_map, G_N_ELEMENTS (allowed_map), value, allowed)) {
++        g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                     "Unsupported +GTACT allowed mode in response: '%s'", response);
++        return FALSE;
++    }
++
++    *preferred = MM_MODEM_MODE_NONE;
++
++    /* Some FM350 firmware reports a stale PreferredAct1 after switching to a
++     * single RAT (for example +GTACT: 2,3 after +GTACT=2). A preference is not
++     * meaningful for a single allowed mode, so deliberately ignore it. */
++    if (*allowed == MM_MODEM_MODE_3G ||
++        *allowed == MM_MODEM_MODE_4G ||
++        *allowed == MM_MODEM_MODE_5G)
++        return TRUE;
++
++    if (!fields[1] || !mm_get_uint_from_str (g_strstrip (fields[1]), &value) ||
++        !lookup_mode (preferred_map, G_N_ELEMENTS (preferred_map), value, preferred)) {
++        g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                     "Unsupported +GTACT preferred mode in response: '%s'", response);
++        return FALSE;
++    }
++
++    if (!(*allowed & *preferred)) {
++        g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                     "+GTACT preferred mode is not in the allowed set: '%s'", response);
++        return FALSE;
++    }
++
++    return TRUE;
++}
++
++gchar *
++mm_fm350gl_build_set_modes_command (MMModemMode  allowed,
++                                    MMModemMode  preferred,
++                                    GError     **error)
++{
++    guint rat;
++    guint preferred_rat;
++
++    if (!lookup_value (allowed_map, G_N_ELEMENTS (allowed_map), allowed, &rat)) {
++        g_autofree gchar *allowed_str = NULL;
++
++        allowed_str = mm_modem_mode_build_string_from_mask (allowed);
++        g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_UNSUPPORTED,
++                     "Unsupported FM350 allowed mode: '%s'", allowed_str);
++        return NULL;
++    }
++
++    if (preferred == MM_MODEM_MODE_NONE)
++        return g_strdup_printf ("+GTACT=%u", rat);
++
++    if (!(allowed & preferred) ||
++        !lookup_value (preferred_map, G_N_ELEMENTS (preferred_map), preferred, &preferred_rat)) {
++        g_autofree gchar *preferred_str = NULL;
++
++        preferred_str = mm_modem_mode_build_string_from_mask (preferred);
++        g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_UNSUPPORTED,
++                     "Unsupported FM350 preferred mode: '%s'", preferred_str);
++        return NULL;
++    }
++
++    return g_strdup_printf ("+GTACT=%u,%u", rat, preferred_rat);
++}
+diff --git a/src/plugins/fm350gl/mm-modem-helpers-fm350gl.h b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7caec9eabab5819d002331be9ca89b7445fd0314
+--- /dev/null
++++ b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.h
+@@ -0,0 +1,25 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * Copyright (C) PMGZED
++ * Copyright (C) ModemManager Team
++ */
++
++#ifndef MM_MODEM_HELPERS_FM350GL_H
++#define MM_MODEM_HELPERS_FM350GL_H
++
++#include <ModemManager.h>
++
++gboolean mm_fm350gl_parse_current_modes       (const gchar  *response,
++                                                MMModemMode *allowed,
++                                                MMModemMode *preferred,
++                                                GError     **error);
++gchar   *mm_fm350gl_build_set_modes_command   (MMModemMode  allowed,
++                                                MMModemMode  preferred,
++                                                GError     **error);
++
++#endif /* MM_MODEM_HELPERS_FM350GL_H */
+diff --git a/src/plugins/fm350gl/mm-plugin-fm350gl.c b/src/plugins/fm350gl/mm-plugin-fm350gl.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..2437156fd5ff38b5146e5f3ec83e589231303089
+--- /dev/null
++++ b/src/plugins/fm350gl/mm-plugin-fm350gl.c
+@@ -0,0 +1,74 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * Copyright (C) PMGZED
++ * Copyright (C) ModemManager Team
++ */
++
++#include <gmodule.h>
++
++#define _LIBMM_INSIDE_MM
++#include <libmm-glib.h>
++
++#include "mm-broadband-modem-fm350gl.h"
++#include "mm-plugin-common.h"
++
++#define MM_TYPE_PLUGIN_FM350GL mm_plugin_fm350gl_get_type ()
++MM_DEFINE_PLUGIN (FM350GL, fm350gl, FM350GL)
++
++static MMBaseModem *
++create_modem (MMPlugin      *self,
++              const gchar   *uid,
++              const gchar   *physdev,
++              const gchar  **drivers,
++              guint16        vendor,
++              guint16        product,
++              guint16        subsystem_vendor,
++              guint16        subsystem_device,
++              GList         *probes,
++              GError       **error)
++{
++    return MM_BASE_MODEM (mm_broadband_modem_fm350gl_new (uid,
++                                                           physdev,
++                                                           drivers,
++                                                           mm_plugin_get_name (self),
++                                                           vendor,
++                                                           product));
++}
++
++MM_PLUGIN_NAMED_CREATOR_SCOPE MMPlugin *
++mm_plugin_create_fm350gl (void)
++{
++    static const gchar *subsystems[] = { "tty", "net", NULL };
++    static const mm_uint16_pair product_ids[] = {
++        { 0x0e8d, 0x7126 },
++        { 0x0e8d, 0x7127 },
++        { 0, 0 },
++    };
++
++    return MM_PLUGIN (
++        g_object_new (MM_TYPE_PLUGIN_FM350GL,
++                      MM_PLUGIN_NAME,                MM_MODULE_NAME,
++                      MM_PLUGIN_ALLOWED_SUBSYSTEMS,  subsystems,
++                      MM_PLUGIN_ALLOWED_PRODUCT_IDS, product_ids,
++                      MM_PLUGIN_ALLOWED_AT,          TRUE,
++                      MM_PLUGIN_REMOVE_ECHO,         TRUE,
++                      NULL));
++}
++
++static void
++mm_plugin_fm350gl_init (MMPluginFM350GL *self)
++{
++}
++
++static void
++mm_plugin_fm350gl_class_init (MMPluginFM350GLClass *klass)
++{
++    MMPluginClass *plugin_class = MM_PLUGIN_CLASS (klass);
++
++    plugin_class->create_modem = create_modem;
++}
+diff --git a/src/plugins/fm350gl/tests/test-modem-helpers-fm350gl.c b/src/plugins/fm350gl/tests/test-modem-helpers-fm350gl.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..6b8626625bc38794ac14046b3c11eef90a521299
+--- /dev/null
++++ b/src/plugins/fm350gl/tests/test-modem-helpers-fm350gl.c
+@@ -0,0 +1,96 @@
++/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
++/*
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ */
++
++#include <glib.h>
++
++#define _LIBMM_INSIDE_MM
++#include <libmm-glib.h>
++
++#include "mm-modem-helpers-fm350gl.h"
++
++static void
++test_parse_combined_mode (void)
++{
++    g_autoptr(GError) error = NULL;
++    MMModemMode       allowed;
++    MMModemMode       preferred;
++
++    g_assert_true (mm_fm350gl_parse_current_modes (
++        "+GTACT: 4,3,,1,2,4,5,8,101,102", &allowed, &preferred, &error));
++    g_assert_no_error (error);
++    g_assert_cmpuint (allowed, ==, MM_MODEM_MODE_3G | MM_MODEM_MODE_4G);
++    g_assert_cmpuint (preferred, ==, MM_MODEM_MODE_4G);
++}
++
++static void
++test_parse_single_mode_ignores_stale_preference (void)
++{
++    g_autoptr(GError) error = NULL;
++    MMModemMode       allowed;
++    MMModemMode       preferred;
++
++    g_assert_true (mm_fm350gl_parse_current_modes (
++        "+GTACT: 2,3,,101,102", &allowed, &preferred, &error));
++    g_assert_no_error (error);
++    g_assert_cmpuint (allowed, ==, MM_MODEM_MODE_4G);
++    g_assert_cmpuint (preferred, ==, MM_MODEM_MODE_NONE);
++}
++
++static void
++test_parse_invalid_mode (void)
++{
++    g_autoptr(GError) error = NULL;
++    MMModemMode       allowed;
++    MMModemMode       preferred;
++
++    g_assert_false (mm_fm350gl_parse_current_modes (
++        "+GTACT: 99,3", &allowed, &preferred, &error));
++    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED);
++}
++
++static void
++test_build_set_command (void)
++{
++    g_autoptr(GError) error = NULL;
++    g_autofree gchar *command = NULL;
++
++    command = mm_fm350gl_build_set_modes_command (
++        MM_MODEM_MODE_4G | MM_MODEM_MODE_5G,
++        MM_MODEM_MODE_5G,
++        &error);
++    g_assert_no_error (error);
++    g_assert_cmpstr (command, ==, "+GTACT=17,6");
++}
++
++static void
++test_build_invalid_preference (void)
++{
++    g_autoptr(GError) error = NULL;
++    g_autofree gchar *command = NULL;
++
++    command = mm_fm350gl_build_set_modes_command (
++        MM_MODEM_MODE_3G | MM_MODEM_MODE_4G,
++        MM_MODEM_MODE_5G,
++        &error);
++    g_assert_null (command);
++    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_UNSUPPORTED);
++}
++
++int
++main (int argc, char **argv)
++{
++    g_test_init (&argc, &argv, NULL);
++
++    g_test_add_func ("/MM/fm350gl/modes/parse-combined", test_parse_combined_mode);
++    g_test_add_func ("/MM/fm350gl/modes/single-stale-preference", test_parse_single_mode_ignores_stale_preference);
++    g_test_add_func ("/MM/fm350gl/modes/parse-invalid", test_parse_invalid_mode);
++    g_test_add_func ("/MM/fm350gl/modes/build-command", test_build_set_command);
++    g_test_add_func ("/MM/fm350gl/modes/build-invalid-preference", test_build_invalid_preference);
++
++    return g_test_run ();
++}
+diff --git a/src/plugins/meson.build b/src/plugins/meson.build
+index b21b5e3604196af682b7222723b5f697dd1c9b78..18000c7a14c7010e7761285c0d50ab2eba49c8aa 100644
+--- a/src/plugins/meson.build
++++ b/src/plugins/meson.build
+@@ -466,6 +466,27 @@ if plugins_options['fibocom']
+   plugins_udev_rules += files('fibocom/77-mm-fibocom-port-types.rules')
+ endif
+ 
++# plugin: Fibocom FM350-GL USB/RNDIS
++if plugins_options['fm350gl']
++  fm350gl_inc = include_directories('fm350gl')
++  common_c_args = '-DMM_MODULE_NAME="fm350gl"'
++
++  sources = files(
++    'fm350gl/mm-broadband-bearer-fm350gl.c',
++    'fm350gl/mm-broadband-modem-fm350gl.c',
++    'fm350gl/mm-plugin-fm350gl.c',
++  )
++
++  plugins += {'plugin-fm350gl': {
++    'plugin': true,
++    'helper': {'sources': files('fm350gl/mm-modem-helpers-fm350gl.c'), 'include_directories': plugins_incs + [fm350gl_inc], 'c_args': common_c_args},
++    'module': {'sources': sources, 'include_directories': plugins_incs + [fm350gl_inc], 'c_args': common_c_args},
++    'test': {'sources': files('fm350gl/tests/test-modem-helpers-fm350gl.c'), 'include_directories': fm350gl_inc, 'dependencies': libhelpers_dep},
++  }}
++
++  plugins_udev_rules += files('fm350gl/77-mm-fm350gl.rules')
++endif
++
+ # plugin: foxconn
+ if plugins_options['foxconn']
+   foxconn_dir = plugins_dir / 'foxconn'
+diff --git a/src/plugins/mm-builtin-plugins.c b/src/plugins/mm-builtin-plugins.c
+index c7f916336f91910bb4b4b61d942bc4b2b95c5e48..853f723fd05699a25ab25ab3b974dc3f7efe56b9 100644
+--- a/src/plugins/mm-builtin-plugins.c
++++ b/src/plugins/mm-builtin-plugins.c
+@@ -43,6 +43,9 @@ MMPlugin *mm_plugin_create_dlink (void);
+ #if defined ENABLE_PLUGIN_FIBOCOM
+ MMPlugin *mm_plugin_create_fibocom (void);
+ #endif
++#if defined ENABLE_PLUGIN_FM350GL
++MMPlugin *mm_plugin_create_fm350gl (void);
++#endif
+ #if defined ENABLE_PLUGIN_FOXCONN
+ MMPlugin *mm_plugin_create_foxconn (void);
+ #endif
+@@ -181,6 +184,9 @@ mm_builtin_plugins_load (void)
+ #if defined ENABLE_PLUGIN_FIBOCOM
+     PREPEND_PLUGIN (fibocom);
+ #endif
++#if defined ENABLE_PLUGIN_FM350GL
++    PREPEND_PLUGIN (fm350gl);
++#endif
+ #if defined ENABLE_PLUGIN_FOXCONN
+     PREPEND_PLUGIN (foxconn);
+ #endif
