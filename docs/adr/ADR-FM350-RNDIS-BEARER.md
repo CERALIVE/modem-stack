@@ -1,8 +1,9 @@
 # ADR — FM350-GL RNDIS bearer gap, and the decision to forward-port the BELABOX plugin
 
-**Status:** ACCEPTED FOR A PINNED DOWNSTREAM CARRY. The project owner reviewed this record
-and approved the three-patch ModemManager 1.24.2 forward-port on 2026-08-22. Hardware bearer
-validation remains outstanding and this status is not a hardware support claim.
+**Status:** ACCEPTED FOR A PINNED DOWNSTREAM CARRY; USB-CARRIER BEARER VALIDATED. The project
+owner approved the three-patch ModemManager 1.24.2 forward-port on 2026-08-22. A corrected
+forward-port established an RNDIS bearer and carried HTTPS traffic on the carrier-mounted unit
+on 2026-08-23. This validates that topology and firmware; it is not a PCIe support claim.
 **Date:** 2026-08-22
 **Deciders:** modem-stack maintainers; CeraLive project owner as second maintainer (approved
 2026-08-22; see §7).
@@ -79,6 +80,23 @@ modem answers the `ATD` with a bare `0,NONE`, which MM surfaces as
 So the failure is not a misconfiguration, a SIM problem, an APN problem, or a NetworkManager
 problem. ModemManager is dialing a modem over a mechanism that modem does not have, because
 nothing in the shipped source tree knows this device.
+
+### 2.2 Follow-up: the forward-port's first-enable regression
+
+The first hardware build of the forward-port failed before the bearer path: ModemManager's
+generic first-enable hook sent `ATZ`, and firmware `81600.0000.00.19.17.10` returned
+`+CME ERROR: 59`. Port assignment was tested first and ruled out. In mode 41, ttyUSB12 on USB
+interface 6 was the only option port that answered `AT`, `ATI`, `AT+CGMM`, and `AT+CGMR`; the
+other six tty ports were silent or echo-only. Stock v0.2.0 also failed a fresh enable on the
+same tty with the same error, so neither the `fm350gl` plugin flags nor its udev primary-port
+row created the failure.
+
+The missing behavior was in BELABOX's original modem subclass: its
+`enabling_modem_init` class override sends `Z0` (wire command `ATZ0`) instead of the core's
+`Z` (`ATZ`). The CeraLive re-implementation had omitted that override. A direct same-port
+toggle confirmed causality: `ATZ` returned CME 59 after both 2 seconds and 32 seconds, while
+`ATZ0` returned `OK`. Restoring the override made the first enable succeed; registration moved
+to `home`, packet service to `attached`, and the plugin activated context 0 with `+CGACT`.
 
 ---
 
@@ -174,8 +192,8 @@ ModemManager reports one flattened `allowed: 2g, 3g, 4g, 5g; preferred: none` co
 limit**, and it has the same root cause as §2.1: no plugin claims the device. The carried
 series includes BELABOX's `+GTACT` RAT-mode read/write handling and its two mode correctness
 fixes, but deliberately does not carry the fork's band parser/writer. Granular band support
-therefore remains outside this decision, and every mode claim remains hardware-unverified
-until the todo 39 drill.
+therefore remains outside this decision. The carrier-mode mode catalog and current-mode read
+were observed during the hardware drill; granular band handling remains absent by design.
 
 ---
 
@@ -198,7 +216,7 @@ derives from and states that the content is not CeraLive-originated.
 
 | # | SHA (full) | Subject | Files | Upstream status | Verdict |
 |---|-----------|---------|-------|-----------------|---------|
-| 1 | `da01610c46c581b0c6f2acd0ac50f5bba666efdf` | `FM350GL: backport FM350GL patch` | new `src/plugins/fm350gl/` (7 files, +1697), `meson.build`, `meson_options.txt`, `src/plugins/meson.build`, `src/plugins/mm-builtin-plugins.c` | **NOT UPSTREAM.** No `fm350gl` plugin exists at `1.24.2` or on `main`. The commit message cites upstream issue [#899](https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/issues/899) as the origin of the code; no merge request carrying it has landed. | **REQUIRED.** This is the whole fix. Everything else in the table is a bug fix on top of it. Largest forward-port risk: it adds a plugin to the build system, and 1.24's plugin build was reorganized after the base commit. |
+| 1 | `da01610c46c581b0c6f2acd0ac50f5bba666efdf` | `FM350GL: backport FM350GL patch` | new `src/plugins/fm350gl/` (7 files, +1697), `meson.build`, `meson_options.txt`, `src/plugins/meson.build`, `src/plugins/mm-builtin-plugins.c` | **NOT UPSTREAM.** No `fm350gl` plugin exists at `1.24.2` or on `main`. The commit message cites upstream issue [#899](https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/issues/899) as the origin of the code; no merge request carrying it has landed. | **REQUIRED.** This includes the modem subclass's `enabling_modem_init` override (`Z0`, not core `Z`); omitting it was the hardware-confirmed forward-port regression. Everything else in the table is a bug fix on top of it. |
 | 2 | `b4377c5028a0de4435b86f7aad9114e9443d69e4` | `fm350gl: disable CPOL command that crashes the modem` | `src/plugins/fm350gl/77-mm-fm350gl.rules` (+3) | **MECHANISM IS UPSTREAM; THIS DATA ROW IS NOT.** `ID_MM_PREFERRED_NETWORKS_CPOL_DISABLED` is a first-class upstream udev tag, consumed at `src/mm-base-sim.c:1066` and already used by the huawei, sierra, simtech and telit rules files on `main`. No rule tags `0e8d:712[6-7]`. | **REQUIRED, and the most independently landable row.** It is three lines of device data using an upstream-blessed tag. It needs a rules file to live in, though, and upstream has none for this device — so in practice it lands with commit 1. |
 | 3 | `419dc598d3f2c11f479dacdc2f6ef0e787e6ea3b` | `fm350gl: delay initialization to avoid crashing on AT+GCMR` | `src/plugins/fm350gl/mm-broadband-modem-fm350gl.c` (+40) | **NOT UPSTREAM** (depends on commit 1). | **REQUIRED but WEAKEST.** It is a fixed 4000 ms sleep before `load_current_capabilities`, chosen by the author as "2500 ms observed worst case, doubled out of caution." A hardcoded settle delay is the row most likely to draw upstream review objections, and it is the row a reviewer should scrutinise hardest. Dropping it risks crashing the modem at probe; keeping it costs four seconds on every FM350 enumeration. |
 | 4 | `90bcd376405906d3a94b0c239689eef1a3899ed2` | `fm350gl: fix DNS parsing for IP4-only networks` | `src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c` (+12/−32) | **NOT UPSTREAM** (depends on commit 1). | **REQUIRED.** The original code demanded ≥30 `+CGCONTRDP` fields and hard-failed an IPv4-only reply; this relaxes the floor to 7 and reads the IPv6 DNS pair only when present. The bench SIM is on an IPv4 APN (`internet.movistar.com.co`, `ip type: ipv4`), so without this the bearer would fail even after commit 1. |
@@ -254,22 +272,24 @@ proceed without pretending the draft has been filed.
 
 **Scope note.** The series carries `+GTACT` RAT-mode read/write because the two BELABOX mode
 fixes are explicitly in scope. It does not carry the fork's band parser/writer, does not claim
-full granular band support, and does not close any hardware result before todo 39 runs.
+full granular band support. The 2026-08-23 follow-up closes the USB-carrier bearer result
+only; PCIe production-topology validation remains separate.
 
 ---
 
 ## 6. Decision
 
 Carry the minimum BELABOX-derived RNDIS bearer and mode series on the pinned ModemManager
-1.24.2 source, while keeping the unfiled upstream offer and hardware validation open.
+1.24.2 source, while keeping the unfiled upstream offer and PCIe validation open.
 
 Concretely: the FM350-GL's USB/RNDIS composition is unsupported by ModemManager and cannot be
 made supported by rebuilding, by a composition switch, or by a vendor AT command. The BELABOX
 `fm350gl` series is the only known working fix. The project owner reviewed this evidence and
 approved the downstream forward-port on 2026-08-22. The implementation remains BELABOX's
 work in origin and credit; CeraLive's role is the 1.24.2 re-implementation and pinned carry.
-No support claim is made until the hardware bearer drill proves plugin binding, data-session
-activation and routable IPv4.
+The corrected series has now proved plugin binding, data-session activation, routable IPv4,
+and interface-bound HTTPS on the USB-carrier topology. That result does not clear the separate
+production PCIe gate.
 
 ---
 
@@ -317,10 +337,11 @@ the evidence for todo 16 must repeat the distinction.
   change or unrelated modem behavior is covered.
 - It does not claim an upstream merge request exists.
 - It records the project owner's second-maintainer review and approval dated 2026-08-22.
-- It does not claim the patch is hardware-proven; todo 39 must still bind the `fm350gl`
-  plugin, connect the bearer and prove a routable IPv4 address on the real board.
-- It does not change [`docs/FM350-DECISION.md`](../FM350-DECISION.md)'s three-gate ledger, its
-  documented-deferred PCIe conclusion, or its no-classifier-entry decision.
+- It claims only the hardware result actually measured: the corrected patch binds `fm350gl`,
+  connects the bearer, assigns IPv4, and carries traffic on the carrier-mounted USB unit.
+- It changes [`docs/FM350-DECISION.md`](../FM350-DECISION.md)'s gate 3 only for the measured
+  USB-carrier path; the documented-deferred PCIe conclusion and no-classifier-entry decision
+  remain unchanged.
 - It does not promote the FM350 in `docs/MODEM-SUPPORT-MATRIX.md`, and it adds no catalog or
   certification claim of any kind.
 - It carries `+GTACT` RAT-mode handling but not the fork's granular band parser/writer (§3.2).

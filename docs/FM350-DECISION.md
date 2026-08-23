@@ -262,18 +262,18 @@ decision that governs the classifier question, so the runbook and the decision s
 
 FM350 device enablement upstream requires three independent gates. This record is honest
 about each: gate 1 is verified, gate 2 remains untested on the production PCIe topology, and
-gate 3 has now been attempted on the carrier-mediated USB topology but failed before
-registration.
+gate 3 is cleared for the carrier-mediated USB topology after correcting the downstream
+forward-port.
 
 | # | Gate | Requirement | State | Basis |
 |---|------|-------------|-------|-------|
 | 1 | MM version floor | ModemManager **≥ 1.24.2** (the release carrying the mtk-plugin FM350 fixes) | **CLEARED** | This repo now ships ModemManager **1.24.2** — see `packaging/upstream-pins.yaml` (`sources.modemmanager.upstream_tag: "1.24.2"`). The version-floor gate is satisfied. |
 | 2 | Kernel | The `mtk_t7xx` PCIe WWAN driver present and enumerating the module over PCIe on the target hardware | **OPEN** | Not validated on real bench hardware in this work. No target-kernel `mtk_t7xx` bring-up has been performed or observed. |
-| 3 | HIL (hardware-in-the-loop) | A physical FM350 module probed end-to-end through the stack on a bench device | **OPEN — FAILED** | On 2026-08-23 the locally built patched ModemManager bound the carrier-mounted unit to `fm350gl`, but enabling stopped at `ATZ` → `+CME ERROR: 59` (`MobileEquipment.UnexpectedDataValue`). Registration never began, no bearer was created, `enx000011121314` received no routable IPv4 address, and an interface-bound HTTPS request failed. See [Patched ModemManager HIL attempt](#patched-modemmanager-hil-attempt-2026-08-23). |
+| 3 | HIL (hardware-in-the-loop) | A physical FM350 module probed end-to-end through the stack on a bench device | **CLEARED — USB CARRIER** | The follow-up restored BELABOX's omitted `enabling_modem_init` override (`ATZ0`, not `ATZ`). The unit registered home, attached packet service, established the RNDIS bearer, assigned `10.0.163.14/32` to `enx000011121314`, and `curl --interface enx000011121314 https://example.com` returned HTTP 200. See [Follow-up root cause and passing HIL](#follow-up-root-cause-and-passing-hil-2026-08-23). |
 
-Gate 1 being CLEARED does **not** imply the FM350 works — it only removes the upstream
-version-floor obstacle. Gate 2 remains a hardware-gated unknown. Gate 3 is deliberately left
-OPEN because the measured HIL attempt failed; a failed attempt is evidence, not clearance.
+Gate 1 being CLEARED does **not** imply the FM350 works on the production topology — it only
+removes the upstream version-floor obstacle. Gate 2 remains a PCIe hardware-gated unknown.
+Gate 3 clears only the carrier-mediated USB path measured below.
 
 The 2026-08-17 USB-enumeration observation did not close either hardware gate: the human later
 confirmed that an M.2-to-USB carrier mediates this bench topology, while the production topology
@@ -319,12 +319,50 @@ The other attached modems were observed passively after installation: SIMCom rem
 `simtech`, Quectel remained bound to `quectel` and connected, and the Qualcomm/HIMI row remained
 present. No non-FM350 modem was actively exercised.
 
-**Decision:** the patch series does not clear the HIL gate and is not justified for release in
-its current form. The release-carry step must not include it unless a later reviewed change
-addresses the `ATZ` enable failure and a fresh drill proves registration, bearer creation,
-routable IPv4, and traffic. After the drill, the exact pre-drill v0.2.0 packages were reinstalled;
-ModemManager and NetworkManager were active, all four modem rows were present, and the FM350 was
-again bound to `generic`.
+**Decision at the end of this first attempt:** the patch series did not clear the HIL gate in
+that form. After the drill, the exact pre-drill v0.2.0 packages were reinstalled; ModemManager
+and NetworkManager were active, all four modem rows were present, and the FM350 was again bound
+to `generic`. The follow-up below supersedes only that release-carry verdict.
+
+### Follow-up root cause and passing HIL, 2026-08-23
+
+The suspected udev error was tested first and rejected. Mode 41 exposes RNDIS on interfaces
+0/1, option ttys on interfaces 2/3/4/6/7/8/9, and an unbound `ff/42/01` interface 5.
+ttyUSB12/interface 6 — the rules' primary — was the only tty that answered a full query-only
+AT sweep. Stock v0.2.0's generic plugin also selected ttyUSB12 and reproduced the same first-
+enable CME 59 after a daemon restart.
+
+Fresh inspection of BELABOX commit `da01610c46c581b0c6f2acd0ac50f5bba666efdf` found the
+missing forward-port behavior: the original modem subclass overrides
+`MMBroadbandModemClass.enabling_modem_init` and sends `Z0`. The downstream re-implementation
+had omitted the override, so ModemManager inherited core `Z`. Directly on ttyUSB12, `ATZ`
+returned CME 59 after both 2 and 32 seconds, while `ATZ0` returned `OK`. Restoring that exact
+override therefore toggled the cause, not merely the symptom.
+
+With the corrected arm64 packages installed, the FM350 bound `fm350gl` on ttyUSB12 and moved
+through `enabling → enabled → registering → home → connected`. The bearer debug trace showed:
+
+```text
+AT+CGACT=1,0
+AT+CGPADDR=0  -> +CGPADDR: 0,"10.0.163.14",""
+AT+CGCONTRDP=0
+(fm350gl) IP settings loaded for RNDIS PDP context #0
+```
+
+The acceptance transcript then passed:
+
+```text
+nmcli connection up gsm-4 ifname ttyUSB12
+Connection successfully activated
+enx000011121314  UNKNOWN  10.0.163.14/32
+default via 190.157.8.46 proto static metric 700
+curl --interface enx000011121314 https://example.com
+http_code=200
+```
+
+The board was returned to `modemmanager`/`libmm-glib0` `1.24.2-2~ceralive0.2.0` after the
+final capture. This clears the carrier-mediated USB HIL gate and justifies carrying the fixed
+series. It does not clear gate 2 or claim production PCIe operation.
 
 ## Bench probe evidence (RB-16)
 
