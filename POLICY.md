@@ -31,7 +31,7 @@ merge-request draft remains unfiled. Requirement 2 above is therefore still hone
 **not met**; the dated owner decision is an explicit exception for this series, not a claim
 that an MR exists and not a general waiver of the upstream-first gate. Every patch must retain
 the BELABOX author, originating commit SHA(s), rationale, and `Forwarded: no` status. The
-series remains hardware-unverified until its board drill passes and must be retired when
+series is hardware-verified on the carrier-mediated USB topology and must be retired when
 upstream ships equivalent support.
 
 ## 2. Upstream-contribution-first
