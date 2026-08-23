@@ -261,24 +261,70 @@ decision that governs the classifier question, so the runbook and the decision s
 ## Three-gate ledger
 
 FM350 device enablement upstream requires three independent gates. This record is honest
-about each: only gate 1 is verified in this repo; gates 2 and 3 are untested.
+about each: gate 1 is verified, gate 2 remains untested on the production PCIe topology, and
+gate 3 has now been attempted on the carrier-mediated USB topology but failed before
+registration.
 
 | # | Gate | Requirement | State | Basis |
 |---|------|-------------|-------|-------|
 | 1 | MM version floor | ModemManager **≥ 1.24.2** (the release carrying the mtk-plugin FM350 fixes) | **CLEARED** | This repo now ships ModemManager **1.24.2** — see `packaging/upstream-pins.yaml` (`sources.modemmanager.upstream_tag: "1.24.2"`). The version-floor gate is satisfied. |
 | 2 | Kernel | The `mtk_t7xx` PCIe WWAN driver present and enumerating the module over PCIe on the target hardware | **OPEN** | Not validated on real bench hardware in this work. No target-kernel `mtk_t7xx` bring-up has been performed or observed. |
-| 3 | HIL (hardware-in-the-loop) | A physical FM350 module probed end-to-end through the stack on a bench device | **OPEN** | No physical FM350 unit has been tested. There is no hardware evidence of any kind. |
+| 3 | HIL (hardware-in-the-loop) | A physical FM350 module probed end-to-end through the stack on a bench device | **OPEN — FAILED** | On 2026-08-23 the locally built patched ModemManager bound the carrier-mounted unit to `fm350gl`, but enabling stopped at `ATZ` → `+CME ERROR: 59` (`MobileEquipment.UnexpectedDataValue`). Registration never began, no bearer was created, `enx000011121314` received no routable IPv4 address, and an interface-bound HTTPS request failed. See [Patched ModemManager HIL attempt](#patched-modemmanager-hil-attempt-2026-08-23). |
 
 Gate 1 being CLEARED does **not** imply the FM350 works — it only removes the upstream
-version-floor obstacle. Gates 2 and 3 remain the blocking, hardware-gated unknowns, and are
-deliberately left OPEN rather than assumed.
+version-floor obstacle. Gate 2 remains a hardware-gated unknown. Gate 3 is deliberately left
+OPEN because the measured HIL attempt failed; a failed attempt is evidence, not clearance.
 
-> **Ledger frozen pending human decision (2026-08-17).** The table above is UNCHANGED despite
-> Citation 6's hardware observation. Branch A's ledger update (gate 2 → `N/A (USB path
-> observed, not PCIe)`, gate 3 → `CLEARED`) is step 4 of the Branch-A procedure and is
-> explicitly gated on human sign-off, which has not been given. Independently of that gate,
-> gate 3 could not be closed on this evidence anyway: no SIM is installed, so no registration
-> or bearer/data-session smoke ran — USB enumeration is not an end-to-end HIL pass.
+The 2026-08-17 USB-enumeration observation did not close either hardware gate: the human later
+confirmed that an M.2-to-USB carrier mediates this bench topology, while the production topology
+remains PCIe. The 2026-08-23 run is the first end-to-end attempt with a SIM under the candidate
+USB plugin. It updates gate 3 with a measured failure rather than promoting enumeration to a
+pass.
+
+### Patched ModemManager HIL attempt, 2026-08-23
+
+The owner-approved three-patch series was rebuilt locally for arm64 using the documented
+`packaging/ci/build-bookworm.sh arm64` bench path. No release, package publication, or apt
+dispatch occurred. The board started on `modemmanager` and `libmm-glib0`
+`1.24.2-2~ceralive0.2.0`; the local dev packages were installed with `dpkg -i`, udev was
+reloaded, and ModemManager was restarted.
+
+Three candidate behaviors were observable:
+
+- **Plugin binding passed.** The FM350 changed from the stock `generic` plugin to `fm350gl`.
+- **CPOL disable passed.** The primary AT port carried
+  `ID_MM_PREFERRED_NETWORKS_CPOL_DISABLED=1`.
+- **`+GTACT` mode reading passed.** The plugin reported 12 supported mode combinations and
+  current modes `allowed: 3g, 4g; preferred: 4g` instead of the generic plugin's single
+  flattened combination.
+
+The decisive bearer path failed earlier than the prior `0,NONE` dial failure. On every enable
+attempt, the first initialization command and reply were:
+
+```text
+--> ATZ
+<-- +CME ERROR: 59
+```
+
+ModemManager mapped that reply to `MobileEquipment.UnexpectedDataValue`, left the modem
+`disabled`, and published no registration or packet-service state. Consequently:
+
+- a `--3gpp-scan` was refused with `modem not enabled yet`, so the extended `+COPS` parser fix
+  is **not hardware-measured** by this run;
+- NetworkManager's existing FM350 profile timed out without creating a bearer;
+- `enx000011121314` retained only link-local IPv6, with no routable IPv4 address or route; and
+- an HTTPS request explicitly bound to that interface timed out.
+
+The other attached modems were observed passively after installation: SIMCom remained bound to
+`simtech`, Quectel remained bound to `quectel` and connected, and the Qualcomm/HIMI row remained
+present. No non-FM350 modem was actively exercised.
+
+**Decision:** the patch series does not clear the HIL gate and is not justified for release in
+its current form. The release-carry step must not include it unless a later reviewed change
+addresses the `ATZ` enable failure and a fresh drill proves registration, bearer creation,
+routable IPv4, and traffic. After the drill, the exact pre-drill v0.2.0 packages were reinstalled;
+ModemManager and NetworkManager were active, all four modem rows were present, and the FM350 was
+again bound to `generic`.
 
 ## Bench probe evidence (RB-16)
 
