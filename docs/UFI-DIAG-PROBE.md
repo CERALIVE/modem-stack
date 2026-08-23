@@ -1,5 +1,13 @@
 # UFI / HIMI supervised DIAG info probe — BENCH ONLY `[PARTIAL]`
 
+> **Measured 2026-08-23 on `ceralive2`:** the attached `05c6:9091` unit exposes four
+> interfaces: `ff/ff/ff` (unbound), `ff/00/00` (unbound), `ff/ff/ff` (interface 2,
+> `qmi_wwan`), and `ff/42/01` (ADB-class, unbound). It exposes **no `ff/ff/30` DIAG
+> descriptor**, so the procedure stopped after classification and no DIAG request was made.
+> The current QMI + ADB-class composition has no RNDIS/CDC pair; an identity attempt bound
+> to its `wwan1` could not reach `192.168.0.1`, so `getproduceinfo`/`getsysinfo` remain
+> uncaptured. The exact transition to another composition is unproven and approval-gated.
+
 **This procedure never runs on a production board, never runs unattended, and is not an
 operation `@ceralive/modem-control` can perform.** The shipped `UfiHimiProvider` is
 read-only over the HIMI HTTP API and has no DIAG code path at all — not a refused stub,
@@ -250,3 +258,27 @@ A `diag-descriptor-confirmed` result changes what a supervised bench operator ma
 by hand. It changes nothing about the product: `UFI_DIAG_PRODUCTION_ACCESS` is
 `prohibited` unconditionally, and promoting this probe into a production operation is out
 of scope permanently, not pending evidence.
+
+## 2026-08-23 bench result — `05c6:9091`
+
+Todo 13's capture tooling was run against sysfs device `1-1.4.1` on `ceralive2`, kernel
+`7.1.7-ceralive-rk3588`. Both redaction sweeps were clean and the manifest records
+`mutations: "none"`.
+
+| Interface | Descriptor | Classification | Captured binding |
+|---:|---|---|---|
+| 0 | `ff/ff/ff` | vendor-specific | unbound |
+| 1 | `ff/00/00` | vendor-specific | unbound |
+| 2 | `ff/ff/ff` | vendor-specific | `qmi_wwan` (`wwan1`) |
+| 3 | `ff/42/01` | ADB-class | unbound |
+
+The result is `diag-not-present`: the USB-id database label “Diagnostic Mode” is not borne
+out by the descriptor triple required by this runbook. Upstream's `05c6:9091` interface-2
+QMI match happens to agree with the live binding, but its unrelated-device annotation was
+not used as evidence; this unit's descriptor and binding were.
+
+The identity step made one bounded connection attempt through the target's own `wwan1`.
+`192.168.0.1:80` was unreachable, so no session was created and the dependent reads were
+not sent. No alternate fleet interface was tried. A future composition change requires a
+separate owner approval after device-specific evidence identifies the exact target and a
+proven return path; nothing in this capture authorizes a blind switch.

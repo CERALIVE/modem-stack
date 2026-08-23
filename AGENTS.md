@@ -1573,14 +1573,18 @@ loop. The admin password is EPHEMERAL BENCH INPUT (`UFI_BENCH_PASSWORD`), inject
 supervised run only, and `credential-fence.test.ts` scans tracked and intended-untracked
 files for it plus its base64/SHA-256 derivatives.
 
-### Bench descriptor capture — tooling and schema, NOT a captured bundle
+### Bench descriptor capture — tooling, schema, and measured composition
 
 `control/scripts/ufi-himi-capture.sh` + `control/scripts/ufi-himi-evidence.ts` are the
 read-only evidence-capture path for `05c6:9091`, and they live in `control/scripts/`
 rather than in the provider directory on purpose: bench tooling is not published
 (`files: ["dist"]`), and `no-write-path.test.ts` enumerates the provider directory
 exactly, so a file added there would be a change to that gate. **No bundle CONTENT is
-committed by this work** — the hardware drill that produces one has not run.
+committed** — the redacted 2026-08-23 hardware bundle remains repo-local and gitignored.
+That drill measured a four-interface QMI + ADB-class composition: interface 2 was claimed
+by `qmi_wwan`, no `ff/ff/30` DIAG descriptor existed, and the HIMI identity endpoint was
+unreachable through the target's own `wwan1`. The tracked classification is in
+`docs/UFI-DIAG-PROBE.md`; no composition change was attempted.
 
 - **The bundle is `manifest.json` + five capture files + one credential-gated HIMI file**,
   staged in a temp directory and moved into place as a unit, so a published path either

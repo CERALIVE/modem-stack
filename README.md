@@ -116,8 +116,11 @@ composition, and — with an ephemeral bench password — the HIMI `getproducein
 `getsysinfo` identity), and `control/scripts/ufi-himi-evidence.ts` carries the bundle
 schema, the per-interface role classifier, and an independent redaction sweep. With no
 matching device attached the script answers `device-not-present` and writes nothing rather
-than leaving a partial bundle. No captured bundle is committed — the hardware drill that
-produces one has not run.
+than leaving a partial bundle. The 2026-08-23 hardware drill found the attached `05c6:9091`
+in a four-interface QMI + ADB-class composition: interface 2 was claimed by `qmi_wwan`, no
+`ff/ff/30` DIAG descriptor existed, and the HIMI identity endpoint was unreachable through
+the target's `wwan1`. The redacted bundle remains repo-local and gitignored; the measured
+classification is recorded in `docs/UFI-DIAG-PROBE.md`.
 
 ## Radio capability truth + SIM evidence (Todo 28)
 
