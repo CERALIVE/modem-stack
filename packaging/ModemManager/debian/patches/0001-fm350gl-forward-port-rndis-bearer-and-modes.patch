@@ -8,8 +8,10 @@ Description: Add the FM350-GL USB/RNDIS bearer and GTACT mode handling on 1.24.2
  ModemManager 1.24.2. It uses the current MMIfaceModemInterface and GTask APIs,
  activates/deactivates the RNDIS PDP context with +CGACT, obtains addressing
  through +CGPADDR/+CGCONTRDP, and returns the network port instead of attempting
- the generic PPP ATD path. The 4-second GMR guard, IPv4-only DNS relaxation,
- set-mode completion fix, and single-RAT stale-preference fix are folded here.
+ the generic PPP ATD path. The FM350-specific first-enable override sends ATZ0
+ instead of the unsupported ATZ form. The 4-second GMR guard, IPv4-only DNS
+ relaxation, set-mode completion fix, and single-RAT stale-preference fix are
+ folded here.
 Author: rationalsa <belaboxproject@gmail.com>
 Origin: vendor, https://github.com/BELABOX/modemmanager/commit/da01610c46c581b0c6f2acd0ac50f5bba666efdf
 Origin-Commit: da01610c46c581b0c6f2acd0ac50f5bba666efdf
@@ -23,7 +25,7 @@ Applied-Upstream: no
 Upstream-Status: NOT UPSTREAM; no USB/RNDIS fm350gl plugin exists in 1.24.2 or upstream main
 Rationale: The USB 0e8d:7126/7127 compositions expose RNDIS plus AT ports but no MBIM/QMI port. Generic ModemManager therefore issues ATD*99***N# and the modem returns 0,NONE. The bearer must use +CGACT and the RNDIS net port.
 Credit: BELABOX-authored fixes forward-ported by CeraLive; this patch is not CeraLive-originated work.
-Last-Update: 2026-08-22
+Last-Update: 2026-08-23
 
 ---
  meson.build                                   |   1 +
@@ -31,7 +33,7 @@ Last-Update: 2026-08-22
  src/plugins/fm350gl/77-mm-fm350gl.rules       |  32 ++
  .../fm350gl/mm-broadband-bearer-fm350gl.c     | 525 ++++++++++++++++++
  .../fm350gl/mm-broadband-bearer-fm350gl.h     |  46 ++
- .../fm350gl/mm-broadband-modem-fm350gl.c      | 297 ++++++++++
+ .../fm350gl/mm-broadband-modem-fm350gl.c      | 330 +++++++++++
  .../fm350gl/mm-broadband-modem-fm350gl.h      |  44 ++
  .../fm350gl/mm-modem-helpers-fm350gl.c        | 162 ++++++
  .../fm350gl/mm-modem-helpers-fm350gl.h        |  25 +
@@ -39,7 +41,7 @@ Last-Update: 2026-08-22
  .../tests/test-modem-helpers-fm350gl.c        |  96 ++++
  src/plugins/meson.build                       |  21 +
  src/plugins/mm-builtin-plugins.c              |   6 +
- 13 files changed, 1330 insertions(+)
+ 13 files changed, 1363 insertions(+)
  create mode 100644 src/plugins/fm350gl/77-mm-fm350gl.rules
  create mode 100644 src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c
  create mode 100644 src/plugins/fm350gl/mm-broadband-bearer-fm350gl.h
@@ -700,7 +702,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..6b061b88e04ab658021baa63321a1f0ded48684f
 --- /dev/null
 +++ b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.c
-@@ -0,0 +1,297 @@
+@@ -0,0 +1,330 @@
 +/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 +/*
 + * This program is free software; you can redistribute it and/or modify
@@ -727,6 +729,36 @@ index 0000000000000000000000000000000000000000..6b061b88e04ab658021baa63321a1f0d
 +
 +G_DEFINE_TYPE_EXTENDED (MMBroadbandModemFm350gl, mm_broadband_modem_fm350gl, MM_TYPE_BROADBAND_MODEM, 0,
 +                        G_IMPLEMENT_INTERFACE (MM_TYPE_IFACE_MODEM, iface_modem_init))
++
++static void
++enabling_modem_init (MMBroadbandModem   *self,
++                     GAsyncReadyCallback callback,
++                     gpointer            user_data)
++{
++    MMPortSerialAt *primary;
++
++    primary = mm_base_modem_peek_port_primary (MM_BASE_MODEM (self));
++    if (!primary) {
++        g_task_report_new_error (self,
++                                 callback,
++                                 user_data,
++                                 enabling_modem_init,
++                                 MM_CORE_ERROR,
++                                 MM_CORE_ERROR_FAILED,
++                                 "Failed to run init command: primary port missing");
++        return;
++    }
++
++    mm_base_modem_at_command_full (MM_BASE_MODEM (self),
++                                   MM_IFACE_PORT_AT (primary),
++                                   "Z0",
++                                   6,
++                                   FALSE,
++                                   FALSE,
++                                   NULL,
++                                   callback,
++                                   user_data);
++}
 +
 +/*****************************************************************************/
 +/* Delayed current-capabilities load                                         */
@@ -997,6 +1029,9 @@ index 0000000000000000000000000000000000000000..6b061b88e04ab658021baa63321a1f0d
 +static void
 +mm_broadband_modem_fm350gl_class_init (MMBroadbandModemFm350glClass *klass)
 +{
++    MMBroadbandModemClass *broadband_modem_class = MM_BROADBAND_MODEM_CLASS (klass);
++
++    broadband_modem_class->enabling_modem_init = enabling_modem_init;
 +}
 diff --git a/src/plugins/fm350gl/mm-broadband-modem-fm350gl.h b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.h
 new file mode 100644

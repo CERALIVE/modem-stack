@@ -47,6 +47,7 @@ require "ci/generate-release-manifest.sh"
 require "ci/suffix-contract.sh"
 require "ci/test-suffix-coherence-manifest.sh"
 require "ci/test-release-workflow-wiring.sh"
+require "ci/test-fm350-patch-contract.sh"
 require "ci/check-upstream-freshness.sh"
 require "ci/test-check-upstream-freshness.sh"
 require "ci/build-companion.sh"
@@ -117,6 +118,9 @@ bash "$HERE/test-suffix-coherence-manifest.sh" >/dev/null
 # against stock bookworm dependencies instead of the carried ones.
 echo "  running release.yml differential wiring contract..."
 bash "$HERE/test-release-workflow-wiring.sh" >/dev/null
+
+echo "  running FM350 patch contract..."
+bash "$HERE/test-fm350-patch-contract.sh" >/dev/null
 
 # The upstream freshness proof is offline and fixture-driven, so it needs no docker, no network
 # and no built .deb — exactly the kind of invariant this lightweight lane should exercise.
