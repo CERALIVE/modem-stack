@@ -177,6 +177,8 @@ export function createRuntimeCompositionOperation(
 		});
 		const current = await lease.run(queries.current);
 		const enumeration = await lease.run(queries.enumerate);
+		if (!current.ok || !enumeration.ok)
+			return suppressed('no-return-path', 'A runtime composition query failed');
 		const resolved = resolveRuntimeCompositionCapability({
 			vendor,
 			currentResponse: current.raw,
