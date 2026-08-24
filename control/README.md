@@ -173,6 +173,11 @@ represented return path. Its suppression vocabulary is `unknown-vendor`,
 no targets. Unknown/disabled/blocked decisions happen before transport contact, and a
 capability read sends only the named READ/TEST forms, never a SET.
 
+The current and enumeration replies must both carry a successful AT result before their raw
+bodies are parsed. If either query fails, the operation returns the existing `no-return-path`
+suppression with an empty offer; parseable-looking data followed by `ERROR` cannot make a
+disruptive target writable.
+
 A reviewed catalog transition still provides the strongest success proof: canonical mode
 and USB descriptors must both match. Without one, the weaker fallback proof is the
 re-enumerated device's own post-switch READ reporting the target. AT `OK` is never success.
