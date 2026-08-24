@@ -32,7 +32,9 @@ vendors are queried with exact reviewed READ/TEST forms, targets come from the d
 enumeration only when it includes a return path, and writes retain the shared admission,
 journal, rollback, readback, identity, and streaming-interlock fences. Reviewed catalog
 descriptors remain the strongest success proof; otherwise a weaker post-switch device READ
-must report the target. Band certification remains catalog-gated and unchanged.
+must report the target. Both capability-query replies must first report AT success; a failed
+current or enumeration reply exposes no targets even if its raw text contains parseable mode
+data before `ERROR`. Band certification remains catalog-gated and unchanged.
 
 ## Versioning at a glance
 

@@ -544,6 +544,12 @@ shared mutation admission lease, durable journal, armed rollback, and required r
 the existing transition still keeps fail-closed identity, the streaming interlock, MM
 inhibit/uninhibit, and the bounded drop/re-enumeration wait.
 
+Both READ/TEST replies must also carry `AtResponse.ok === true` before either raw body is
+parsed. A failed current OR enumeration query is suppressed as `no-return-path` with no
+current mode, no enumerated modes, and no offerable targets — even when its raw body contains
+a syntactically valid vendor line before `ERROR`. Multiline response parsing may decode only
+a transport-successful reply; it can never promote failed AT traffic into a write surface.
+
 Success has two proof tiers. **Tier 1 remains strongest and unchanged:** when a reviewed
 catalog transition matches the exact SET command, the re-enumerated canonical mode and
 USB descriptors must both match its `expectedDescriptors`. **Tier 2 is explicitly
