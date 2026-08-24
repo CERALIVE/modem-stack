@@ -300,6 +300,13 @@ and relies on kernel lock lifetime plus PID liveness to recover after holder dea
 conventional caller-selected path is `DEFAULT_MODEM_CONTROL_LOCK_PATH`; the adapter itself
 has no hidden path and there is no no-op ownership implementation.
 
+The lock holder is an external `/bin/cat` kept alive by a pipe round-trip after `flock`
+acquires the inode. It deliberately does not re-execute `process.execPath`: in a Bun-compiled
+CLI that path is the application binary, not an evaluator, so `-e` re-enters argument parsing
+and falsely looks like lock contention. The integration suite pins the no-evaluator-argument
+contract alongside real cross-process exclusion; the compiled CLI is covered by its arm64 and
+amd64 build plus hardware smoke.
+
 `createModemControlCompositionRoot()` fails if an ownership port is absent and throws
 `CompositionRootAlreadyExistsError` for a second live root in the same process. Within one
 root, `actorFor(PhysicalModemId)` returns the same `ModemActor` to every caller for that

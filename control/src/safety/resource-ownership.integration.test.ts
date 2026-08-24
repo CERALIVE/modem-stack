@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createFlockResourceOwnershipPort } from './flock-resource-ownership';
 
 type RootMessage =
 	| { readonly type: 'acquired'; readonly holderPid: number }
@@ -64,6 +65,24 @@ function nextMessage(child: ChildProcessWithoutNullStreams): Promise<RootMessage
 }
 
 describe('flock resource ownership across composition roots', () => {
+	test('Given a flock wrapper that rejects evaluator arguments, When ownership is acquired, Then the adapter uses a passive holder', async () => {
+		const path = await lockPath();
+		const fakeFlock = join(path, '..', 'fake-flock');
+		await writeFile(
+			fakeFlock,
+			'#!/bin/sh\nfor argument in "$@"; do\n  if [ "$argument" = "-e" ]; then exit 1; fi\ndone\ncat\n',
+		);
+		await chmod(fakeFlock, 0o755);
+
+		const result = await createFlockResourceOwnershipPort({
+			lockPath: path,
+			flockBinary: fakeFlock,
+		}).acquire({ resource: 'usb-hub' });
+
+		expect(result.status).toBe('acquired');
+		if (result.status === 'acquired') await result.lease.release();
+	});
+
 	test('Given two roots and one lock path, When both acquire, Then exactly one acquires and one refuses without queueing', async () => {
 		const path = await lockPath();
 		const roots = [spawnRoot(path), spawnRoot(path)];

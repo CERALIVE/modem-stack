@@ -207,6 +207,11 @@ holder PID/start-time metadata, and clean release when the holder process dies. 
 is mandatory input; `DEFAULT_MODEM_CONTROL_LOCK_PATH` is only a conventional value callers
 may select. There is no pass-through ownership implementation.
 
+The adapter holds the lock with an external `/bin/cat` whose pipe round-trip acknowledges
+successful acquisition. It never launches `process.execPath -e`: a compiled Bun executable's
+`process.execPath` points back to the application, so re-executing it would parse `-e` as an
+application option and misreport the resulting exit as contention.
+
 One `createModemControlCompositionRoot()` may be live per process. A second construction
 throws, and `actorFor(physicalModemId)` shares one actor for that modem across all callers in
 the root. `UhubctlPort` has no control-package implementation; an embedding process must
