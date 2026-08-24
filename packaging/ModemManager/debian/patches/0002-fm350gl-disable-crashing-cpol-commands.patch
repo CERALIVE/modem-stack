@@ -1,0 +1,33 @@
+From 20a0f4d12d583f20006a04170b07d9bd62c24514 Mon Sep 17 00:00:00 2001
+From: rationalsa <belaboxproject@gmail.com>
+Date: Sat, 22 Aug 2026 19:02:50 -0500
+Subject: [PATCH 2/3] fm350gl: disable CPOL commands that crash the modem
+
+Description: Disable preferred-network CPOL operations on FM350-GL USB identities
+Author: rationalsa <belaboxproject@gmail.com>
+Origin: vendor, https://github.com/BELABOX/modemmanager/commit/b4377c5028a0de4435b86f7aad9114e9443d69e4
+Origin-Commit: b4377c5028a0de4435b86f7aad9114e9443d69e4
+Bug: https://gitlab.freedesktop.org/mobile-broadband/ModemManager/-/issues/899
+Forwarded: no (merge request drafted but not filed; no upstream MR URL exists)
+Applied-Upstream: no
+Upstream-Status: MECHANISM UPSTREAM, DEVICE ROW NOT UPSTREAM; ID_MM_PREFERRED_NETWORKS_CPOL_DISABLED is upstream but no row covers 0e8d:7126/7127
+Rationale: BELABOX found that CPOL commands crash this modem. Apply ModemManager's existing fail-safe udev tag to both observed FM350-GL RNDIS compositions.
+Credit: BELABOX-authored fix forward-ported by CeraLive; this patch is not CeraLive-originated work.
+Last-Update: 2026-08-22
+
+---
+ src/plugins/fm350gl/77-mm-fm350gl.rules | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/plugins/fm350gl/77-mm-fm350gl.rules b/src/plugins/fm350gl/77-mm-fm350gl.rules
+index f0ab95930cf6e725d2acad3d416c0ec16040207a..d88cc6addfa7b5fd80b15497cb762222b4b2f7a4 100644
+--- a/src/plugins/fm350gl/77-mm-fm350gl.rules
++++ b/src/plugins/fm350gl/77-mm-fm350gl.rules
+@@ -6,6 +6,7 @@ GOTO="mm_fm350gl_port_types_end"
+ 
+ LABEL="mm_fm350gl_port_types_vendorcheck"
+ SUBSYSTEMS=="usb", ATTRS{bInterfaceNumber}=="?*", ENV{.MM_USBIFNUM}="$attr{bInterfaceNumber}"
++ATTRS{idProduct}=="712[6-7]", ENV{ID_MM_PREFERRED_NETWORKS_CPOL_DISABLED}="1"
+ 
+ # AT+GTUSBMODE=40 (0e8d:7126): RNDIS+AT+AP(GNSS)+META+DEBUG+NPT+ADB
+ ATTRS{idProduct}=="7126", ENV{.MM_USBIFNUM}=="00", SUBSYSTEM=="tty", ENV{ID_MM_PORT_IGNORE}="1"

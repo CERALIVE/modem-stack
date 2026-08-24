@@ -25,13 +25,13 @@ import {
 	UFI_INTERFACE,
 	ufiLoginPost,
 	ufiReadPost,
-	ZTE_FINGERPRINT_CMD,
+	ZTE_EVIDENCE_CMD,
 	ZTE_INTERFACE,
 	ZTE_LEGACY_PASSWORD,
+	ZTE_MF79U_WA_VERSION,
 	ZTE_SALTED_PASSWORD,
 	ZTE_STOK,
 	ZTE_TELEMETRY_CMD,
-	ZTE_VERSIONS_CMD,
 	zteGet,
 	ztePost,
 } from '../../test-support/conformance';
@@ -110,14 +110,14 @@ describe('Huawei HiLink per-firmware transcripts', () => {
 });
 
 describe('ZTE goform per-firmware transcripts', () => {
-	test('MF79U legacy: one fingerprint GET, ONE form login with a base64 password, one telemetry GET', async () => {
+	test('MF79U B03: one batched evidence GET selects salted SHA-256 under bare LOGIN', async () => {
 		// When
 		const transcripts = await transcriptsOf('fleet/zte-mf79u');
 
 		// Then
 		expect(transcripts.zte).toEqual([
-			zteGet(ZTE_FINGERPRINT_CMD, ZTE_INTERFACE),
-			ztePost({ goformId: 'LOGIN', isTest: 'false', password: ZTE_LEGACY_PASSWORD }, ZTE_INTERFACE),
+			zteGet(ZTE_EVIDENCE_CMD, ZTE_INTERFACE, { multiData: true }),
+			ztePost({ goformId: 'LOGIN', isTest: 'false', password: ZTE_SALTED_PASSWORD }, ZTE_INTERFACE),
 			zteGet(ZTE_TELEMETRY_CMD, ZTE_INTERFACE),
 		]);
 	});
@@ -128,8 +128,7 @@ describe('ZTE goform per-firmware transcripts', () => {
 
 		// Then
 		expect(transcripts.zte).toEqual([
-			zteGet(ZTE_FINGERPRINT_CMD, ZTE_INTERFACE),
-			zteGet('LD', ZTE_INTERFACE),
+			zteGet(ZTE_EVIDENCE_CMD, ZTE_INTERFACE, { multiData: true }),
 			ztePost(
 				{
 					goformId: 'LOGIN_MULTI_USER',
@@ -140,17 +139,17 @@ describe('ZTE goform per-firmware transcripts', () => {
 				},
 				ZTE_INTERFACE,
 			),
-			zteGet(ZTE_VERSIONS_CMD, ZTE_INTERFACE, { cookie: ZTE_STOK, multiData: true }),
 			zteGet('RD', ZTE_INTERFACE, { cookie: ZTE_STOK }),
 			zteGet(ZTE_TELEMETRY_CMD, ZTE_INTERFACE),
 		]);
 	});
 
-	test('neither goform profile puts a password on the wire in the other one’s encoding', () => {
+	test('all three password shapes stay distinct and no wire value carries the raw password', () => {
 		// Given / When / Then
 		expect(ZTE_LEGACY_PASSWORD).not.toBe(ZTE_SALTED_PASSWORD);
 		expect(ZTE_LEGACY_PASSWORD).not.toContain(CONFORMANCE_CREDENTIALS.password);
 		expect(ZTE_SALTED_PASSWORD).toMatch(/^[0-9A-F]{64}$/);
+		expect(ZTE_MF79U_WA_VERSION).toBe('BD_XCBZHKMF79UV1.0.0B03');
 	});
 });
 

@@ -29,6 +29,7 @@ import {
 	type RecordedExchange,
 	SANITIZED_SUBSCRIBER_IDENTIFIERS,
 	writeMatrixArtifact,
+	ZTE_EVIDENCE_CMD,
 } from '../../test-support/conformance';
 import { HILINK_PATHS } from './huawei-hilink/provider';
 
@@ -207,16 +208,19 @@ describe('bounded credential attempts', () => {
 		expect(run.result.status).toBe('ambiguous');
 	});
 
-	test('an MF79U lockout is refused on one attempt and never re-tried as another algorithm', () => {
+	test('an MF79U lockout is refused after one evidence GET and before any login POST', () => {
 		// Given
-		const run = runOf('lockout-unknown/zte-mf79u');
+		const run = runOf('lockout/zte-mf79u');
 
 		// When
 		const posts = zteLogins(run);
+		const evidenceGets = run.transcripts.zte.filter(
+			(exchange) => exchange.method === 'GET' && exchange.query.cmd === ZTE_EVIDENCE_CMD,
+		);
 
 		// Then
-		expect(posts).toHaveLength(1);
-		expect(posts.map(goformId)).toEqual(['LOGIN']);
+		expect(posts).toEqual([]);
+		expect(evidenceGets).toHaveLength(1);
 	});
 
 	test('MF266-shaped answers to an MF79U login never provoke a salted retry', () => {

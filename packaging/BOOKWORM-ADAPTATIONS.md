@@ -1,18 +1,22 @@
 # Bookworm adaptations
 
 The four sources are rebuilt from their **pinned sid/trixie `debian/<ver>-<rev>` packaging**
-([`upstream-pins.yaml`](upstream-pins.yaml) `salsa_commit_sha`) — **zero source patches**
-(`debian/patches/` is empty for every source; see [`POLICY.md`](../POLICY.md)). The sid
+([`upstream-pins.yaml`](upstream-pins.yaml) `salsa_commit_sha`). libmbim, libqmi, and
+libqrtr-glib carry zero source patches. ModemManager carries only the project-owner-approved,
+three-patch BELABOX-derived FM350-GL series documented in
+[`ADR-FM350-RNDIS-BEARER.md`](../docs/adr/ADR-FM350-RNDIS-BEARER.md) and
+[`POLICY.md`](../POLICY.md). The sid
 packaging does not build unmodified on bookworm, so a small set of **packaging-metadata**
 adaptations is applied, limited to the pre-authorized salsa-deviation class: `debian/control`
 build-dependency relaxations/substitutions and `debian/rules` meson/install-path pins that
 mirror stock bookworm's own packaging of the same source. Nothing else — no maintainer-script
-changes, no package add/remove/rename, no `Breaks`/`Replaces`/`Conflicts` edits, no symbols
-regeneration, no `debian/patches/` content. This file records every adaptation and why.
+changes, no package add/remove/rename, no `Breaks`/`Replaces`/`Conflicts` edits, and no symbols
+regeneration. This file records every adaptation and the one approved source series.
 
 Each `debian/` dir here is byte-identical to the pinned salsa commit **except** for the hunks
-below. The delta is captured per source as a recursive diff against the raw salsa tree at its
-pinned SHA — `test-results/upstream-currency/1.2/debdiff-<source>.txt` (×4). Symbols files are
+and ModemManager patch series below. The delta is captured per source as a recursive diff
+against the raw salsa tree at its pinned SHA —
+`test-results/upstream-currency/1.2/debdiff-<source>.txt` (×4). Symbols files are
 **byte-preserved** from the salsa tree (verified sha256-identical); any need to regenerate a
 symbols file is a HARD STOP, not a local fix.
 
@@ -138,16 +142,39 @@ Two meson flags added to `override_dh_auto_configure` (companions to adaptation 
   usr/lib/udev"*. Pinning `udevdir` (and the usr-merged `/usr/lib/systemd/system` unit dir)
   makes the install paths match the `.install` files.
 
+## ModemManager — approved FM350-GL source patch series
+
+`ModemManager/debian/patches/series` carries exactly three patches against the pinned
+ModemManager 1.24.2 source:
+
+1. A 1.24-native forward-port of BELABOX's FM350-GL USB/RNDIS bearer and `+GTACT` mode
+   handling, derived from commits `da01610c46c581b0c6f2acd0ac50f5bba666efdf`,
+   `419dc598d3f2c11f479dacdc2f6ef0e787e6ea3b`,
+   `90bcd376405906d3a94b0c239689eef1a3899ed2`,
+   `9e2bc4992a251b02f75280a2d2b1020227d2bfe8`, and
+   `9716d38b6a81a79b47a16ea96c27164219de6739`.
+2. The FM350 CPOL crash-disable row from
+   `b4377c5028a0de4435b86f7aad9114e9443d69e4`.
+3. The extended `+COPS` parser fix and regression test from
+   `43e09a768e3855f3afb93e517902c1e0e25ed676`.
+
+All three retain BELABOX author `rationalsa <belaboxproject@gmail.com>` and record
+`Forwarded: no`: the upstream offer is drafted but not filed. The project owner approved
+this exact carry on 2026-08-22 under the narrow POLICY exception. Builds on amd64 and arm64
+prove source compatibility only; the real-board bearer drill remains required before any
+hardware support claim.
+
 ## Summary of the deviation surface
 
-| Source        | `debian/control`                                   | `debian/rules`            |
-|---------------|----------------------------------------------------|---------------------------|
-| ModemManager  | GI-1.74 swap; debhelper `13.11.6`→`13.11.4`; `systemd-dev`→`udev` | +2 meson install-dir pins |
-| libmbim       | GI-1.74 swap                                        | (pristine)                |
-| libqmi        | GI-1.74 swap                                        | (pristine)                |
-| libqrtr-glib  | GI-1.74 swap                                        | (pristine)                |
+| Source        | `debian/control`                                   | `debian/rules`            | Source patches |
+|---------------|----------------------------------------------------|---------------------------|----------------|
+| ModemManager  | GI-1.74 swap; debhelper `13.11.6`→`13.11.4`; `systemd-dev`→`udev` | +2 meson install-dir pins | 3-patch FM350-GL series above |
+| libmbim       | GI-1.74 swap                                        | (pristine)                | none |
+| libqmi        | GI-1.74 swap                                        | (pristine)                | none |
+| libqrtr-glib  | GI-1.74 swap                                        | (pristine)                | none |
 
-No other `debian/` file differs from the pinned salsa tree for any source (verified:
+No other `debian/` file differs from the pinned salsa tree for any source (verified for the
+pre-series adaptation baseline by:
 `test-results/upstream-currency/1.2/relationship-audit.txt` — zero binary-package
 relationship-field changes, zero maintainer-script changes, zero package add/remove/rename;
 `debdiff-<source>.txt` ×4 — only the hunks above).

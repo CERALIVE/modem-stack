@@ -13,9 +13,21 @@
 
 import { type EpochMillis, epochMillis } from '../domain';
 import { redact } from '../redact';
+import { RUNTIME_COMPOSITION_QUERY_REGISTRY } from '../usb-mode/runtime-capability';
 
-/** The baseline allowlist — identify only. Catalog commands are unioned in per SKU. */
-export const AT_BASELINE_ALLOWLIST: ReadonlySet<string> = new Set(['ATI']);
+/** Named read-only fence: the exact vendor READ/TEST forms reviewed for runtime discovery. */
+export const AT_RUNTIME_QUERY_ALLOWLIST: ReadonlySet<string> = new Set(
+	Object.values(RUNTIME_COMPOSITION_QUERY_REGISTRY).flatMap(({ current, enumerate }) => [
+		current,
+		enumerate,
+	]),
+);
+
+/** Identify plus reviewed runtime queries. Exact catalog/runtime SET commands union in per use. */
+export const AT_BASELINE_ALLOWLIST: ReadonlySet<string> = new Set([
+	'ATI',
+	...AT_RUNTIME_QUERY_ALLOWLIST,
+]);
 
 /** Union the baseline allowlist with a catalog entry's declared transition commands. */
 export function computeAtAllowlist(commands: Iterable<string>): ReadonlySet<string> {

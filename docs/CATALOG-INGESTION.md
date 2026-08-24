@@ -203,6 +203,22 @@ provenance says exactly what it is.
 Every box is a human judgement a machine cannot tick. That is why the checklist exists and
 why the seam stops one step short of the commit.
 
+## Runtime composition switching does not wait for promotion
+
+Catalog promotion is still the only path to the strongest composition postcondition, but
+it is no longer the source of the provider's offered target set. For a vendor whose exact
+READ, TEST, and SET forms are in the reviewed runtime registries, the ModemManager provider
+asks the device for its current mode and enumerated modes. It offers a target only when the
+same enumeration contains the current mode, so the represented vocabulary includes a return
+path. A catalog miss on that interrogable device is not an `uncertified` suppression.
+
+The transition uses the catalog when an entry matches the selected exact SET command:
+canonical mode plus `expectedDescriptors` remain the strongest, tier-1 proof. Without such
+an entry, tier 2 requires a post-re-enumeration vendor READ to report the target. Tier 2 is
+weaker because it proves the modem's reported setting but not the reviewed descriptor
+composition. AT `OK` proves neither tier. This runtime fallback changes no promotion rule,
+does not add entries, and does not apply to band certification.
+
 ---
 
 ## Using it

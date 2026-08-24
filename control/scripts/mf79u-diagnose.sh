@@ -17,7 +17,40 @@ headers_file="$(mktemp)"
 chmod 600 "$headers_file"
 trap 'rm -f "$headers_file"' EXIT
 
-encoded_password="$(printf '%s' "$MF79U_BENCH_PASSWORD" | base64 | tr -d '\n')"
+evidence_cmd='LD,psw_fail_num_str,login_lock_time,wa_inner_version,cr_version'
+evidence_body="$(curl --silent --show-error --max-time 10 --interface "$interface_name" \
+	--get \
+	--data-urlencode 'isTest=false' \
+	--data-urlencode "cmd=$evidence_cmd" \
+	--data 'multi_data=1' \
+	--header "Origin: $admin_url" \
+	--header "Referer: $admin_url/index.html" \
+	"$admin_url/goform/goform_get_cmd_process")"
+
+remaining_attempts="$(jq -er '.psw_fail_num_str | tonumber' <<<"$evidence_body")" || {
+	printf '%s\n' 'protocol-mismatch'
+	exit 2
+}
+lock_time="$(jq -er '.login_lock_time | tonumber' <<<"$evidence_body")" || {
+	printf '%s\n' 'protocol-mismatch'
+	exit 2
+}
+if (( lock_time > 0 || remaining_attempts <= 0 )); then
+	printf '%s\n' 'lockout'
+	exit 4
+fi
+
+ld="$(jq -er '.LD // empty' <<<"$evidence_body")" || true
+wa_version="$(jq -er '.wa_inner_version // empty' <<<"$evidence_body")" || true
+if [[ -n "$ld" && "$wa_version" == *MF79U* ]]; then
+	inner="$(printf '%s' "$MF79U_BENCH_PASSWORD" | sha256sum | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')"
+	encoded_password="$(printf '%s%s' "$inner" "$ld" | sha256sum | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')"
+elif [[ -z "$ld" && "$wa_version" == *MF79U* ]]; then
+	encoded_password="$(printf '%s' "$MF79U_BENCH_PASSWORD" | base64 | tr -d '\n')"
+else
+	printf '%s\n' 'protocol-mismatch'
+	exit 2
+fi
 request_body="goformId=LOGIN&isTest=false&password=$(printf '%s' "$encoded_password" | jq -sRr @uri)"
 
 response_body="$({
@@ -35,14 +68,14 @@ if [[ "$response_body" == *'"result":"0"'* ]] && grep -Eiq '^set-cookie:[[:space
 	printf '%s\n' 'auth-accepted'
 	exit 0
 fi
-if [[ "$response_body" == *'"result"'* ]]; then
+if [[ "$response_body" == *'"result":"3"'* ]]; then
 	printf '%s\n' 'auth-rejection'
 	exit 3
 fi
-if [[ "$response_body" == *'"LD"'* ]] || [[ "$response_body" == *'LOGIN_MULTI_USER'* ]]; then
+if [[ "$response_body" == *'"result":"1"'* ]] || [[ "$response_body" == *'"result"'* ]]; then
 	printf '%s\n' 'protocol-mismatch'
 	exit 2
 fi
 
-printf '%s\n' 'lockout-unknown'
-exit 4
+printf '%s\n' 'protocol-mismatch'
+exit 2

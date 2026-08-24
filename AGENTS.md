@@ -14,18 +14,19 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 |-----------|----------|------|
 | `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, injected admission/ownership/USB-hub ports, USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface**, capability-module **support-claim taxonomy + detection**, and the **band-lock** vocabulary + certification catalog (see §§ below). Published to public npm under `@ceralive` as **built ESM + `.d.ts`** across seven entry points (see § PUBLISHED PACKAGE SURFACE). |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
-| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, zero source patches (see `POLICY.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets so those four never absorb one. |
+| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, not a fork. libmbim/libqmi/libqrtr-glib remain source-unmodified; ModemManager carries exactly three owner-approved, BELABOX-derived FM350-GL patches, hardware-validated on the carrier-mediated USB topology after restoring the original `ATZ0` first-enable override (see `POLICY.md` and `docs/adr/ADR-FM350-RNDIS-BEARER.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets. |
 
 `control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a bookworm container.
 
 ## FIRST-PARTY COMPANION — `ceralive-modem-support`
 
-The four upstream sources are byte-faithful, zero-patch rebuilds. `ceralive-modem-support`
-(`packaging/ceralive-modem-support/`, `Architecture: all`) is the first-party package that
-keeps them that way: it owns the UNCONDITIONAL, generic modem system assets — CeraLive's
-identification-only udev rules, Zero-CD usb-modeswitch device data, and the FCC
-policy-reconciliation helper plus its oneshot unit. It ships **no FCC-unlock script at
-all**; an absent `/data/ceralive/fcc-unlock-policy.json` exits 0 and activates nothing,
+The first-party `ceralive-modem-support` package keeps CeraLive-owned system assets out of
+all four upstream recipes; the ModemManager FM350-GL source series is a separate, narrowly
+approved exception and owns no companion asset. The companion
+(`packaging/ceralive-modem-support/`, `Architecture: all`) owns the UNCONDITIONAL, generic
+modem system assets — CeraLive's identification-only udev rules, Zero-CD usb-modeswitch
+device data, and the FCC policy-reconciliation helper plus its oneshot unit. It ships **no
+FCC-unlock script at all**; an absent `/data/ceralive/fcc-unlock-policy.json` exits 0 and activates nothing,
 which is also the correct behaviour on generic Debian with no CeraLive partition layout.
 
 **Board-gated generated assets stay image-owned** — M.2 SIM quirk rows and per-slot modem UID
@@ -157,7 +158,7 @@ separate evidence-backed work.
 provider simultaneously. Each provider suite runs with only itself in the registry, which cannot
 answer whether a Huawei dongle stays a Huawei dongle while a ZTE provider and a UFI provider are
 also asking. **20 cases** — 9 fleet profiles + 11 safety cases (ambiguous collision,
-cross-profile refusal, 3 malformed, auth-expired, lockout-unknown, 2 unknown-firmware,
+cross-profile refusal, 3 malformed, auth-expired, lockout, 2 unknown-firmware,
 wrong-interface, wrong-transport) — each registering all four providers, expecting the EXACT
 decision. Full behaviour: [`docs/PROVIDER-MATCHING.md`](docs/PROVIDER-MATCHING.md) §
 "The conformance matrix".
@@ -298,6 +299,13 @@ an injected path, uses non-blocking `flock`, records the actual holder PID and s
 and relies on kernel lock lifetime plus PID liveness to recover after holder death. The
 conventional caller-selected path is `DEFAULT_MODEM_CONTROL_LOCK_PATH`; the adapter itself
 has no hidden path and there is no no-op ownership implementation.
+
+The lock holder is an external `/bin/cat` kept alive by a pipe round-trip after `flock`
+acquires the inode. It deliberately does not re-execute `process.execPath`: in a Bun-compiled
+CLI that path is the application binary, not an evaluator, so `-e` re-enters argument parsing
+and falsely looks like lock contention. The integration suite pins the no-evaluator-argument
+contract alongside real cross-process exclusion; the compiled CLI is covered by its arm64 and
+amd64 build plus hardware smoke.
 
 `createModemControlCompositionRoot()` fails if an ownership port is absent and throws
 `CompositionRootAlreadyExistsError` for a second live root in the same process. Within one
@@ -515,6 +523,35 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
   fleet-inventory capture (one identity bundle per acquired physical unit), RB-10 is the
   hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
   per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe.
+
+## USB-COMPOSITION SWITCH — RUNTIME OFFER, TIERED PROOF
+
+The ModemManager provider's `usbComposition` operation derives its targets from the
+device's own vendor READ + TEST replies through `resolveRuntimeCompositionCapability`.
+It never turns a model-catalog miss into `uncertified`. The only operator-facing
+suppressions are the exact literals `unknown-vendor`, `no-return-path`,
+`blocked-by-state`, and `provisioning-disabled`; every suppressed state carries zero
+offerable targets. An unknown vendor, a disabled provisioning setting, or a live-state
+block is decided before any AT transport call. A known device is offered only when its
+enumeration contains its current mode, proving that the represented vocabulary includes
+a return path.
+
+The AT fence widened by name, not by pattern. `AT_RUNTIME_QUERY_ALLOWLIST` contains only
+the four vendors' exact READ/TEST forms. `RUNTIME_COMPOSITION_SET_REGISTRY` builds one
+validated SET form per vendor, and only the selected enumerated target is unioned into
+the held lease. Capability reads send no SET form. The operation descriptor keeps the
+shared mutation admission lease, durable journal, armed rollback, and required readback;
+the existing transition still keeps fail-closed identity, the streaming interlock, MM
+inhibit/uninhibit, and the bounded drop/re-enumeration wait.
+
+Success has two proof tiers. **Tier 1 remains strongest and unchanged:** when a reviewed
+catalog transition matches the exact SET command, the re-enumerated canonical mode and
+USB descriptors must both match its `expectedDescriptors`. **Tier 2 is explicitly
+weaker:** when no reviewed transition exists, the re-enumerated device must report the
+raw target through its own vendor READ. AT `OK` is proof in neither tier. The catalog
+therefore remains valuable evidence without being a model allowlist for an interrogable
+device. This change is composition-only; band writes retain their separate four-proof
+certification gate.
 
 ## CAPABILITY MODULES — TAXONOMY AND DETECTION, NOT IMPLEMENTATION
 
@@ -1306,10 +1343,12 @@ own-number blocks in `control/src/redact.test.ts`.
 
 ## POLICY
 
-`packaging/` is a **no-fork** effort: the first release carries zero quilt patches; adding a
-patch later is an architecture gate (rationale + filed upstream MR + review);
-udev/plugin/device-support improvements go **upstream first** — this binds permanently,
-independent of phase. The Phase A → Phase B scope boundary is **version-gated at
+`packaging/` is a **no-fork** effort: the first release carried zero quilt patches; adding a
+patch later is an architecture gate (rationale + filed upstream MR + review). The sole current
+exception is the exact three-patch BELABOX-derived FM350-GL series approved by the project
+owner on 2026-08-22; its MR is still drafted, not filed, and its hardware drill remains open.
+This narrow exception does not weaken the default that udev/plugin/device-support improvements
+go **upstream first**. The Phase A → Phase B scope boundary is **version-gated at
 `v1.0.0`**: CeraUI / device-image / apt integration is out of scope through `v0.2.0` and
 authorized from the `v1.0.0` tag forward. Full terms: `POLICY.md` §4.
 The Fibocom **FM350** modem (PCIe / `mtk_t7xx`) is documented-**deferred**, not supported —
@@ -1347,9 +1386,10 @@ bun run verify:consumers  # install the tarball into standalone Node 26 + Bun pr
 
 `packaging/` runs in a `debian:bookworm` container; its contract/verification scripts live
 under `packaging/ci/`. The four sources' `debian/` recipes are checked in at
-`packaging/<Source>/debian/` (`ModemManager`, `libmbim`, `libqmi`, `libqrtr-glib` —
-byte-identical to their pinned salsa commits except the bookworm adaptations documented in
-`packaging/BOOKWORM-ADAPTATIONS.md`). `packaging/ci/build-bookworm.sh <amd64|arm64>` rebuilds
+`packaging/<Source>/debian/` (`ModemManager`, `libmbim`, `libqmi`, `libqrtr-glib` — matching
+their pinned salsa commits except the bookworm adaptations and the approved ModemManager
+FM350-GL series documented in `packaging/BOOKWORM-ADAPTATIONS.md`).
+`packaging/ci/build-bookworm.sh <amd64|arm64>` rebuilds
 them from source in the mandatory bootstrap order (`libqrtr-glib → libmbim → libqmi →
 modemmanager`) via a temporary local apt repo, on native amd64 or full-system-QEMU arm64
 (never cross-built), and asserts the 9-package runtime closure. `.deb` output lands in the
@@ -1479,19 +1519,22 @@ Every HTTP request is interface-bound and redirect-disabled. Credentials, passwo
 
 ## ZTE GOFORM PROVIDER (TODO 25)
 
-`control/src/providers/zte-goform/` owns two incompatible, exact replay-backed profiles:
-`mf79u-legacy` uses `LOGIN` with a base64 password and browser-equivalent Origin/Referer;
-`mf266-salted` uses `LOGIN_MULTI_USER`, `LD`, salted SHA-256, `stok`, `RD`, and derived `AD`.
-The firmware-selected algorithm receives one bounded attempt and never falls through to the
-other profile. Cookies and derivatives are memory-only and sanitized fixtures expose only
+`control/src/providers/zte-goform/` owns three incompatible, exact replay-backed profiles:
+`mf79u-legacy` uses `LOGIN` with a base64 password; `mf79u-ld-salted` uses the same bare
+`LOGIN` with `SHA256(SHA256(password)+LD)` (the MF79U B03 dialect); and `mf266-salted` uses
+`LOGIN_MULTI_USER` with the salted hash, `stok`, `RD`, and derived `AD`. A batched pre-auth
+`multi_data` GET reads `LD`, remaining attempts, lock time, and both version fields. That
+evidence selects the algorithm and refuses a positive lockout before any credential POST;
+firmware text alone never selects an encoding. The selected algorithm receives one bounded
+attempt and never falls through to another profile. Cookies and derivatives are memory-only and sanitized fixtures expose only
 redaction markers. Unknown firmware may match the ZTE response shape but receives only the
 `zte-unknown-read-only` operation surface. All ZTE operation surfaces are currently read-only;
 in particular `wifi.enabled` is absent until a safe write plus readback is captured.
 
 The bench-only harness `control/scripts/mf79u-diagnose.sh` requires
 `MF79U_BENCH_PASSWORD` and one redacted browser request-shape manifest. It performs at most
-one request and emits only `auth-accepted`, `protocol-mismatch`, `auth-rejection`, or
-`lockout-unknown`; see `docs/MF79U-DIAGNOSIS.md`.
+one login request and emits only `auth-accepted`, `protocol-mismatch`, `auth-rejection`, or
+`lockout`; see `docs/MF79U-DIAGNOSIS.md`.
 
 ## UFI / HIMI PROVIDER (TODO 26) — READ-ONLY, PLUS THE QUALCOMM PROHIBITION FENCES
 
@@ -1536,3 +1579,41 @@ the cached session and surfaces as an honest `auth-expired` reading rather than 
 loop. The admin password is EPHEMERAL BENCH INPUT (`UFI_BENCH_PASSWORD`), injected for a
 supervised run only, and `credential-fence.test.ts` scans tracked and intended-untracked
 files for it plus its base64/SHA-256 derivatives.
+
+### Bench descriptor capture — tooling, schema, and measured composition
+
+`control/scripts/ufi-himi-capture.sh` + `control/scripts/ufi-himi-evidence.ts` are the
+read-only evidence-capture path for `05c6:9091`, and they live in `control/scripts/`
+rather than in the provider directory on purpose: bench tooling is not published
+(`files: ["dist"]`), and `no-write-path.test.ts` enumerates the provider directory
+exactly, so a file added there would be a change to that gate. **No bundle CONTENT is
+committed** — the redacted 2026-08-23 hardware bundle remains repo-local and gitignored.
+That drill measured a four-interface QMI + ADB-class composition: interface 2 was claimed
+by `qmi_wwan`, no `ff/ff/30` DIAG descriptor existed, and the HIMI identity endpoint was
+unreachable through the target's own `wwan1`. The tracked classification is in
+`docs/UFI-DIAG-PROBE.md`; no composition change was attempted.
+
+- **The bundle is `manifest.json` + five capture files + one credential-gated HIMI file**,
+  staged in a temp directory and moved into place as a unit, so a published path either
+  holds a complete bundle or does not exist. With no matching device the script answers
+  `device-not-present` on stdout and exits 3 having written nothing.
+- **Per-step status is five-valued, not a boolean** — `captured` / `empty` /
+  `tool-unavailable` / `unreachable` / `skipped-no-credential`. The bench image ships no
+  `usbutils` (RB-9), so "no `lsusb` here" and "no device there" must not collapse.
+- **Redaction happens at capture time and the rules have ONE implementation** — the
+  script's `--redact-filter` mode, which the test EXECUTES rather than re-expressing. Two
+  layers mirroring `redact.ts`: key-based masking plus a MAC/14+-digit backstop. The
+  staged bundle is then swept and a surviving identifier DESTROYS it (exit 4); there is no
+  override flag. `sweepUfiEvidenceText` is the tested twin of the script's own sweep, and
+  two checkers that disagree fail the capture.
+- **The descriptor triple and the driver binding are two facts and are never merged.**
+  `classifyUfiInterfaceRole` answers `diag` only through `classifyUfiDiagEvidence` itself,
+  so the bench analysis cannot drift from the shipped rule; `ff/ff/*` outside `30` stays
+  `vendor-specific` and the CAPTURED binding says who claimed it. Upstream matching
+  `05c6:9091` in `qmi_wwan.c` under an unrelated annotation, and QCSuper documenting the
+  same id on a different device, are evidence about neither — only this unit's descriptor
+  is.
+- **A static gate scans both files** for `usb_modeswitch`, `setprop`, a shell-transport
+  invocation, an emergency-download tool, `AT!`, an uppercase AT write form and a QMI
+  write, each with a non-vacuity control, and asserts every command literal in them is a
+  member of `UFI_COMMANDS`. Procedure: [`docs/UFI-DIAG-PROBE.md`](docs/UFI-DIAG-PROBE.md).

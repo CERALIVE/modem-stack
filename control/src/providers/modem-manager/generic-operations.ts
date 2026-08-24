@@ -22,6 +22,10 @@ import {
 } from '../../radio';
 import type { ProviderExecutionContext } from '../contracts';
 import { mapModemManagerError } from './errors';
+import {
+	createRuntimeCompositionOperation,
+	type RuntimeCompositionOperationDeps,
+} from './runtime-composition-operation';
 import type {
 	ContextReadOperation,
 	ContextWriteOperation,
@@ -38,6 +42,7 @@ const PROFILE = 'generic-mm';
 
 export interface GenericOperationsDeps {
 	readonly backend: MmDbusBackend;
+	readonly runtimeComposition?: RuntimeCompositionOperationDeps;
 	readSnapshot(context: ProviderExecutionContext): Promise<ModemManagerSnapshotResult>;
 }
 
@@ -106,7 +111,10 @@ function receiptReason(reason: string): string {
 
 export function createGenericOperations(
 	deps: GenericOperationsDeps,
-): Pick<ModemManagerProviderOperations, 'radio' | 'modes' | 'bands' | 'signal' | 'sim' | 'power'> {
+): Pick<
+	ModemManagerProviderOperations,
+	'radio' | 'modes' | 'bands' | 'signal' | 'sim' | 'power' | 'usbComposition'
+> {
 	const readField = async <O>(
 		context: ProviderExecutionContext,
 		capability: 'modeRead' | 'signalRead' | 'simRead' | 'powerRead',
@@ -262,5 +270,6 @@ export function createGenericOperations(
 		read: (context) =>
 			readField(context, 'powerRead', (snapshot) => snapshot.power, 'power-read-unsupported'),
 	};
-	return { radio, modes, bands, signal, sim, power };
+	const usbComposition = createRuntimeCompositionOperation(deps.runtimeComposition);
+	return { radio, modes, bands, signal, sim, power, usbComposition };
 }

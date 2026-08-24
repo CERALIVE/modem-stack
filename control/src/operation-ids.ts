@@ -1,0 +1,28 @@
+export const MODEM_OPERATION_IDS = Object.freeze([
+	'modemmanager.radio-modes',
+	'modemmanager.mode-combination',
+	'modemmanager.bands',
+	'modemmanager.signal',
+	'modemmanager.sim',
+	'modemmanager.power',
+	'modemmanager.usb-composition',
+	'status',
+	'signal',
+	'mode',
+	'data',
+	'ufi.signal.read',
+	'ufi.details.read',
+	'nv.write',
+	'efs.write',
+	'identity.write',
+	'calibration.write',
+	'firmware.flash',
+	'edl.automation',
+	'driver.blind-retry',
+	'interface.blind-retry',
+	'diag.write',
+	'diag.info-probe',
+	'shell.transport-fallback',
+] as const);
+
+export type ModemOperationId = (typeof MODEM_OPERATION_IDS)[number];

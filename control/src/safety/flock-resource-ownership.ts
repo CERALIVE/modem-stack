@@ -1,21 +1,11 @@
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import type {
 	ResourceOwnershipHolder,
 	ResourceOwnershipLease,
 	ResourceOwnershipPort,
 	ResourceOwnershipResult,
 } from '../ports';
-
-const LOCK_HELPER = String.raw`
-import { writeFileSync } from 'node:fs';
-const lockPath = process.env.CERALIVE_MODEM_CONTROL_LOCK_PATH;
-if (!lockPath) process.exit(64);
-const holder = { pid: process.pid, startedAtEpochMs: Date.now() };
-writeFileSync(lockPath, JSON.stringify(holder) + '\n', { mode: 0o600 });
-process.stdout.write(JSON.stringify({ type: 'acquired', holder }) + '\n');
-process.stdin.resume();
-`;
 
 export type FlockResourceOwnershipOptions = {
 	readonly lockPath: string;
@@ -41,25 +31,15 @@ export function createFlockResourceOwnershipPort(
 		async acquire(): Promise<ResourceOwnershipResult> {
 			const child = spawn(
 				options.flockBinary ?? 'flock',
-				[
-					'--exclusive',
-					'--nonblock',
-					'--no-fork',
-					options.lockPath,
-					process.execPath,
-					'-e',
-					LOCK_HELPER,
-				],
-				{
-					env: {
-						...process.env,
-						CERALIVE_MODEM_CONTROL_LOCK_PATH: options.lockPath,
-					},
-					stdio: ['pipe', 'pipe', 'pipe'],
-				},
+				['--exclusive', '--nonblock', '--no-fork', options.lockPath, '/bin/cat'],
+				{ stdio: ['pipe', 'pipe', 'pipe'] },
 			);
+			if (child.pid === undefined) {
+				throw new FlockResourceOwnershipError('helper started without a process id');
+			}
+			const holder = { pid: child.pid, startedAtEpochMs: Date.now() };
 			const closed = childClosed(child);
-			const started = await childStarted(child);
+			const started = await childStarted(child, options.lockPath, holder);
 			if (started.status === 'closed') {
 				if (started.code === 1) {
 					const holder = await readHolder(options.lockPath);
@@ -106,8 +86,12 @@ function childClosed(child: ChildProcessWithoutNullStreams): Promise<void> {
 	return new Promise((resolve) => child.once('close', () => resolve()));
 }
 
-function childStarted(child: ChildProcessWithoutNullStreams): Promise<ChildStart> {
-	return new Promise((resolve) => {
+function childStarted(
+	child: ChildProcessWithoutNullStreams,
+	lockPath: string,
+	holder: ResourceOwnershipHolder,
+): Promise<ChildStart> {
+	return new Promise((resolve, reject) => {
 		let stdout = '';
 		let stderr = '';
 		let settled = false;
@@ -123,10 +107,19 @@ function childStarted(child: ChildProcessWithoutNullStreams): Promise<ChildStart
 			stdout += chunk.toString('utf8');
 			const newline = stdout.indexOf('\n');
 			if (newline < 0) return;
-			const holder = parseAcquiredLine(stdout.slice(0, newline));
-			if (holder !== undefined) finish({ status: 'acquired', holder });
+			const acquired = parseAcquiredLine(stdout.slice(0, newline));
+			if (acquired === undefined || settled) return;
+			settled = true;
+			void writeFile(lockPath, `${JSON.stringify(holder)}\n`, { mode: 0o600 }).then(
+				() => resolve({ status: 'acquired', holder }),
+				(error: unknown) => {
+					child.stdin.end();
+					reject(error);
+				},
+			);
 		});
 		child.once('close', (code) => finish({ status: 'closed', code, stderr: stderr.trim() }));
+		child.stdin.write(`${JSON.stringify({ type: 'acquired', holder })}\n`);
 	});
 }
 

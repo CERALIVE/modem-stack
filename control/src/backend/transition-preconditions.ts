@@ -16,12 +16,17 @@
 import type { EpochMillis, IdentityConfidence } from '../domain';
 import type { ConnectionId, DeviceIfname } from '../ports';
 import {
+	buildRuntimeCompositionSetCommand,
 	type CatalogEntry,
 	type CertifiedCatalog,
 	findCatalogEntry,
 	findPermittedTransition,
 	type MmUsbMode,
 	type PermittedTransition,
+	RUNTIME_COMPOSITION_QUERY_REGISTRY,
+	type RuntimeCompositionCapability,
+	type RuntimeCompositionMode,
+	type RuntimeCompositionVendor,
 	type SkuDiscriminator,
 } from '../usb-mode';
 import type { InterlockTarget, LifecycleInterlock } from './lifecycle-interlock';
@@ -62,12 +67,8 @@ export interface TransitionReadiness {
 	readonly identityConfidence: IdentityConfidence;
 }
 
-/** One USB-mode transition request. */
-export interface UsbModeTransitionRequest {
+type UsbModeTransitionRequestBase = {
 	readonly stableKey: string;
-	readonly sku: SkuDiscriminator;
-	readonly fromMode: MmUsbMode;
-	readonly toMode: MmUsbMode;
 	readonly connectionId: ConnectionId;
 	readonly deviceIfname: DeviceIfname;
 	/** Physical-topology UID captured BEFORE the switch — survives re-enumeration. */
@@ -81,7 +82,27 @@ export interface UsbModeTransitionRequest {
 	readonly now: EpochMillis;
 	/** Live readiness, re-polled at entry AND in-actor (TOCTOU-safe). */
 	probeReadiness(): Promise<TransitionReadiness>;
-}
+};
+
+export type CatalogUsbModeTransitionRequest = UsbModeTransitionRequestBase & {
+	readonly strategy?: 'catalog';
+	readonly sku: SkuDiscriminator;
+	readonly fromMode: MmUsbMode;
+	readonly toMode: MmUsbMode;
+};
+
+export type RuntimeUsbModeTransitionRequest = UsbModeTransitionRequestBase & {
+	readonly strategy: 'runtime';
+	readonly vendor: RuntimeCompositionVendor;
+	readonly sku?: SkuDiscriminator;
+	readonly fromMode: RuntimeCompositionMode;
+	readonly toMode: RuntimeCompositionMode;
+	readonly capability: RuntimeCompositionCapability;
+};
+
+export type UsbModeTransitionRequest =
+	| CatalogUsbModeTransitionRequest
+	| RuntimeUsbModeTransitionRequest;
 
 /** How a transition ended. */
 export type UsbModeTransitionOutcome =
@@ -103,10 +124,88 @@ export type UsbModeTransitionOutcome =
 			readonly steps: readonly string[];
 	  };
 
-/** The result of a precondition check — the matched entry/transition, or a reason. */
+export type UsbModeTransitionPlan = {
+	readonly atCommand: string;
+	readonly applyCommand?: string;
+	readonly proof:
+		| {
+				readonly tier: 'catalog-descriptors';
+				readonly transition: PermittedTransition;
+		  }
+		| {
+				readonly tier: 'runtime-requery';
+				readonly vendor: RuntimeCompositionVendor;
+				readonly target: RuntimeCompositionMode;
+				readonly currentQuery: string;
+		  };
+};
+
 export type PreconditionResult =
-	| { readonly ok: true; readonly entry: CatalogEntry; readonly transition: PermittedTransition }
+	| {
+			readonly ok: true;
+			readonly entry?: CatalogEntry;
+			readonly plan: UsbModeTransitionPlan;
+			readonly allowlistedCommands: readonly string[];
+	  }
 	| { readonly ok: false; readonly reason: string };
+
+function sameRuntimeMode(left: RuntimeCompositionMode, right: RuntimeCompositionMode): boolean {
+	return Object.is(left, right);
+}
+
+function runtimePlan(
+	request: RuntimeUsbModeTransitionRequest,
+	catalog: CertifiedCatalog,
+): PreconditionResult {
+	const capability = request.capability;
+	if (capability.status !== 'available') return { ok: false, reason: 'runtime capability unknown' };
+	if (!sameRuntimeMode(capability.current, request.fromMode))
+		return { ok: false, reason: 'runtime current mode changed' };
+	if (
+		!capability.returnPathProven ||
+		!capability.offerable.some((mode) => sameRuntimeMode(mode, request.toMode))
+	)
+		return { ok: false, reason: 'no-return-path' };
+	const atCommand = buildRuntimeCompositionSetCommand(request.vendor, request.toMode);
+	if (atCommand === undefined) return { ok: false, reason: 'runtime target command unavailable' };
+
+	const entry = request.sku === undefined ? undefined : findCatalogEntry(catalog, request.sku);
+	if (entry !== undefined) {
+		const reviewed = entry.permittedTransitions.find(
+			(transition) => transition.atCommand === atCommand,
+		);
+		if (reviewed !== undefined) {
+			return {
+				ok: true,
+				entry,
+				plan: {
+					atCommand: reviewed.atCommand,
+					...(reviewed.applyCommand === undefined ? {} : { applyCommand: reviewed.applyCommand }),
+					proof: { tier: 'catalog-descriptors', transition: reviewed },
+				},
+				allowlistedCommands: entry.permittedTransitions.flatMap((transition) =>
+					transition.applyCommand === undefined
+						? [transition.atCommand]
+						: [transition.atCommand, transition.applyCommand],
+				),
+			};
+		}
+	}
+	return {
+		ok: true,
+		...(entry === undefined ? {} : { entry }),
+		plan: {
+			atCommand,
+			proof: {
+				tier: 'runtime-requery',
+				vendor: request.vendor,
+				target: request.toMode,
+				currentQuery: RUNTIME_COMPOSITION_QUERY_REGISTRY[request.vendor].current,
+			},
+		},
+		allowlistedCommands: [atCommand],
+	};
+}
 
 /**
  * Check every transition precondition against the LIVE inputs. Called at entry and
@@ -126,17 +225,37 @@ export async function checkTransitionPreconditions(
 	if (!request.maintenance) {
 		return { ok: false, reason: 'maintenance flag is required' };
 	}
-	const entry = findCatalogEntry(catalog, request.sku);
-	if (entry === undefined) {
-		return { ok: false, reason: `uncertified SKU ${request.sku.vidPid} ${request.sku.model}` };
-	}
-	const transition = findPermittedTransition(entry, request.fromMode, request.toMode);
-	if (transition === undefined) {
-		return {
-			ok: false,
-			reason: `transition ${request.fromMode}->${request.toMode} not permitted for ${request.sku.model}`,
+	let staticResult: PreconditionResult;
+	if (request.strategy === 'runtime') {
+		staticResult = runtimePlan(request, catalog);
+	} else {
+		const entry = findCatalogEntry(catalog, request.sku);
+		if (entry === undefined) {
+			return { ok: false, reason: `uncertified SKU ${request.sku.vidPid} ${request.sku.model}` };
+		}
+		const transition = findPermittedTransition(entry, request.fromMode, request.toMode);
+		if (transition === undefined) {
+			return {
+				ok: false,
+				reason: `transition ${request.fromMode}->${request.toMode} not permitted for ${request.sku.model}`,
+			};
+		}
+		staticResult = {
+			ok: true,
+			entry,
+			plan: {
+				atCommand: transition.atCommand,
+				...(transition.applyCommand === undefined ? {} : { applyCommand: transition.applyCommand }),
+				proof: { tier: 'catalog-descriptors', transition },
+			},
+			allowlistedCommands: entry.permittedTransitions.flatMap((candidate) =>
+				candidate.applyCommand === undefined
+					? [candidate.atCommand]
+					: [candidate.atCommand, candidate.applyCommand],
+			),
 		};
 	}
+	if (!staticResult.ok) return staticResult;
 	const readiness = await request.probeReadiness();
 	if (readiness.identityConfidence === 'low') {
 		return { ok: false, reason: 'low-confidence identity — refusing to transition' };
@@ -145,5 +264,5 @@ export async function checkTransitionPreconditions(
 	if (!verdict.allow) {
 		return { ok: false, reason: `interlock held: ${verdict.reason}` };
 	}
-	return { ok: true, entry, transition };
+	return staticResult;
 }

@@ -253,7 +253,7 @@ export type ConformanceKind =
 	| 'ambiguity'
 	| 'malformed'
 	| 'auth-expired'
-	| 'lockout-unknown'
+	| 'lockout'
 	| 'unknown-firmware'
 	| 'wrong-interface'
 	| 'wrong-transport';
@@ -373,8 +373,8 @@ export const CONFORMANCE_CASES: readonly ConformanceCase[] = [
 	{
 		id: 'fleet/zte-mf79u',
 		kind: 'fleet-profile',
-		summary: 'MF79U selects the legacy base64 profile and stays read-only',
-		expected: selected('zte-goform', 'mf79u-legacy', false),
+		summary: 'MF79U B03 evidence selects salted SHA-256 under bare LOGIN and stays read-only',
+		expected: selected('zte-goform', 'mf79u-ld-salted', false),
 		run: () =>
 			runScenario(
 				{ zte: zteDevice({ firmware: 'MF79U' }) },
@@ -479,8 +479,8 @@ export const CONFORMANCE_CASES: readonly ConformanceCase[] = [
 	{
 		id: 'malformed/zte-goform-body',
 		kind: 'malformed',
-		summary: 'garbage goform bodies keep the firmware-selected profile but record the conflict',
-		expected: selected('zte-goform', 'mf79u-legacy', false),
+		summary: 'garbage goform evidence refuses to guess between the two MF79U encodings',
+		expected: unresolved('ambiguous', 'supported'),
 		run: () =>
 			runScenario(
 				{
@@ -527,13 +527,13 @@ export const CONFORMANCE_CASES: readonly ConformanceCase[] = [
 			),
 	},
 	{
-		id: 'lockout-unknown/zte-mf79u',
-		kind: 'lockout-unknown',
-		summary: 'a locked-out MF79U is refused identically to a rejection — one attempt, no guess',
+		id: 'lockout/zte-mf79u',
+		kind: 'lockout',
+		summary: 'a positive MF79U lockout probe refuses before any credential attempt',
 		expected: unresolved('ambiguous', 'supported'),
 		run: () =>
 			runScenario(
-				{ zte: zteDevice({ firmware: 'MF79U', login: 'lockout-unknown' }) },
+				{ zte: zteDevice({ firmware: 'MF79U', lockout: true }) },
 				request({
 					id: 'serial:conformance-zte-lockout',
 					facts: [usbFact(USB_IDS.zteMf79u), firmwareFact('MF79U')],

@@ -4,6 +4,7 @@ import { createProviderMatcher } from '../matcher';
 import { createProviderRegistry } from '../registry';
 import {
 	createZteGoformDefinition,
+	ZTE_EVIDENCE_CMD,
 	ZTE_PATHS,
 	ZTE_PROFILES,
 	ZTE_UNKNOWN_PROFILE,
@@ -51,21 +52,48 @@ const response = (body: string, headers?: Readonly<Record<string, string>>): Zte
 	...(headers === undefined ? {} : { headers }),
 });
 
+const evidence = (values: Readonly<Record<string, string>>): ZteHttpResponse =>
+	response(
+		JSON.stringify({
+			psw_fail_num_str: '5',
+			login_lock_time: '0',
+			wa_inner_version: 'BD_MF79UV1.0.0B04',
+			cr_version: 'CR_MF79UV1.0.0B04',
+			...values,
+		}),
+	);
+
+function profile(profileId: (typeof ZTE_PROFILES)[number]['id']) {
+	const selected = ZTE_PROFILES.find((candidate) => candidate.id === profileId);
+	if (selected === undefined) throw new Error(`missing ZTE profile fixture: ${profileId}`);
+	return selected;
+}
+
 describe('ZTE goform firmware replay profiles', () => {
 	test('replays the exact MF79U legacy login request once', async () => {
 		// Given
-		const h = replay([response('{"result":"0"}', { 'set-cookie': 'stok=legacy-token; Path=/' })]);
-		const profile = ZTE_PROFILES[0];
+		const h = replay([
+			evidence({}),
+			response('{"result":"0"}', { 'set-cookie': 'stok=legacy-token; Path=/' }),
+		]);
+		const selectedProfile = profile('mf79u-legacy');
 
 		// When
 		const result = await definition(h.transport).authenticatedProfile?.authenticate(
-			context(profile.id, profile.firmware),
-			[profile.id],
+			context(selectedProfile.id, selectedProfile.firmware),
+			[selectedProfile.id],
 		);
 
 		// Then
-		expect(result).toEqual({ status: 'matched', profile: profile.id, detail: 'login-ok' });
+		expect(result).toEqual({ status: 'matched', profile: selectedProfile.id, detail: 'login-ok' });
 		expect(h.calls).toEqual([
+			{
+				method: 'GET',
+				url: `${ADMIN_URL}${ZTE_PATHS.get}?isTest=false&cmd=${encodeURIComponent(ZTE_EVIDENCE_CMD)}&multi_data=1`,
+				headers: [`Origin: ${ADMIN_URL}`, `Referer: ${ADMIN_URL}/index.html`],
+				interfaceName: 'eth9',
+				redirect: 'error',
+			},
 			{
 				method: 'POST',
 				url: `${ADMIN_URL}${ZTE_PATHS.set}`,
@@ -79,6 +107,32 @@ describe('ZTE goform firmware replay profiles', () => {
 				redirect: 'error',
 			},
 		]);
+		expect(h.remaining()).toBe(0);
+	});
+
+	test('selects the MF79U LD-salted encoding and posts the exact bare LOGIN body', async () => {
+		// Given
+		const ld = 'fixture-mf79u-ld';
+		const password = createHash('sha256')
+			.update(`${createHash('sha256').update(PASSWORD).digest('hex').toUpperCase()}${ld}`)
+			.digest('hex')
+			.toUpperCase();
+		const h = replay([
+			evidence({ LD: ld, wa_inner_version: 'BD_XCBZHKMF79UV1.0.0B03' }),
+			response('{"result":"0"}', { 'set-cookie': 'stok=mf79u-salted-token; Path=/' }),
+		]);
+		const selectedProfile = profile('mf79u-ld-salted');
+
+		// When
+		const result = await definition(h.transport).authenticatedProfile?.authenticate(
+			context(selectedProfile.id, selectedProfile.firmware),
+			[selectedProfile.id],
+		);
+
+		// Then
+		expect(result).toEqual({ status: 'matched', profile: selectedProfile.id, detail: 'login-ok' });
+		expect(h.calls[1]?.body).toBe(`goformId=LOGIN&isTest=false&password=${password}`);
+		expect(h.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
 		expect(h.remaining()).toBe(0);
 	});
 
@@ -99,27 +153,26 @@ describe('ZTE goform firmware replay profiles', () => {
 			.digest('hex')
 			.toUpperCase();
 		const h = replay([
-			response(`{"LD":"${ld}"}`),
+			evidence({ LD: ld, wa_inner_version: waVersion, cr_version: crVersion }),
 			response('{"result":"0"}', { 'set-cookie': 'stok=salted-token; Path=/' }),
-			response(`{"wa_inner_version":"${waVersion}","cr_version":"${crVersion}"}`),
 			response(`{"RD":"${rd}"}`),
 		]);
-		const profile = ZTE_PROFILES[1];
+		const selectedProfile = profile('mf266-salted');
 
 		// When
 		const result = await definition(h.transport).authenticatedProfile?.authenticate(
-			context(profile.id, profile.firmware),
-			[profile.id],
+			context(selectedProfile.id, selectedProfile.firmware),
+			[selectedProfile.id],
 		);
 
 		// Then
-		expect(result).toEqual({ status: 'matched', profile: profile.id, detail: 'login-ok' });
+		expect(result).toEqual({ status: 'matched', profile: selectedProfile.id, detail: 'login-ok' });
 		expect(
 			h.calls.map(({ method, url, body, headers }) => ({ method, url, body, headers })),
 		).toEqual([
 			{
 				method: 'GET',
-				url: `${ADMIN_URL}${ZTE_PATHS.get}?isTest=false&cmd=LD`,
+				url: `${ADMIN_URL}${ZTE_PATHS.get}?isTest=false&cmd=${encodeURIComponent(ZTE_EVIDENCE_CMD)}&multi_data=1`,
 				body: undefined,
 				headers: [`Origin: ${ADMIN_URL}`, `Referer: ${ADMIN_URL}/index.html`],
 			},
@@ -135,16 +188,6 @@ describe('ZTE goform firmware replay profiles', () => {
 			},
 			{
 				method: 'GET',
-				url: `${ADMIN_URL}${ZTE_PATHS.get}?isTest=false&cmd=wa_inner_version%2Ccr_version&multi_data=1`,
-				body: undefined,
-				headers: [
-					`Cookie: stok=salted-token`,
-					`Origin: ${ADMIN_URL}`,
-					`Referer: ${ADMIN_URL}/index.html`,
-				],
-			},
-			{
-				method: 'GET',
 				url: `${ADMIN_URL}${ZTE_PATHS.get}?isTest=false&cmd=RD`,
 				body: undefined,
 				headers: [
@@ -154,7 +197,10 @@ describe('ZTE goform firmware replay profiles', () => {
 				],
 			},
 		]);
-		expect(definition(h.transport).contractFixtures[1]?.response).toEqual({
+		expect(
+			definition(h.transport).contractFixtures.find((fixture) => fixture.profile === 'mf266-salted')
+				?.response,
+		).toEqual({
 			status: 'matched',
 			sessionMaterial: '[redacted]',
 			ad: '[redacted]',
@@ -163,20 +209,62 @@ describe('ZTE goform firmware replay profiles', () => {
 		expect(h.remaining()).toBe(0);
 	});
 
-	test('refuses MF266 responses for MF79U without trying a second algorithm', async () => {
+	test('refuses a positive lockout probe before issuing any login POST', async () => {
 		// Given
-		const h = replay([response('{"LD":"salted-shape"}')]);
-		const profile = ZTE_PROFILES[0];
+		const h = replay([
+			evidence({
+				LD: 'fixture-ld',
+				wa_inner_version: 'BD_XCBZHKMF79UV1.0.0B03',
+				psw_fail_num_str: '0',
+				login_lock_time: '180',
+			}),
+		]);
+		const selectedProfile = profile('mf79u-ld-salted');
 
 		// When
 		const result = await definition(h.transport).authenticatedProfile?.authenticate(
-			context(profile.id, profile.firmware),
-			[profile.id],
+			context(selectedProfile.id, selectedProfile.firmware),
+			[selectedProfile.id],
+		);
+
+		// Then
+		expect(result).toEqual({ status: 'refused', detail: 'lockout' });
+		expect(h.calls).toHaveLength(1);
+		expect(h.calls[0]?.method).toBe('GET');
+		expect(h.calls[0]?.url).toContain(`cmd=${encodeURIComponent(ZTE_EVIDENCE_CMD)}`);
+		expect(h.calls.filter((call) => call.method === 'POST')).toEqual([]);
+	});
+
+	test('classifies login result 3 as auth-rejection', async () => {
+		// Given
+		const h = replay([evidence({}), response('{"result":"3"}')]);
+		const selectedProfile = profile('mf79u-legacy');
+
+		// When
+		const result = await definition(h.transport).authenticatedProfile?.authenticate(
+			context(selectedProfile.id, selectedProfile.firmware),
+			[selectedProfile.id],
+		);
+
+		// Then
+		expect(result).toEqual({ status: 'refused', detail: 'auth-rejection' });
+		expect(h.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
+	});
+
+	test('classifies login result 1 as protocol-mismatch without cycling encodings', async () => {
+		// Given
+		const h = replay([evidence({}), response('{"result":"1"}')]);
+		const selectedProfile = profile('mf79u-legacy');
+
+		// When
+		const result = await definition(h.transport).authenticatedProfile?.authenticate(
+			context(selectedProfile.id, selectedProfile.firmware),
+			[selectedProfile.id],
 		);
 
 		// Then
 		expect(result).toEqual({ status: 'refused', detail: 'protocol-mismatch' });
-		expect(h.calls).toHaveLength(1);
+		expect(h.calls.filter((call) => call.method === 'POST')).toHaveLength(1);
 	});
 
 	test('selects unknown ZTE firmware as read-only without authenticating', async () => {

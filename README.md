@@ -17,7 +17,7 @@ straight from CI artifacts; nothing is published to `apt.ceralive.tv` yet.
 |-----------|----------|------------|
 | [`control/`](control/) | **`@ceralive/modem-control`** (npm package) | The TypeScript control library: the [frozen v1.1 domain contracts](docs/DOMAIN-CONTRACTS.md), [provider registry and evidence-scored matcher](docs/PROVIDER-MATCHING.md), concrete typed-D-Bus [`ModemManagerProvider`](docs/MODEMMANAGER-PROVIDER.md) (runtime-discovered generic controls; no CLI subprocess), NetworkManager adapter, desired-state reconciler, injected mutation-admission and exclusive-ownership ports, USB composition-mode model + the [evidence-bundle ingestion seam](docs/CATALOG-INGESTION.md), data-usage sampler plus its `setUsagePolicy` write surface (`control/src/backend/usage/policy-write.ts` — a local 0600 policy file, because ModemManager exposes no data-usage API at all), and the **read-only SMS port** (`control/src/ports/sms.ts` + `control/src/sms/` — LIST/READ plus `Added`/`Deleted` observation, never a send or a delete, locked by `sms/readonly-gate.test.ts`). The USB-hub actuator is port-only here; the bench CLI owns its HIL adapter. Published to the public npm registry under the `@ceralive` scope as **built ESM + `.d.ts`** across seven entry points — see [`control/README.md`](control/README.md). |
 | [`cli/`](cli/) | **`modem-control`** (bench CLI) | The iteration surface: `probe`, `watch`, `apply`, `set-usb-mode`, `usage`, `certify`, `hil-cycle`. Compiled for `arm64` + `amd64` and run against real modems on a bench device to mature the package, capture per-SKU certification bundles, and prove hub VBUS port-cycling ([RB-10](docs/BENCH.md#rb-10--hub-vbus-verification-partial)). |
-| [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork, zero source patches** (see [`POLICY.md`](POLICY.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
+| [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork**. libmbim, libqmi, and libqrtr-glib remain source-unmodified; ModemManager carries one owner-approved, three-patch BELABOX-derived FM350-GL series, hardware-validated on the carrier-mounted USB composition after restoring BELABOX's `ATZ0` first-enable override (see [`POLICY.md`](POLICY.md) and the [ADR](docs/adr/ADR-FM350-RNDIS-BEARER.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
 
 The control package's existing `./hardware` entry point also exposes transport-free
 SIM-presence and Huawei/ZTE/UFI response normalization. Device I/O, sessions, retries,
@@ -27,13 +27,21 @@ helpers for portable modem identity, display naming, ModemManager enums, USB-net
 classification, capability selection, and shadow-result comparison; these helpers perform
 no discovery or transport and leave CeraUI integration to a separate cutover.
 
+The ModemManager operation surface also exposes runtime USB-composition capability. Known
+vendors are queried with exact reviewed READ/TEST forms, targets come from the device's own
+enumeration only when it includes a return path, and writes retain the shared admission,
+journal, rollback, readback, identity, and streaming-interlock fences. Reviewed catalog
+descriptors remain the strongest success proof; otherwise a weaker post-switch device READ
+must report the target. Band certification remains catalog-gated and unchanged.
+
 ## Versioning at a glance
 
 ONE unified **SemVer** tag `vX.Y.Z` releases **both** artifacts together: `v1.1.0` publishes
 `@ceralive/modem-control@1.1.0` to npm **and** the `.deb` artifact set in the same release.
-This repo deliberately does **not** use the CeraLive CalVer scheme. The `.deb` internal
-`Version:` fields encode the tag as `<upstream>-<rev>~ceralive<X.Y.Z>` (e.g.
-`1.24.2-2~ceralive1.1.0`) so apt ordering stays correct. Full contract:
+This repo deliberately does **not** use the CeraLive CalVer scheme. New upstream-source
+rebuilds use per-source `<upstream>-<rev>~ceralive.N` counters; unchanged sources retain their
+previous version and exact bytes. Legacy published releases keep their tag-shaped suffixes.
+Full contract:
 [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Layout
@@ -81,10 +89,11 @@ AGPL-3.0
 
 ## ZTE goform provider (Todo 25)
 
-`control/src/providers/zte-goform/` keeps MF79U legacy and MF266 salted authentication in
-separate evidence-selected profiles with one bounded attempt and an in-memory-only `stok`
-session. Unknown ZTE firmware retains read-only telemetry; no ZTE profile exposes a Wi-Fi
-write. The executable MF79U one-attempt diagnosis is documented in
+`control/src/providers/zte-goform/` keeps MF79U base64, MF79U `LD`-salted-under-`LOGIN`,
+and MF266 `LOGIN_MULTI_USER` authentication in separate evidence-selected profiles with
+one bounded attempt and an in-memory-only `stok` session. A batched pre-auth probe refuses
+known lockout before the credential POST. Unknown ZTE firmware retains read-only telemetry;
+no ZTE profile exposes a Wi-Fi write. The executable MF79U one-attempt diagnosis is documented in
 [`docs/MF79U-DIAGNOSIS.md`](docs/MF79U-DIAGNOSIS.md).
 
 ## UFI / HIMI provider (Todo 26)
@@ -99,6 +108,19 @@ refusal before any transport call. `05c6:9024` proves an RNDIS+ADB composition a
 `05c6:9091` proves nothing at all — only a DIAG interface descriptor does, and even then
 production access stays prohibited. The supervised, read-only, bench-only DIAG info probe
 is documented in [`docs/UFI-DIAG-PROBE.md`](docs/UFI-DIAG-PROBE.md).
+
+That document also carries the **read-only descriptor capture**:
+`control/scripts/ufi-himi-capture.sh` writes a redacted evidence bundle (full `lsusb -v`
+descriptors, `usb-devices`, udev properties, per-interface driver bindings, `/sys`
+composition, and — with an ephemeral bench password — the HIMI `getproduceinfo` /
+`getsysinfo` identity), and `control/scripts/ufi-himi-evidence.ts` carries the bundle
+schema, the per-interface role classifier, and an independent redaction sweep. With no
+matching device attached the script answers `device-not-present` and writes nothing rather
+than leaving a partial bundle. The 2026-08-23 hardware drill found the attached `05c6:9091`
+in a four-interface QMI + ADB-class composition: interface 2 was claimed by `qmi_wwan`, no
+`ff/ff/30` DIAG descriptor existed, and the HIMI identity endpoint was unreachable through
+the target's `wwan1`. The redacted bundle remains repo-local and gitignored; the measured
+classification is recorded in `docs/UFI-DIAG-PROBE.md`.
 
 ## Radio capability truth + SIM evidence (Todo 28)
 
@@ -123,7 +145,7 @@ preferred mode and the measurement-recency flag survive normalization.
 `control/src/providers/conformance-matrix.test.ts` registers all four providers at once and
 runs 20 cases — nine fleet profiles (MM-managed Quectel / SIMCom / FM350-on-USB-carrier, both
 HiLink firmwares, MF79U, MF266, both UFI USB ids) plus ambiguous-collision, cross-profile
-refusal, malformed-response, auth-expired, lockout-unknown, unknown-firmware, wrong-interface
+refusal, malformed-response, auth-expired, lockout, unknown-firmware, wrong-interface
 and wrong-transport cases — asserting the exact provider, profile, writability and evidence
 score each device is entitled to. A tie between two write-capable providers resolves read-only
 with both claimants in the evidence ledger and neither credential spent. Companion suites

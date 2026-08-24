@@ -83,10 +83,11 @@ provider runtime. See [`../docs/HUAWEI-HILINK-PROVIDER.md`](../docs/HUAWEI-HILIN
 
 ### ZTE goform provider
 
-`createZteGoformDefinition()` exposes the incompatible `mf79u-legacy` and
-`mf266-salted` authentication profiles without fallback between them. MF79U sends one
-browser-shaped form login with a base64 password; MF266 performs the `LD` challenge,
-salted SHA-256 login, then derives `AD` from version data and `RD`. Session material stays
+`createZteGoformDefinition()` exposes three incompatible authentication profiles without
+fallback between them: MF79U legacy base64 under `LOGIN`, MF79U `LD`-salted SHA-256 under
+the same bare `LOGIN`, and MF266 salted SHA-256 under `LOGIN_MULTI_USER`. One batched
+pre-auth evidence GET selects the exact shape and refuses a reported lockout before any
+credential POST. MF266 derives `AD` from the probed version data and `RD`. Session material stays
 in memory. Unknown ZTE firmware is fingerprinted into a read-only telemetry profile, and
 Wi-Fi writes are absent from every operation surface. See
 [`../docs/MF79U-DIAGNOSIS.md`](../docs/MF79U-DIAGNOSIS.md).
@@ -110,7 +111,10 @@ through `OperationEngine` are refused before execution too.
 `05c6:9024` is evidence of an RNDIS+ADB composition, not a permission. `05c6:9091` is a
 firmware-chosen product id and is **not** proof of DIAG — only an interface descriptor is,
 and production access stays `prohibited` regardless. The supervised, read-only, bench-only
-probe is documented in [`../docs/UFI-DIAG-PROBE.md`](../docs/UFI-DIAG-PROBE.md).
+probe is documented in [`../docs/UFI-DIAG-PROBE.md`](../docs/UFI-DIAG-PROBE.md), together
+with the read-only descriptor capture (`scripts/ufi-himi-capture.sh`) and its bundle
+schema, interface-role classifier and redaction sweep (`scripts/ufi-himi-evidence.ts`).
+Neither ships in the package: `files: ["dist"]`, and bench tooling is not a public surface.
 
 ### NetworkManager adapter — saved vs applied
 
@@ -160,6 +164,21 @@ ModemManager exposes no USB `vid:pid`, so the package cannot build a `BandSku` a
 Both operations expose `describe(context)` alongside their static `descriptor`, because
 a static descriptor cannot carry a device's own catalog or its certification state.
 
+### USB composition — runtime-derived targets, two proof tiers
+
+`operations().usbComposition` asks a known vendor for its current and enumerated USB
+composition modes and offers only targets from that reply after the reply also proves a
+represented return path. Its suppression vocabulary is `unknown-vendor`,
+`no-return-path`, `blocked-by-state`, and `provisioning-disabled`; suppressed states expose
+no targets. Unknown/disabled/blocked decisions happen before transport contact, and a
+capability read sends only the named READ/TEST forms, never a SET.
+
+A reviewed catalog transition still provides the strongest success proof: canonical mode
+and USB descriptors must both match. Without one, the weaker fallback proof is the
+re-enumerated device's own post-switch READ reporting the target. AT `OK` is never success.
+The write remains disruptive and requires admission, journal, rollback, and readback hooks.
+Band writes do not share this policy and remain behind their four-proof certification gate.
+
 ### SIM presence is evidence, never inference
 
 `readSimPresence` returns the presence together with the `SimPresenceEvidence` that
@@ -187,6 +206,11 @@ File stores, router sessions, and USB-hub access use acquire-or-refuse exclusive
 holder PID/start-time metadata, and clean release when the holder process dies. The lock path
 is mandatory input; `DEFAULT_MODEM_CONTROL_LOCK_PATH` is only a conventional value callers
 may select. There is no pass-through ownership implementation.
+
+The adapter holds the lock with an external `/bin/cat` whose pipe round-trip acknowledges
+successful acquisition. It never launches `process.execPath -e`: a compiled Bun executable's
+`process.execPath` points back to the application, so re-executing it would parse `-e` as an
+application option and misreport the resulting exit as contention.
 
 One `createModemControlCompositionRoot()` may be live per process. A second construction
 throws, and `actorFor(physicalModemId)` shares one actor for that modem across all callers in
