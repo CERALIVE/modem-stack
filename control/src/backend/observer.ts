@@ -22,16 +22,11 @@ import type {
 	Unsubscribe,
 } from '../ports';
 import type { DbusTransport, SignalEvent, Subscription } from '../transport';
-import {
-	DBUS_DESTINATION,
-	DBUS_IFACE,
-	DBUS_PATH,
-	MM_BUS_NAME,
-	MM_ROOT_PATH,
-	OBJECT_MANAGER_IFACE,
-	PROPERTIES_IFACE,
-} from './constants';
-import { asManagedObjects, type DecodedManagedObjects } from './managed-objects';
+import { MM_BUS_NAME } from './constants';
+import type { DecodedManagedObjects } from './managed-objects';
+import { subscribeObserverSignals, unsubscribeObserverSignals } from './observer/bus-lifecycle';
+import { queryModemManagerOwner, readAuthoritativeTree } from './observer/epoch-reconcile';
+import { isCurrentOwnerSignal, routeOwnerSignal } from './observer/signal-routing';
 import { ObservationRowStore } from './row-store';
 
 /**
@@ -121,30 +116,19 @@ export class MmDbusObserver implements ModemObservationPort {
 		this.#stopped = true;
 		this.#transport.off('disconnected', this.#onDisconnected);
 		this.#transport.off('reconnected', this.#onReconnected);
-		const subs = this.#subscriptions.splice(0);
-		await Promise.all(subs.map((sub) => sub.unsubscribe().catch(() => undefined)));
+		const subscriptions = this.#subscriptions.splice(0);
+		await unsubscribeObserverSignals(subscriptions);
 		this.#listeners.clear();
 	}
 
 	// ── signal subscription ────────────────────────────────────────────────────────
 
 	async #subscribeAll(): Promise<void> {
-		const om = { interface: OBJECT_MANAGER_IFACE, path: MM_ROOT_PATH } as const;
 		this.#subscriptions.push(
-			await this.#transport.subscribeSignal({ ...om, member: 'InterfacesAdded' }, (event) =>
-				this.#onObjectSignal(event),
-			),
-			await this.#transport.subscribeSignal({ ...om, member: 'InterfacesRemoved' }, (event) =>
-				this.#onObjectSignal(event),
-			),
-			await this.#transport.subscribeSignal(
-				{ interface: PROPERTIES_IFACE, member: 'PropertiesChanged' },
-				(event) => this.#onObjectSignal(event),
-			),
-			await this.#transport.subscribeSignal(
-				{ interface: DBUS_IFACE, member: 'NameOwnerChanged' },
-				(event) => this.#onNameOwnerChanged(event),
-			),
+			...(await subscribeObserverSignals(this.#transport, {
+				onObjectSignal: (event) => this.#onObjectSignal(event),
+				onNameOwnerChanged: (event) => this.#onNameOwnerChanged(event),
+			})),
 		);
 	}
 
@@ -161,48 +145,34 @@ export class MmDbusObserver implements ModemObservationPort {
 	}
 
 	async #queryOwner(): Promise<string | undefined> {
-		try {
-			const reply = await this.#transport.callMethod({
-				destination: DBUS_DESTINATION,
-				path: DBUS_PATH,
-				interface: DBUS_IFACE,
-				member: 'GetNameOwner',
-				signature: 's',
-				args: [MM_BUS_NAME],
-			});
-			const owner = reply.body[0];
-			return typeof owner === 'string' && owner.length > 0 ? owner : undefined;
-		} catch {
-			// NameHasNoOwner (or a transient failure) → no current epoch yet.
-			return undefined;
-		}
+		return queryModemManagerOwner(this.#transport);
 	}
 
 	#onNameOwnerChanged(event: SignalEvent): void {
-		if (event.body[0] !== MM_BUS_NAME) {
+		const routed = routeOwnerSignal(event);
+		if (routed.kind === 'unrelated') {
 			return;
 		}
-		const newOwner = typeof event.body[2] === 'string' ? event.body[2] : '';
-		if (newOwner.length === 0) {
+		if (routed.kind === 'lost') {
 			// Owner lost — stale, never a removal.
 			this.#handleSourceGone('source-unavailable');
 			return;
 		}
-		if (newOwner === this.#currentOwner) {
+		if (routed.owner === this.#currentOwner) {
 			return;
 		}
 		// New epoch: everything goes stale until the fresh snapshot restores it.
 		if (this.#store.markUnavailable('source-unavailable')) {
 			this.#emit();
 		}
-		this.#currentOwner = newOwner;
+		this.#currentOwner = routed.owner;
 		this.#scheduleRefresh();
 	}
 
 	#onObjectSignal(event: SignalEvent): void {
 		// Epoch guard: a signal from anyone but the current owner is an OLD-epoch
 		// straggler and must never drive a removal (draft §Oracle round-3 #5).
-		if (this.#currentOwner === undefined || event.sender !== this.#currentOwner) {
+		if (!isCurrentOwnerSignal(event, this.#currentOwner)) {
 			return;
 		}
 		if (this.#priming) {
@@ -229,17 +199,11 @@ export class MmDbusObserver implements ModemObservationPort {
 	async #runRefresh(epochOwner: string): Promise<void> {
 		this.#refreshing = true;
 		try {
-			const reply = await this.#transport.callMethod({
-				destination: this.#destination,
-				path: MM_ROOT_PATH,
-				interface: OBJECT_MANAGER_IFACE,
-				member: 'GetManagedObjects',
-			});
+			const tree = await readAuthoritativeTree(this.#transport, this.#destination);
 			// Late reply from a superseded epoch — discard (draft §Oracle round-3 #5).
 			if (this.#currentOwner !== epochOwner || this.#stopped) {
 				return;
 			}
-			const tree = asManagedObjects(reply.body[0]);
 			const rowsChanged = this.#store.reconcile(tree);
 			const healthChanged = this.#store.markHealthy();
 			this.#notifyEpochRefresh(epochOwner, tree);

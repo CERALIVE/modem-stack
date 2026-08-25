@@ -20,7 +20,7 @@
 //    deactivate. There is deliberately no delete path here: profile removal is not in
 //    that set, so this adapter cannot express it.
 
-import type { DeviceGeneration, EpochMillis } from '../../domain';
+import type { DeviceGeneration } from '../../domain';
 import { epochMillis } from '../../domain';
 import type {
 	AppliedConfiguration,
@@ -30,14 +30,7 @@ import type {
 	ObservedState,
 	StateDivergence,
 } from '../../observations';
-import {
-	appliedConfiguration,
-	describeStateDivergence,
-	desiredProfile,
-	freshObservation,
-	observedState,
-	unavailableObservation,
-} from '../../observations';
+import { appliedConfiguration, desiredProfile } from '../../observations';
 import type {
 	ConnectionId,
 	DeviceIfname,
@@ -46,39 +39,21 @@ import type {
 	Receipt,
 } from '../../ports';
 import { receipt } from '../../ports';
+import { projectDivergence } from './divergence';
+import { foldObservation } from './observe-fold';
+import { projectStateView } from './projection';
+import type { ConnectionSlots } from './state';
+import { slotsFor, targetIfname } from './state';
 import type {
 	NmAdapterRefusalReason,
-	NmAppliedLoss,
-	NmAppliedOutcome,
 	NmApplyResult,
 	NmBearerState,
-	NmConnectionOutcome,
 	NmDesiredRequest,
 	NmObservationInput,
 	NmObservationResult,
-	NmObservedDevice,
 	NmSaveResult,
 } from './types';
-import { boundBearer, nmBearerStateEquals, unboundBearer } from './types';
-
-const SOURCE = 'networkmanager' as const;
-
-/** The device states in which NM is still settling an activation, not losing it. */
-const TRANSITIONAL_STATES: ReadonlySet<string> = new Set([
-	'prepare',
-	'config',
-	'need-auth',
-	'ip-config',
-	'ip-check',
-	'secondaries',
-	'deactivating',
-]);
-
-interface ConnectionSlots {
-	desired: DesiredProfile<NmBearerState> | null;
-	applied: AppliedConfiguration<NmBearerState> | null;
-	observed: ObservedState<NmBearerState> | null;
-}
+import { boundBearer, unboundBearer } from './types';
 
 export interface NetworkManagerAdapterOptions {
 	readonly port: NetworkManagerPort;
@@ -143,7 +118,7 @@ export class NetworkManagerAdapter {
 			epochMillis(this.#now()),
 			request.requestedBy,
 		);
-		this.#slotsFor(id).desired = desired;
+		slotsFor(this.#slots, id).desired = desired;
 		return { ok: true, connectionId: id, desired };
 	}
 
@@ -165,7 +140,7 @@ export class NetworkManagerAdapter {
 			};
 		}
 		const desired = desiredProfile(unboundBearer(ifname), epochMillis(this.#now()), requestedBy);
-		this.#slotsFor(id).desired = desired;
+		slotsFor(this.#slots, id).desired = desired;
 		return { ok: true, connectionId: id, desired };
 	}
 
@@ -224,44 +199,9 @@ export class NetworkManagerAdapter {
 	 * was.
 	 */
 	observe(input: NmObservationInput): NmObservationResult {
-		const generation = input.context.generation;
-		if (this.#observedGeneration !== null && generation < this.#observedGeneration) {
-			return {
-				kind: 'refused',
-				reason: 'superseded-generation',
-				currentGeneration: this.#observedGeneration,
-			};
-		}
-		this.#observedGeneration = generation;
-		const devices = new Map<DeviceIfname, NmObservedDevice>(
-			input.devices.map((device) => [device.ifname, device]),
-		);
-		const outcomes: NmConnectionOutcome[] = [];
-		const losses: NmAppliedLoss[] = [];
-		for (const [id, slots] of this.#slots) {
-			const ifname = targetIfname(slots);
-			if (ifname === undefined) {
-				continue;
-			}
-			const device = devices.get(ifname);
-			slots.observed = observedState(
-				device === undefined
-					? unavailableObservation<NmBearerState>(SOURCE, input.context, 'device-absent')
-					: freshObservation(SOURCE, input.context, observedBearer(device)),
-			);
-			const outcome = this.#classify(id, slots, ifname, device, input.context.observedAt);
-			outcomes.push({ connectionId: id, outcome });
-			if (outcome.status === 'lost') {
-				losses.push(outcome.loss);
-			}
-		}
-		return {
-			kind: 'accepted',
-			generation,
-			observedAt: input.context.observedAt,
-			outcomes,
-			losses,
-		};
+		const folded = foldObservation(this.#slots, this.#observedGeneration, input);
+		this.#observedGeneration = folded.generation;
+		return folded.result;
 	}
 
 	observedFor(id: ConnectionId): ObservedState<NmBearerState> | null {
@@ -277,25 +217,12 @@ export class NetworkManagerAdapter {
 		id: ConnectionId,
 		context: NormalizationContext,
 	): ModemStateView<NmBearerState, NmBearerState, NmBearerState> | null {
-		const slots = this.#slots.get(id);
-		if (slots === undefined) {
-			return null;
-		}
-		return {
-			desired: slots.desired,
-			applied: slots.applied,
-			observed:
-				slots.observed ??
-				observedState(
-					unavailableObservation<NmBearerState>(SOURCE, context, 'provider-unavailable'),
-				),
-		};
+		return projectStateView(this.#slots, id, context);
 	}
 
 	/** `desiredVsApplied` ("did our write happen") and `appliedVsObserved` ("did it stick"). */
 	divergence(id: ConnectionId, context: NormalizationContext): StateDivergence | null {
-		const view = this.stateView(id, context);
-		return view === null ? null : describeStateDivergence(view, nmBearerStateEquals);
+		return projectDivergence(this.#slots, id, context);
 	}
 
 	// ── internals ──────────────────────────────────────────────────────────────
@@ -334,7 +261,7 @@ export class NetworkManagerAdapter {
 			generation: options.generation,
 			operationId: options.operationId,
 		});
-		this.#slotsFor(id).applied = applied;
+		slotsFor(this.#slots, id).applied = applied;
 		return { ok: true, applied, receipt: activation };
 	}
 
@@ -358,92 +285,9 @@ export class NetworkManagerAdapter {
 			generation: options.generation,
 			operationId: options.operationId,
 		});
-		this.#slotsFor(id).applied = applied;
+		slotsFor(this.#slots, id).applied = applied;
 		return { ok: true, applied, receipt: result };
 	}
-
-	#classify(
-		id: ConnectionId,
-		slots: ConnectionSlots,
-		ifname: DeviceIfname,
-		device: NmObservedDevice | undefined,
-		observedAt: EpochMillis,
-	): NmAppliedOutcome {
-		const applied = slots.applied;
-		if (applied === null) {
-			return { status: 'unapplied' };
-		}
-		const lose = (reason: NmAppliedLoss['reason']): NmAppliedOutcome => {
-			slots.applied = null;
-			return {
-				status: 'lost',
-				loss: {
-					connectionId: id,
-					deviceIfname: ifname,
-					reason,
-					lostAt: observedAt,
-					generation: applied.generation,
-					previous: applied,
-				},
-			};
-		};
-		if (device === undefined) {
-			return lose('interface-absent');
-		}
-		if (device.state === 'failed') {
-			return lose('activation-failed');
-		}
-		if (applied.configuration.kind === 'unbound') {
-			// We deliberately took the bearer down; anything active here is somebody else.
-			return device.activeConnection === undefined
-				? { status: 'retained', applied }
-				: lose('connection-replaced');
-		}
-		if (device.activeConnection === undefined) {
-			return lose('interface-detached');
-		}
-		if (device.activeConnection.connectionId !== id) {
-			return lose('connection-replaced');
-		}
-		if (device.state === 'activated') {
-			return { status: 'retained', applied };
-		}
-		return TRANSITIONAL_STATES.has(device.state)
-			? { status: 'pending', applied, deviceState: device.state }
-			: lose('interface-detached');
-	}
-
-	#slotsFor(id: ConnectionId): ConnectionSlots {
-		const existing = this.#slots.get(id);
-		if (existing !== undefined) {
-			return existing;
-		}
-		const created: ConnectionSlots = { desired: null, applied: null, observed: null };
-		this.#slots.set(id, created);
-		return created;
-	}
-}
-
-/** The device the slots are about: where the bearer IS, else where it was asked for. */
-function targetIfname(slots: ConnectionSlots): DeviceIfname | undefined {
-	const state = slots.applied?.configuration ?? slots.desired?.profile;
-	if (state === undefined) {
-		return undefined;
-	}
-	return state.kind === 'bound' ? state.binding.deviceIfname : state.deviceIfname;
-}
-
-function observedBearer(device: NmObservedDevice): NmBearerState {
-	const active = device.activeConnection;
-	return active === undefined
-		? unboundBearer(device.ifname)
-		: boundBearer({
-				connectionId: active.connectionId,
-				deviceIfname: device.ifname,
-				apn: active.apn,
-				autoConfig: active.autoConfig,
-				homeOnly: active.homeOnly,
-			});
 }
 
 function refuse(reason: NmAdapterRefusalReason, message: string): NmApplyResult {
