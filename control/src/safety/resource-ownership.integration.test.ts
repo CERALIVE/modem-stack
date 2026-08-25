@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFlockResourceOwnershipPort } from './flock-resource-ownership';
@@ -30,6 +30,55 @@ async function lockPath(): Promise<string> {
 	const directory = await mkdtemp(join(tmpdir(), 'modem-control-lock-'));
 	tempPaths.push(directory);
 	return join(directory, 'ownership.lock');
+}
+
+async function helperPid(pidPath: string): Promise<number> {
+	const deadline = Date.now() + 1_000;
+	while (Date.now() < deadline) {
+		try {
+			return Number.parseInt((await readFile(pidPath, 'utf8')).trim(), 10);
+		} catch (error) {
+			if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+				throw error;
+			}
+		}
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error('helper did not record its process id');
+}
+
+async function expectHelperReaped(pid: number): Promise<void> {
+	const deadline = Date.now() + 1_000;
+	while (Date.now() < deadline) {
+		try {
+			process.kill(pid, 0);
+		} catch (error) {
+			if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return;
+			throw error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error(`helper ${pid} was not reaped`);
+}
+
+async function writeFlockHelper(
+	directory: string,
+	name: string,
+	body: string,
+): Promise<{ readonly flockBinary: string; readonly pidPath: string }> {
+	const flockBinary = join(directory, name);
+	const pidPath = join(directory, `${name}.pid`);
+	await writeFile(flockBinary, `#!/bin/sh\necho $$ > ${pidPath}\n${body}\n`, { mode: 0o755 });
+	await chmod(flockBinary, 0o755);
+	return { flockBinary, pidPath };
+}
+
+function acquisitionFailure(acquisition: Promise<unknown>): Promise<Error> {
+	return acquisition.then(
+		() => new Error('expected acquisition to reject'),
+		(error: unknown) =>
+			error instanceof Error ? error : new Error('acquisition rejected with a non-error value'),
+	);
 }
 
 function spawnRoot(path: string): ChildProcessWithoutNullStreams {
@@ -111,5 +160,65 @@ describe('flock resource ownership across composition roots', () => {
 
 		const successor = spawnRoot(path);
 		expect(await nextMessage(successor)).toMatchObject({ type: 'acquired' });
+	});
+
+	test('Given a holder-file write failure, When the helper stays alive, Then acquisition rejects and reaps the helper', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'modem-control-flock-write-failure-'));
+		tempPaths.push(directory);
+		const { flockBinary, pidPath } = await writeFlockHelper(
+			directory,
+			'write-failure-flock',
+			'fifo="$0.fifo"\nmkfifo "$fifo"\nIFS= read -r line\nprintf \'%s\\n\' "$line"\nexec /bin/cat "$fifo"',
+		);
+
+		const acquisition = createFlockResourceOwnershipPort({
+			lockPath: directory,
+			flockBinary,
+		}).acquire({ resource: 'usb-hub' });
+		const failed = acquisitionFailure(acquisition);
+		const pid = await helperPid(pidPath);
+
+		expect((await failed).message).toContain('EISDIR');
+		await expectHelperReaped(pid);
+	});
+
+	test('Given a helper that never acknowledges the pipe round-trip, When startup reaches its deadline, Then acquisition rejects and reaps the helper', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'modem-control-flock-hang-'));
+		tempPaths.push(directory);
+		const { flockBinary, pidPath } = await writeFlockHelper(
+			directory,
+			'hanging-flock',
+			'fifo="$0.fifo"\nmkfifo "$fifo"\nexec /bin/cat "$fifo"',
+		);
+
+		const acquisition = createFlockResourceOwnershipPort({
+			lockPath: join(directory, 'ownership.lock'),
+			flockBinary,
+		}).acquire({ resource: 'usb-hub' });
+		const failed = acquisitionFailure(acquisition);
+		const pid = await helperPid(pidPath);
+
+		expect((await failed).message).toContain('startup deadline');
+		await expectHelperReaped(pid);
+	});
+
+	test('Given a helper that floods startup stdout, When output exceeds 64 KiB, Then acquisition rejects and reaps the helper', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'modem-control-flock-flood-'));
+		tempPaths.push(directory);
+		const { flockBinary, pidPath } = await writeFlockHelper(
+			directory,
+			'flooding-flock',
+			'fifo="$0.fifo"\nmkfifo "$fifo"\nhead -c 65537 /dev/zero | tr \'\\000\' x\nexec /bin/cat "$fifo"',
+		);
+
+		const acquisition = createFlockResourceOwnershipPort({
+			lockPath: join(directory, 'ownership.lock'),
+			flockBinary,
+		}).acquire({ resource: 'usb-hub' });
+		const failed = acquisitionFailure(acquisition);
+		const pid = await helperPid(pidPath);
+
+		expect((await failed).message).toContain('startup output limit');
+		await expectHelperReaped(pid);
 	});
 });
