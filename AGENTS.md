@@ -1362,6 +1362,14 @@ rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION
 
 ## WORKSPACE / TOOLCHAIN
 
+**The language is a decided question, not a default.** A Rust migration (a `zbus` daemon
+fronted by a thin TS client, the `srtla-send-rs` shape) was assessed and **rejected by the
+project owner on 2026-08-24**. TypeScript on Bun stays, and the decision is final until one
+of the named revisit triggers fires. That record also carries the idea-attribution for
+`irlserver/modem-metrics`: MIT-licensed, concepts adopted, **no source code copied**. Read it
+before proposing a rewrite or extending the telemetry surface:
+[`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
+
 - **Bun 1.4.0** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
   are Bun workspace members.
 - **Strict TypeScript 7.0.2** incl. `exactOptionalPropertyTypes` — the repo-root

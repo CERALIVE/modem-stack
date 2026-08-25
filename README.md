@@ -55,6 +55,7 @@ modem-stack/
 ├── packaging/      ModemManager-stack .deb rebuilds + provenance/verification CI
 ├── docs/           BENCH.md runbooks, CATALOG-INGESTION.md, COMPOSITION-EVIDENCE.md,
 │                   VERSIONING.md, FM350-DECISION.md, ESIM-DECISION.md
+│   └── adr/        ADR-FM350-RNDIS-BEARER.md, ADR-STAY-TYPESCRIPT.md
 ├── AGENTS.md       AI routing + repo contract (self-contained; see Rule D)
 └── POLICY.md       no-fork gate + upstream-contribution-first policy
 ```
@@ -63,6 +64,11 @@ modem-stack/
 Biome via `@ceralive/biome-config`). `packaging/` is built in a bookworm container.
 The two AST-backed source-shape guard tests use the test-only TypeScript 6 compiler-API
 compatibility package; workspace typechecking and package emit remain TypeScript 7.
+
+That language choice is recorded, not incidental: a Rust migration was assessed and rejected
+by the project owner on 2026-08-24, and the same record carries the MIT-licensed
+`irlserver/modem-metrics` idea attribution (concepts adopted, no source code copied). See
+[`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
 
 ## Develop
 
