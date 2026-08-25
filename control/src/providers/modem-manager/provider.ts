@@ -48,6 +48,16 @@ export interface ModemManagerProviderOptions {
 	readonly quiesce?: QuiesceHook;
 	readonly now?: () => number;
 	/**
+	 * `Signal.Setup` reporting rate in whole seconds, defaulting to
+	 * `DEFAULT_SIGNAL_INTERVAL_SECONDS` (5).
+	 *
+	 * The backend has accepted this since it was written; the provider had no way to pass
+	 * it, so an embedder constructing a provider — which is every embedder — was pinned to
+	 * the default with no seam to change it. That is the gap this closes, and it is why
+	 * the option is threaded rather than re-implemented here.
+	 */
+	readonly signalIntervalSeconds?: number;
+	/**
 	 * The band-lock certification catalog. Defaults to the one shipped in this package,
 	 * which is EMPTY — so a band write is refused on every device until a human-reviewed
 	 * commit adds an entry carrying its bench transcript.
@@ -95,6 +105,9 @@ export class ModemManagerProvider implements ModemManagerProviderLifecycle {
 			destination: this.#destination,
 			actor,
 			now: this.#now,
+			...(options.signalIntervalSeconds === undefined
+				? {}
+				: { signalIntervalSeconds: options.signalIntervalSeconds }),
 		});
 		const location = new MmLocation({
 			transport: this.#transport,

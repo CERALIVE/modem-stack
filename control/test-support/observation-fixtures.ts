@@ -24,6 +24,7 @@ import type {
 	HilinkObservationInput,
 	ModemManagerObservationInput,
 	NormalizationContext,
+	RawFieldValue,
 	UfiObservationInput,
 	ZteObservationInput,
 } from '../src/observations';
@@ -49,10 +50,25 @@ export function fixtureContext(
 }
 
 /**
- * A registered ModemManager modem.
+ * One `Modem.Signal` RAT dict in the shape the retention layer keeps it.
  *
- * `Modem.Ports` and `Modem3gpp.Pco` are the vendor-specific extras here: real MM
+ * A D-Bus `a{sv}` decodes to `[key, value][]`, never to a flat object, so a fixture that
+ * spelled these as objects would be testing a payload ModemManager never sends.
+ */
+function signalDict(members: Readonly<Record<string, number>>): RawFieldValue {
+	return Object.entries(members);
+}
+
+/**
+ * A registered ModemManager modem, attached 5G NSA.
+ *
+ * `Modem.Ports`, `Modem3gpp.Pco` and `Signal.Rate` are the extras here: real MM
  * properties that this layer's normalized model has no slot for.
+ *
+ * `Signal` carries the REAL interface shape — one `a{sv}` per RAT. `Nr5g` and `Lte` are
+ * both populated because an NSA attach populates both, which is exactly the case where
+ * the RAT ladder has to choose and provenance has to say which it chose. Every remaining
+ * dict is present-and-empty, as MM exports them for RATs the modem is not on.
  */
 export const MM_FIXTURE: ModemManagerObservationInput = {
 	modem: {
@@ -78,12 +94,49 @@ export const MM_FIXTURE: ModemManagerObservationInput = {
 		OperatorName: 'CLARO COL',
 	},
 	signal: {
-		rssi: -71,
-		rsrp: -98.5,
-		rsrq: -11,
-		snr: 6.5,
-		refresh_rate: 5,
+		Rate: 5,
+		Nr5g: signalDict({ rsrp: -98.5, rsrq: -11, snr: 6.5, 'error-rate': 0 }),
+		Lte: signalDict({ rssi: -71, rsrp: -104, rsrq: -13.5, snr: 4, 'error-rate': 0 }),
+		Cdma: [],
+		Evdo: [],
+		Gsm: [],
+		Umts: [],
 	},
+};
+
+/**
+ * A CDMA/EV-DO reading — `Evdo` is the ONE `Modem.Signal` dict MM defines `sinr` on.
+ *
+ * It exists so the SINR claim is proven against the dict that really carries it rather
+ * than asserted against an LTE payload that never could.
+ */
+export const MM_EVDO_SIGNAL_FIXTURE: ModemManagerObservationInput = {
+	modem: {
+		Model: 'MC7354',
+		Manufacturer: 'Sierra Wireless',
+		State: 8,
+		SignalQuality: [44, true],
+	},
+	signal: {
+		Rate: 5,
+		Evdo: signalDict({ rssi: -83, ecio: -2.5, sinr: 9.5, io: -95, 'error-rate': 0 }),
+		Cdma: signalDict({ rssi: -83, ecio: -2.5, 'error-rate': 0 }),
+		Gsm: [],
+		Umts: [],
+		Lte: [],
+		Nr5g: [],
+	},
+};
+
+/**
+ * The `Modem.Signal` interface READ, with every RAT dict empty.
+ *
+ * This is the honest shape of a modem that has not reported extended signal yet — the
+ * interface exists, the reading does not. It must never normalize to a zero.
+ */
+export const MM_SIGNAL_SILENT_FIXTURE: ModemManagerObservationInput = {
+	modem: { Model: 'RM530N-GL', Manufacturer: 'Quectel', State: 8 },
+	signal: { Rate: 5, Cdma: [], Evdo: [], Gsm: [], Umts: [], Lte: [], Nr5g: [] },
 };
 
 /**

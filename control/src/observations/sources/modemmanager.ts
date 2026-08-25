@@ -35,10 +35,12 @@ import {
 	type RawFieldValue,
 } from '../provenance';
 import {
+	hasRawDictMember,
 	hasRawField,
 	mergeRawRecords,
 	prefixRawRecord,
 	rawBooleanAt,
+	rawDictNumber,
 	rawKey,
 	rawNumber,
 	rawNumberAt,
@@ -84,9 +86,23 @@ export function normalizeModemManagerObservation(
 		return metricProvenance(SOURCE, context, fields);
 	};
 
+	// A dict-sourced metric CONSUMES the whole `a{sv}` property (that is the raw key it
+	// actually has) while NAMING the exact member it read, so provenance stays precise
+	// without `unmapped` gaining a key that was never in the payload.
+	const dictProvenance = (dict: string, member: string) => {
+		consumed.push(dict);
+		return metricProvenance(SOURCE, context, [`${dict}.${member}`]);
+	};
+
 	const hardware = normalizeHardware(raw, provenance);
 	const radio = normalizeRadio(raw, provenance, notes);
-	const signal = normalizeSignal(raw, input.signal !== undefined, provenance);
+	const signal = normalizeSignal(
+		raw,
+		input.signal !== undefined,
+		provenance,
+		dictProvenance,
+		notes,
+	);
 	const sim = normalizeSim(raw, input.sim !== undefined, provenance, notes);
 
 	return freshObservation<NormalizedModemObservation>(SOURCE, context, {
@@ -100,6 +116,7 @@ export function normalizeModemManagerObservation(
 }
 
 type Provenance = (...fields: readonly string[]) => ReturnType<typeof metricProvenance>;
+type DictProvenance = (dict: string, member: string) => ReturnType<typeof metricProvenance>;
 
 const MODEL = rawKey(MODEM, 'Model');
 const MANUFACTURER = rawKey(MODEM, 'Manufacturer');
@@ -116,10 +133,64 @@ const UNLOCK_REQUIRED = rawKey(MODEM, 'UnlockRequired');
 const REGISTRATION_STATE = rawKey(MODEM3GPP, 'RegistrationState');
 const SIM_TYPE = rawKey(SIM, 'SimType');
 const ESIM_STATUS = rawKey(SIM, 'EsimStatus');
-const RSSI = rawKey(SIGNAL, 'rssi');
-const RSRP = rawKey(SIGNAL, 'rsrp');
-const RSRQ = rawKey(SIGNAL, 'rsrq');
-const SNR = rawKey(SIGNAL, 'snr');
+
+// `Modem.Signal` publishes ONE `a{sv}` per RAT, and the member sets differ (MM 1.24.2
+// `org.freedesktop.ModemManager1.Modem.Signal.xml`):
+//   Cdma rssi/ecio/error-rate       Evdo rssi/ecio/SINR/io/error-rate
+//   Gsm  rssi/error-rate            Umts rssi/rscp/ecio/error-rate
+//   Lte  rssi/rsrq/rsrp/snr/error-rate    Nr5g rsrq/rsrp/snr/error-rate
+const SIGNAL_CDMA = rawKey(SIGNAL, 'Cdma');
+const SIGNAL_EVDO = rawKey(SIGNAL, 'Evdo');
+const SIGNAL_GSM = rawKey(SIGNAL, 'Gsm');
+const SIGNAL_UMTS = rawKey(SIGNAL, 'Umts');
+const SIGNAL_LTE = rawKey(SIGNAL, 'Lte');
+const SIGNAL_NR5G = rawKey(SIGNAL, 'Nr5g');
+
+/**
+ * Where one extended metric may be claimed from, in order.
+ *
+ * `dicts` is the RAT ladder, NEWEST FIRST: on an NSA attach both `Nr5g` and `Lte` are
+ * populated with genuinely different measurements (the NR leg and the LTE anchor), so
+ * one of them has to be the reported reading — and `rawFields` names WHICH, rather than
+ * leaving a consumer to guess. Nothing is lost either way: every dict stays verbatim in
+ * the diagnostics block. `flat` is the mmcli-flattened spelling of the same datum, kept
+ * for the same reason `rawStructMember` answers at index 0 for a flattened struct.
+ */
+type ExtendedSignalMetric = {
+	readonly member: string;
+	readonly dicts: readonly string[];
+	readonly flat: string;
+};
+
+const RSSI: ExtendedSignalMetric = {
+	member: 'rssi',
+	dicts: [SIGNAL_LTE, SIGNAL_UMTS, SIGNAL_GSM, SIGNAL_EVDO, SIGNAL_CDMA],
+	flat: rawKey(SIGNAL, 'rssi'),
+};
+const RSRP: ExtendedSignalMetric = {
+	member: 'rsrp',
+	dicts: [SIGNAL_NR5G, SIGNAL_LTE],
+	flat: rawKey(SIGNAL, 'rsrp'),
+};
+const RSRQ: ExtendedSignalMetric = {
+	member: 'rsrq',
+	dicts: [SIGNAL_NR5G, SIGNAL_LTE],
+	flat: rawKey(SIGNAL, 'rsrq'),
+};
+const SNR: ExtendedSignalMetric = {
+	member: 'snr',
+	dicts: [SIGNAL_NR5G, SIGNAL_LTE],
+	flat: rawKey(SIGNAL, 'snr'),
+};
+// SINR is a member of the `Evdo` dict and of NO other, so an LTE/NR modem reporting no
+// SINR is a READ-class `not-reported` — ModemManager CAN express it, this modem did not.
+// The NR SINR a device may publish through `Modem.GetCellInfo` is a different call on a
+// different interface and is deliberately not folded in here.
+const SINR: ExtendedSignalMetric = {
+	member: 'sinr',
+	dicts: [SIGNAL_EVDO],
+	flat: rawKey(SIGNAL, 'sinr'),
+};
 
 function hardwareIdentity(raw: RawFieldRecord): ModemHardwareIdentity {
 	const model = rawString(raw, MODEL);
@@ -230,13 +301,29 @@ function normalizeModeLabel(
 	return knownMetric(label, source);
 }
 
-function normalizeSignal(raw: RawFieldRecord, signalRead: boolean, provenance: Provenance) {
+function normalizeSignal(
+	raw: RawFieldRecord,
+	signalRead: boolean,
+	provenance: Provenance,
+	dictProvenance: DictProvenance,
+	notes: ObservationDiagnosticNote[],
+) {
 	const missing = signalRead ? ('not-reported' as const) : ('not-observed' as const);
-	const extended = (key: string): NormalizedMetric<number> => {
-		const source = provenance(key);
-		const value = rawNumber(raw, key);
+	const extended = (metric: ExtendedSignalMetric): NormalizedMetric<number> => {
+		for (const dict of metric.dicts) {
+			if (!hasRawDictMember(raw, dict, metric.member)) continue;
+			const source = dictProvenance(dict, metric.member);
+			const value = rawDictNumber(raw, dict, metric.member);
+			if (value === undefined) {
+				notes.push({ code: 'field-shape-unrecognized', field: `${dict}.${metric.member}` });
+				return unknownMetric<number>('malformed', source);
+			}
+			return knownMetric(value, source);
+		}
+		const source = provenance(metric.flat);
+		const value = rawNumber(raw, metric.flat);
 		return value === undefined
-			? unknownMetric<number>(hasRawField(raw, key) ? 'malformed' : missing, source)
+			? unknownMetric<number>(hasRawField(raw, metric.flat) ? 'malformed' : missing, source)
 			: knownMetric(value, source);
 	};
 	// `SignalQuality` is a `(ub)`: percentage at 0, "measured recently" at 1. Both are
@@ -262,8 +349,7 @@ function normalizeSignal(raw: RawFieldRecord, signalRead: boolean, provenance: P
 		rsrp: extended(RSRP),
 		rsrq: extended(RSRQ),
 		snr: extended(SNR),
-		// `Modem.Signal` exposes rssi/rsrp/rsrq/snr/ecio/io/rscp — there is no SINR member.
-		sinr: unknownMetric<number>('unsupported', metricProvenanceEmpty(provenance)),
+		sinr: extended(SINR),
 	};
 }
 

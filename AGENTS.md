@@ -1229,8 +1229,57 @@ The observation layer's SIM and signal halves are finalized on top of todo 18.
   (when WE last read). The router APIs have no such flag and answer `unsupported` — a
   capability claim, the `bars` / `maxBars` precedent.
 
+### `Modem.Signal`'s per-RAT dicts — the detail the router dongles already carried
+
+`NormalizedSignal.rsrp` / `rsrq` / `snr` / `sinr` are now claimed for MM-managed modems
+too, from the `Modem.Signal` interface's own `a{sv}` properties. Five facts about that
+path are load-bearing, and each is pinned by a test:
+
+- **A dict member arrives WRAPPED, and used to be dropped.** An `a{sv}` decodes to
+  `[key, variant][]`, so `snapshot.ts`'s `rawValue` kept the key and discarded the reading
+  — `Signal.Lte` retained as `[['rsrp'], ['rsrq'], …]`. It now unwraps the variant, which
+  is why the extended metrics are reachable at all. `signal-richness.test.ts` fails three
+  ways with that unwrap removed, so the fix is not a silent one.
+- **The dict is read by MEMBER, never flattened at retention.** `raw.ts`'s
+  `rawDictMember` / `rawDictNumber` / `hasRawDictMember` read one member by name, so
+  `error-rate`, `ecio`, `io` and `rscp` — every key the normalized model has no slot for —
+  stay verbatim in the diagnostics block instead of being lost to make four metrics fit.
+- **The RAT ladder is NEWEST FIRST, and provenance names which rung answered.** On an NSA
+  attach `Nr5g` and `Lte` are both populated with genuinely different measurements (the NR
+  leg and the LTE anchor), so one has to be the reported reading. `rsrp`/`rsrq`/`snr` take
+  `Nr5g` then `Lte`; `dbm` takes `Lte → Umts → Gsm → Evdo → Cdma`. Nothing is merged and
+  nothing is averaged — `MetricProvenance.rawFields` carries `Signal.Nr5g.rsrp` rather than
+  a bare `Signal.rsrp`, and the unchosen dict is still in `raw`.
+- **SINR comes from `Evdo` and from NOWHERE ELSE.** Checked against MM 1.24.2's own
+  introspection rather than recalled: `sinr` is a member of the `Evdo` dict only — `Lte`
+  and `Nr5g` publish `snr`, which is a different quantity and must never populate it (the
+  same rule `backend/cell-info.ts` already enforces in the other direction). So an LTE/NR
+  modem reporting no SINR answers **`not-reported`, not `unsupported`**: the source CAN
+  express it, this modem did not. The former blanket `unsupported` was a false capability
+  claim and is gone. The NR SINR a device may publish through `Modem.GetCellInfo` is a
+  different call on a different interface and is deliberately NOT folded in here.
+- **A dict-sourced metric consumes the whole property.** `consumed` must name a real raw
+  key or `createObservationDiagnostics` drops it, so the entry is `Signal.Nr5g` while
+  `rawFields` stays member-precise. An exported-but-silent `Modem.Signal` therefore yields
+  five READ-class `not-reported` metrics carrying no `value` field at all, and a modem with
+  no `Modem.Signal` interface yields `not-observed` — never a zero, in either case.
+
+**The `Signal.Setup` rate is injected at three levels and defaults at all three.**
+`SignalSetupManagerOptions.intervalSeconds` → `MmDbusBackendOptions.signalIntervalSeconds`
+→ `ModemManagerProviderOptions.signalIntervalSeconds`, each resolving to
+`DEFAULT_SIGNAL_INTERVAL_SECONDS` (5) when absent. The provider seam is the one this work
+added: the backend had accepted the option since it was written, and the provider — which
+is what an embedder actually constructs — had no way to pass it. `Setup` takes a `u`, so a
+fractional or non-positive rate is REFUSED at construction rather than marshalled; a modem
+silently polling at the wrong cadence is a defect nothing downstream can see. The
+once-per-(epoch, modem) issue semantics are the conformance-scale pin and are untouched.
+
 Coverage: `control/src/observations/sim-evidence.test.ts`, whose control case is a modem
-with the identical blank fields and NO failure reason, asserting `unknown`.
+with the identical blank fields and NO failure reason, asserting `unknown`;
+`control/src/observations/normalization.test.ts` for the per-metric claims and the
+absent-dict unknowns; `control/src/providers/modem-manager/signal-richness.test.ts` for
+the same claims over the real provider wire; `control/src/backend/signal-setup-rate.test.ts`
+for the injected rate and the once-per-(epoch, modem) issue count.
 
 ## GPS / LOCATION — A LIVE FIX, AND DELIBERATELY NO HISTORY
 

@@ -25,7 +25,7 @@ import { readSimPresence } from '../../hardware/router-parsers';
 import type { NormalizationContext, RawFieldRecord, RawFieldValue } from '../../observations';
 import { normalizeModemManagerObservation } from '../../observations';
 import { describeBandWriteCertification, readRadioModeTruth } from '../../radio';
-import type { DbusValue } from '../../transport';
+import { type DbusValue, isVariant } from '../../transport';
 import type { ProviderExecutionContext } from '../contracts';
 import type {
 	ModemManagerCapabilities,
@@ -40,6 +40,10 @@ const SIGNAL_IFACE = `${MODEM_IFACE}.Signal`;
 function rawValue(value: DbusValue): RawFieldValue | undefined {
 	if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
 		return value;
+	// An `a{sv}` decodes to `[key, variant][]`, so a dict member's value arrives WRAPPED.
+	// Without this unwrap a `Modem.Signal` RAT dict retained as `[['rsrp'], ['rsrq'], …]`:
+	// the key survived and the reading did not.
+	if (isVariant(value)) return rawValue(value.value);
 	if (Array.isArray(value)) {
 		const result: RawFieldValue[] = [];
 		for (const item of value) {

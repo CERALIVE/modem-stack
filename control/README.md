@@ -199,6 +199,30 @@ are, so the preferred mode and the measurement-recency flag survive normalizatio
 `NormalizedSignal.qualityRecent` claims that flag, and the router sources answer
 `unsupported` for it.
 
+### Extended signal — the `Modem.Signal` per-RAT dicts
+
+`rsrp`, `rsrq`, `snr` and `sinr` are claimed for MM-managed modems from the
+`Modem.Signal` interface's own `a{sv}` properties, so a ModemManager device reports the
+same detail a Huawei or ZTE dongle always did. `rsrp` / `rsrq` / `snr` read `Nr5g` first
+and `Lte` second — on a 5G NSA attach both are populated with different measurements, so
+`MetricProvenance.rawFields` names the dict that answered (`Signal.Nr5g.rsrp`) rather than
+merging the two. `dbm` reads `rssi` across `Lte → Umts → Gsm → Evdo → Cdma`.
+
+`sinr` comes from the `Evdo` dict and from no other, because that is the only dict
+ModemManager defines it on; `Lte` and `Nr5g` publish `snr`, a different quantity that
+never populates it. An LTE/5G modem reporting no SINR therefore answers `not-reported` —
+a claim about this read — and not `unsupported`, which would be a false claim about the
+source. An exported-but-silent `Modem.Signal` yields `not-reported` for every extended
+metric and a modem without the interface yields `not-observed`; neither ever yields a
+zero. Every member the normalized model has no slot for (`error-rate`, `ecio`, `io`,
+`rscp`) stays verbatim in the diagnostics block.
+
+The `Signal.Setup` reporting rate is injectable — `signalIntervalSeconds` on
+`createModemManagerProvider`, on `createMmDbusBackend`, or `intervalSeconds` on
+`SignalSetupManager` — and defaults to `DEFAULT_SIGNAL_INTERVAL_SECONDS` (5 seconds) at
+each. `Setup` takes an unsigned integer, so a fractional or non-positive rate is refused
+at construction rather than marshalled.
+
 ### Mutation safety ports
 
 The root export includes `MutationAdmissionPort`, `ResourceOwnershipPort`,
