@@ -583,6 +583,33 @@ one module behave differently from another on Linux, with a citation for every c
   READ, or a doc — never an AT command, a QMI/MBIM write, a composition switch, or a band
   lock. An unsourced operator report is recorded AS unsourced and claims nothing.
 
+### `docs/COMPAT-MATRIX.md` — the one tracked support matrix
+
+[`docs/COMPAT-MATRIX.md`](docs/COMPAT-MATRIX.md) is the single vendor × firmware ×
+composition × operation matrix: 22 hardware rows (the six long-standing vendor families plus
+the Sierra, Telit, u-blox and NETGEAR groundwork rows) against 18 operations spanning first
+enumeration through a sustained bonded uplink.
+
+- **Every claim cell is a member of the five-state ladder in `capability/support-claim.ts`,
+  and there is no second status vocabulary.** No "partial", no "works", no tick-and-cross.
+  198 cells, all of them `implemented` or `unavailable`; `enabled` / `capable` / `certified`
+  appear in the matrix nowhere, for exactly the reason `VENDOR-QUIRKS.md` is capped the same
+  way. It follows that **no combination in the repository is `certified`, so none may be
+  described as supported.**
+- **It states which claims are hardware-free and which are hardware-required**, and links
+  each hardware-required operation to its RB runbook. `BENCH.md` remains the sole owner of
+  per-runbook status; the matrix links and restates none of it. A cell is raised by a bench
+  capture plus a reviewed commit, never by an edit to the matrix.
+- **The NETGEAR LB1120 gap is recorded rather than smoothed over**: the row labels the
+  family `router-webui`, but with no positive cellular evidence the tether classifies
+  `wired-ethernet`, so no operation in this stack reaches it. Its column is mostly
+  `unavailable` as a consequence, and the phone-tether row reads the same way for the same
+  reason.
+- It also records one discrepancy in `VENDOR-QUIRKS.md`: the Sierra row's "no `AT!` form
+  exists anywhere in this repository" is true of the `providers/ufi-himi` gate it cites, but
+  `usb-mode/runtime-capability.ts` carries Sierra's reviewed `AT!USBCOMP` forms, which is
+  what makes the composition-switch operation `implemented` for Sierra.
+
 ## USB-COMPOSITION SWITCH — RUNTIME OFFER, TIERED PROOF
 
 The ModemManager provider's `usbComposition` operation derives its targets from the

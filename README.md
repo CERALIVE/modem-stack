@@ -45,6 +45,14 @@ report a Wi-Fi dongle as an uplink. No Telit, u-blox, or NETGEAR provider exists
 reading list behind those rows — every claim carries a pinned citation, no claim sits above
 `implemented` on the five-state support ladder, and nothing in it is on a write path.
 
+[`docs/COMPAT-MATRIX.md`](docs/COMPAT-MATRIX.md) is the one tracked support matrix built on
+those rows: 22 hardware rows against 18 operations, from first enumeration through a
+sustained bonded uplink, with a hardware-free versus hardware-required split that says which
+claims a green CI run establishes and which ones only a bench device can. Every cell is a
+member of the same five-state ladder and there is no second status vocabulary, so no
+combination is `certified` and none may be described as supported. Hardware evidence lives
+in [`docs/BENCH.md`](docs/BENCH.md); the matrix links to it and restates none of it.
+
 The ModemManager operation surface also exposes runtime USB-composition capability. Known
 vendors are queried with exact reviewed READ/TEST forms, targets come from the device's own
 enumeration only when it includes a return path, and writes retain the shared admission,
