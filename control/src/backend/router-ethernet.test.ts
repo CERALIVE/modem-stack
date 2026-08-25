@@ -4,7 +4,11 @@
 
 import { describe, expect, test } from 'bun:test';
 import { deviceIfname } from '../ports';
-import { createRouterEthernetProbe, type RouterEthernetProbeDeps } from './router-ethernet';
+import {
+	classifyRouterProbeFailure,
+	createRouterEthernetProbe,
+	type RouterEthernetProbeDeps,
+} from './router-ethernet';
 
 const IFNAME = deviceIfname('eth1');
 
@@ -67,5 +71,46 @@ describe('createRouterEthernetProbe — advisory health', () => {
 		expect(health.presence).toBe('absent');
 		expect(health.gatewayReachable).toBe(false);
 		expect(health.egressHealthy).toBe(false);
+	});
+
+	test('uses the injected egress host', async () => {
+		const hosts: string[] = [];
+		const probe = probeWith({
+			probeHost: '198.51.100.7',
+			checkLinkUp: () => Promise.resolve(true),
+			resolveGateway: () => Promise.resolve('192.168.8.1'),
+			ping: (host) => {
+				hosts.push(host);
+				return Promise.resolve(true);
+			},
+		});
+		await probe.checkHealth(IFNAME);
+		expect(hosts).toEqual(['192.168.8.1', '198.51.100.7']);
+	});
+
+	test('classifies command missing, timeout, nonzero exit, and unreachable failures', () => {
+		expect(
+			classifyRouterProbeFailure(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+		).toBe('command-missing');
+		expect(
+			classifyRouterProbeFailure(Object.assign(new Error('hung'), { name: 'TimeoutError' })),
+		).toBe('timeout');
+		expect(classifyRouterProbeFailure(new Error('exit 1'))).toBe('nonzero-exit');
+		expect(
+			classifyRouterProbeFailure(
+				Object.assign(new Error('unreachable'), { name: 'UnreachableError' }),
+			),
+		).toBe('unreachable');
+	});
+
+	test('a fake hung subprocess is bounded by the configured timeout', async () => {
+		const started = performance.now();
+		const probe = probeWith({
+			subprocessTimeoutMs: 5,
+			checkLinkUp: () => new Promise<boolean>(() => undefined),
+		});
+		const health = await probe.checkHealth(IFNAME);
+		expect(health.presence).toBe('absent');
+		expect(performance.now() - started).toBeLessThan(1000);
 	});
 });
