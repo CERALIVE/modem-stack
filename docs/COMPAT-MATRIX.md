@@ -177,17 +177,21 @@ Data-usage metering is not an operation column, because it is measured from
 a tracked interface at all. Making it a column would add eleven cells that all say the same
 thing for a non-vendor reason. Its accuracy gate is RB-6 in [`BENCH.md`](BENCH.md).
 
-### One discrepancy worth recording
+### Why Sierra's composition switch is `implemented` even though `AT!` is fenced
 
-[`VENDOR-QUIRKS.md`](VENDOR-QUIRKS.md)'s Sierra section states that no `AT!` form exists
-anywhere in this repository. That is true of the `providers/ufi-himi` static gate it cites,
-which scans that provider's directory, but it is not true repo-wide:
 `control/src/usb-mode/runtime-capability.ts` carries Sierra's reviewed `AT!USBCOMP?` /
 `AT!USBCOMP=?` / `AT!USBCOMP=` forms in the composition registries, which is what makes
 operation 12 `implemented` for Sierra. The forms are reviewed, allowlisted by name, and
 gated by the same admission, journal, rollback and readback fences as every other
-composition write, so the behaviour is intended. It is the fence's *scope* that the quirks
-row overstates. Recorded here rather than silently corrected there.
+composition write.
+
+That coexists with the `AT!` fence rather than contradicting it, because the two speak
+about different surfaces. [`VENDOR-QUIRKS.md`](VENDOR-QUIRKS.md)'s Sierra `AT!` row is
+about the **password-gated** `AT!BAND` / `AT!ENTERCND` surface, which is absent from this
+repository and stays `unavailable`; the static gate it cites (`providers/ufi-himi`) scans
+that provider's directory, not the repository. An earlier revision of that row claimed a
+repo-wide absence of every `AT!` form, which was not true — it has been narrowed to the
+surface it actually describes.
 
 ---
 
