@@ -38,12 +38,12 @@ data before `ERROR`. Band certification remains catalog-gated and unchanged.
 
 ## Versioning at a glance
 
-ONE unified **SemVer** tag `vX.Y.Z` releases **both** artifacts together: `v1.1.0` publishes
-`@ceralive/modem-control@1.1.0` to npm **and** the `.deb` artifact set in the same release.
-This repo deliberately does **not** use the CeraLive CalVer scheme. New upstream-source
-rebuilds use per-source `<upstream>-<rev>~ceralive.N` counters; unchanged sources retain their
-previous version and exact bytes. Legacy published releases keep their tag-shaped suffixes.
-Full contract:
+ONE unified **SemVer** tag `vX.Y.Z` requires the root, control, and CLI `package.json`
+versions to all be `X.Y.Z`; it publishes `@ceralive/modem-control@X.Y.Z` to npm **and** the
+`.deb` artifact set in the same release. This repo deliberately does **not** use the CeraLive
+CalVer scheme. New upstream-source rebuilds use per-source `<upstream>-<rev>~ceralive.N`
+counters; unchanged sources retain their previous version and exact bytes. Legacy published
+releases keep their tag-shaped suffixes. Full contract:
 [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Layout

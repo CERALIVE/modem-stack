@@ -192,7 +192,10 @@ i.e. `<upstream>-<rev>~ceralive0.0.0~dev`, which sorts below every real release
 ## npm version provenance
 
 Following the house OIDC pattern, the npm publish job is **not** version-injected: it
-verifies that `control/package.json` `version` **equals** the tag's `X.Y.Z` and fails
-closed on any mismatch before publishing. To cut a release, bump `control/package.json`
-`version`, commit, then create the matching `vX.Y.Z` tag. The `.deb` side is injected
-(above); the npm side is verified — both are driven by the same tag.
+verifies that `package.json`, `control/package.json`, and `cli/package.json` all have a
+`version` **equal** to the tag's `X.Y.Z`, naming the mismatched file and failing closed
+before publishing. The companion build receives that same tag through `RELEASE_VERSION`,
+which `build-companion.sh` converts to the bare companion version and validates from the
+produced `.deb`. To cut a release, bump all three `package.json` versions, commit, then
+create the matching `vX.Y.Z` tag. The four upstream `.deb` sources retain their independent
+per-source counter versions; only first-party artifacts obey this tag-version unity rule.

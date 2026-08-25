@@ -1,6 +1,6 @@
 {
 	"name": "modem-control-cli",
-	"version": "1.0.0",
+	"version": "1.2.1",
 	"private": true,
 	"type": "module",
 	"description": "modem-control bench CLI — probe/watch/apply/set-usb-mode/usage/certify/hil-cycle against real modems (the bench iteration surface).",
