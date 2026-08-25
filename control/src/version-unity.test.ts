@@ -1,9 +1,9 @@
-import { test } from "bun:test";
+import { test } from 'bun:test';
 
 const FIRST_PARTY_PACKAGE_PATHS = [
-	"package.json",
-	"control/package.json",
-	"cli/package.json",
+	'package.json',
+	'control/package.json',
+	'cli/package.json',
 ] as const;
 
 type PackageVersion = {
@@ -13,25 +13,23 @@ type PackageVersion = {
 
 async function readPackageVersion(path: string): Promise<PackageVersion> {
 	const manifest: unknown = await Bun.file(path).json();
-	if (typeof manifest !== "object" || manifest === null) {
+	if (typeof manifest !== 'object' || manifest === null) {
 		throw new Error(`${path} must contain a JSON object`);
 	}
 
-	const version = Reflect.get(manifest, "version");
-	if (typeof version !== "string") {
+	const version = Reflect.get(manifest, 'version');
+	if (typeof version !== 'string') {
 		throw new Error(`${path} must contain a string version`);
 	}
 
 	return { path, version };
 }
 
-test("first-party workspace package versions stay unified", async () => {
-	const packageVersions = await Promise.all(
-		FIRST_PARTY_PACKAGE_PATHS.map(readPackageVersion),
-	);
+test('first-party workspace package versions stay unified', async () => {
+	const packageVersions = await Promise.all(FIRST_PARTY_PACKAGE_PATHS.map(readPackageVersion));
 	const root = packageVersions[0];
 	if (root === undefined) {
-		throw new Error("first-party package version list is unexpectedly empty");
+		throw new Error('first-party package version list is unexpectedly empty');
 	}
 
 	for (const packageVersion of packageVersions.slice(1)) {
