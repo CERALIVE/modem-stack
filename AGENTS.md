@@ -519,10 +519,25 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
   nothing: the SIMCom's PID→composition mapping is unproven so its target modes stay
   UNCERTIFIED and HIDDEN, and the FM350 gains **no** classifier entry for its `0e8d:7127`
   carrier id — `docs/FM350-DECISION.md` is unchanged.
-- The full bench-runbook ladder, RB-1 through RB-17, lives in `docs/BENCH.md`: RB-9 is the
+- The full bench-runbook ladder, RB-1 through RB-18, lives in `docs/BENCH.md`: RB-9 is the
   fleet-inventory capture (one identity bundle per acquired physical unit), RB-10 is the
   hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
-  per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe.
+  per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe, and RB-18 is
+  the Sierra identity/composition capture. Its 2026-08-25 run is an honest
+  `device-not-present` skip: no Sierra VID was attached, `certify` was not invoked, and no
+  bundle or certification claim exists.
+
+### Sierra classifier groundwork — exact evidence, never a support claim
+
+`backend/device-classifier.ts` carries exact application-mode Sierra family rows for
+EM74xx, EM75xx, and EM919x-class devices, including Sierra's `1199` VID and the HP/Dell
+rebrands represented in ModemManager's pinned FCC mapping. Rows are evidence-tiered:
+`modemmanager-1.24.2-fcc` means the VID:PID occurs in the pinned release's available-tier
+mapping; `mainline-kernel` means Linux's qmi_wwan/qcserial tables name that family. A row can
+label a known family but cannot make a device `mm-managed` — live control-interface/driver
+evidence remains the only authority for that class, and an unknown Sierra PID remains
+unknown. Every classifier fixture is stamped `synthetic: true`, so it cannot cross the
+catalog-promotion gate.
 
 ## USB-COMPOSITION SWITCH — RUNTIME OFFER, TIERED PROOF
 
@@ -962,6 +977,13 @@ records which `<vid>:<pid>` MODELS an operator opted in for, so
 that record on every boot. The unlocking is ModemManager's dispatcher's job, start
 to finish. Full model, matrix and certification status:
 [`docs/FCC-UNLOCK-COVERAGE.md`](docs/FCC-UNLOCK-COVERAGE.md).
+
+The coverage mirror names its exact provenance in `MM_FCC_UNLOCK_SOURCE`: ModemManager
+1.24.2 commit `f2b9ab1ad78d322f32134a444b5b54c6e8160e19`,
+`data/dispatcher-fcc-unlock/meson.build`, installed into the inert
+`fcc-unlock.available.d` tier. Its four Sierra entries are `03f0:4e1d`, `1199:9079`,
+`413c:81a3`, and `413c:81a8`; another well-formed Sierra PID is positively `absent`, not
+guessed covered. This classifier-side mirror does not create or own any packaging link.
 
 - **`<vid>:<pid>` is the ONLY correct key.** `mm-dispatcher-fcc-unlock.c` builds
   exactly `g_strdup_printf("%04x:%04x", vid, pid)` and opens no other name, so a

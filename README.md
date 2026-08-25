@@ -27,6 +27,14 @@ helpers for portable modem identity, display naming, ModemManager enums, USB-net
 classification, capability selection, and shadow-result comparison; these helpers perform
 no discovery or transport and leave CeraUI integration to a separate cutover.
 
+Sierra groundwork uses exact, evidence-tiered USB model rows for EM74xx, EM75xx, and
+EM919x-class application PIDs across Sierra, HP, and Dell branding. These rows provide a
+family label only; interface/driver evidence still decides whether a device is MM-managed,
+and unknown Sierra PIDs remain unknown. The FCC classifier table separately mirrors the
+complete ModemManager 1.24.2 available-tier mapping and does not install or activate links.
+RB-18 in [`docs/BENCH.md`](docs/BENCH.md) records the real identity/composition capture gate;
+the 2026-08-25 attempt is a named `device-not-present` skip with no fabricated bundle.
+
 The ModemManager operation surface also exposes runtime USB-composition capability. Known
 vendors are queried with exact reviewed READ/TEST forms, targets come from the device's own
 enumeration only when it includes a return path, and writes retain the shared admission,

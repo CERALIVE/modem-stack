@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+	cellularModelEvidence,
 	classifyDevice,
 	classifyUsbNetDevice,
 	detectUsbMode,
@@ -12,6 +13,18 @@ import {
 	unitDiscriminator,
 	vendorLabel,
 } from './device-classifier';
+
+const SIERRA_SYNTHETIC_FIXTURES = [
+	['1199', '9071', 'EM74xx', 'mainline-kernel'],
+	['1199', '9079', 'EM74xx', 'modemmanager-1.24.2-fcc'],
+	['1199', '907b', 'EM74xx', 'mainline-kernel'],
+	['03f0', '4e1d', 'EM74xx', 'modemmanager-1.24.2-fcc'],
+	['413c', '81a3', 'EM74xx', 'modemmanager-1.24.2-fcc'],
+	['413c', '81a8', 'EM74xx', 'modemmanager-1.24.2-fcc'],
+	['1199', '9091', 'EM75xx', 'mainline-kernel'],
+	['1199', 'c081', 'EM75xx', 'mainline-kernel'],
+	['1199', '90d3', 'EM919x', 'mainline-kernel'],
+] as const satisfies readonly (readonly [string, string, string, string])[];
 
 /** A Quectel-style QMI composition: a `qmi_wwan` control port (+ AT serials). */
 const QMI: UsbDeviceSnapshot = {
@@ -172,6 +185,34 @@ describe('classifyDevice — honesty guards', () => {
 			interfaces: [{ interfaceClass: 0xff, interfaceSubClass: 0x00, interfaceProtocol: 0x00 }],
 		};
 		expect(classifyDevice(bareVendor).deviceClass).toBe('unmanaged');
+	});
+});
+
+describe('Sierra model evidence — exact VID:PID rows only', () => {
+	for (const [vendorId, productId, family, evidenceTier] of SIERRA_SYNTHETIC_FIXTURES) {
+		test(`Given synthetic ${vendorId}:${productId}, When model evidence is resolved, Then it names ${family} at its evidence tier`, () => {
+			const fixture = {
+				snapshot: { vendorId, productId, bDeviceClass: 0, interfaces: [] },
+				provenance: { synthetic: true },
+			} as const;
+
+			expect(fixture.provenance.synthetic).toBe(true);
+			expect(cellularModelEvidence(fixture.snapshot)).toEqual({
+				family,
+				evidenceTier,
+				vendor: 'Sierra Wireless',
+			});
+		});
+	}
+
+	test('Given an unlisted Sierra PID, When model evidence is resolved, Then it stays unknown', () => {
+		const fixture = {
+			snapshot: { vendorId: '1199', productId: 'ffff', bDeviceClass: 0, interfaces: [] },
+			provenance: { synthetic: true },
+		} as const;
+
+		expect(fixture.provenance.synthetic).toBe(true);
+		expect(cellularModelEvidence(fixture.snapshot)).toBeUndefined();
 	});
 });
 

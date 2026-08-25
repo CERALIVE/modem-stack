@@ -58,6 +58,44 @@ const ECM_NCM_DRIVERS: ReadonlySet<string> = new Set(['cdc_ether', 'cdc_ncm']);
 const RNDIS_DRIVERS: ReadonlySet<string> = new Set(['rndis_host']);
 const STORAGE_DRIVERS: ReadonlySet<string> = new Set(['usb-storage', 'uas']);
 
+export type CellularModelEvidenceTier = 'modemmanager-1.24.2-fcc' | 'mainline-kernel';
+
+export interface CellularModelEvidence {
+	readonly vendor: string;
+	readonly family: string;
+	readonly evidenceTier: CellularModelEvidenceTier;
+}
+
+/**
+ * Exact model-family evidence. This table may label a known VID:PID, but it never
+ * decides whether the device is MM-managed: live interface/driver evidence below
+ * remains authoritative. The pinned ModemManager FCC map is the stronger tier;
+ * remaining application-mode PIDs come from Linux qmi_wwan/qcserial device tables.
+ */
+export const CELLULAR_USB_MODEL_ROWS: ReadonlyMap<string, CellularModelEvidence> = new Map([
+	[
+		'03f0:4e1d',
+		{ vendor: 'Sierra Wireless', family: 'EM74xx', evidenceTier: 'modemmanager-1.24.2-fcc' },
+	],
+	['1199:9071', { vendor: 'Sierra Wireless', family: 'EM74xx', evidenceTier: 'mainline-kernel' }],
+	[
+		'1199:9079',
+		{ vendor: 'Sierra Wireless', family: 'EM74xx', evidenceTier: 'modemmanager-1.24.2-fcc' },
+	],
+	['1199:907b', { vendor: 'Sierra Wireless', family: 'EM74xx', evidenceTier: 'mainline-kernel' }],
+	['1199:9091', { vendor: 'Sierra Wireless', family: 'EM75xx', evidenceTier: 'mainline-kernel' }],
+	['1199:90d3', { vendor: 'Sierra Wireless', family: 'EM919x', evidenceTier: 'mainline-kernel' }],
+	['1199:c081', { vendor: 'Sierra Wireless', family: 'EM75xx', evidenceTier: 'mainline-kernel' }],
+	[
+		'413c:81a3',
+		{ vendor: 'Sierra Wireless', family: 'EM74xx', evidenceTier: 'modemmanager-1.24.2-fcc' },
+	],
+	[
+		'413c:81a8',
+		{ vendor: 'Sierra Wireless', family: 'EM74xx', evidenceTier: 'modemmanager-1.24.2-fcc' },
+	],
+]);
+
 export const CELLULAR_USB_VENDOR_IDS: ReadonlyMap<string, string> = new Map([
 	['05c6', 'Qualcomm'],
 	['0af0', 'Option'],
@@ -200,6 +238,12 @@ export function classifyDevice(snapshot: UsbDeviceSnapshot): DeviceClassificatio
 
 export function cellularVendorName(vendorId: string): string | undefined {
 	return CELLULAR_USB_VENDOR_IDS.get(vendorId.toLowerCase());
+}
+
+export function cellularModelEvidence(
+	device: Pick<UsbDeviceSnapshot, 'vendorId' | 'productId'>,
+): CellularModelEvidence | undefined {
+	return CELLULAR_USB_MODEL_ROWS.get(`${device.vendorId}:${device.productId}`.toLowerCase());
 }
 
 export function cellularEvidence(device: UsbDeviceSnapshot): string | undefined {

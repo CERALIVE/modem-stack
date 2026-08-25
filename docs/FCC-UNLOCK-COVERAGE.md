@@ -42,6 +42,9 @@ opened by the dispatcher; it is only ever the *target* of a `<vid>:<pid>` link.
 `data/dispatcher-fcc-unlock/` in ModemManager 1.24.2 contains four real scripts,
 one per vendor, and the build installs a `<vid>:<pid>` symlink onto the right one
 for every model the vendor script covers (`meson.build`, the `vidpids` dict).
+The classifier mirror pins that source as upstream commit
+`f2b9ab1ad78d322f32134a444b5b54c6e8160e19` in `MM_FCC_UNLOCK_SOURCE`; its test asserts
+all 14 entries and all four Sierra-branded keys exactly.
 
 | Vendor script | Talks to the modem via |
 |---|---|
@@ -126,6 +129,7 @@ the CeraLive toggle.
 | Quectel EM120R-GL | `2c7c:030a` | ✅ |
 | Quectel EM060K-GL | `2c7c:0314` | ✅ |
 | Sierra Wireless EM7455 / MC7455 | `1199:9079` | ✅ |
+| Sierra Wireless EM9191 | `1199:90d3` | ❌ — known classifier family, no MM 1.24.2 FCC procedure |
 | Dell DW5811e / DW5816e | `413c:81a3` / `413c:81a8` | ✅ |
 | HP lt4120 / lt4132 | `03f0:4e1d` | ✅ |
 | Foxconn T77W968 / T99W175 | `105b:e0ab` / `105b:e0c3` | ✅ |
