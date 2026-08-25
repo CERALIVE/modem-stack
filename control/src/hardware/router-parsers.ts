@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseJsonWith } from '../json-boundary';
 import { parseHilinkXmlValue } from './hilink-protocol';
 
 export * from './hilink-protocol';
@@ -122,37 +123,11 @@ const ufiBodySchema = z.object({
 });
 
 function parseFlatRecord(body: string): Readonly<Record<string, string | number>> | undefined {
-	const parsed = z
-		.string()
-		.transform((value, context) => {
-			try {
-				return JSON.parse(value);
-			} catch (error) {
-				if (!(error instanceof SyntaxError)) throw error;
-				context.addIssue({ code: 'custom', message: 'invalid JSON' });
-				return z.NEVER;
-			}
-		})
-		.pipe(flatRecordSchema)
-		.safeParse(body);
-	return parsed.success ? parsed.data : undefined;
+	return parseJsonWith(flatRecordSchema, body);
 }
 
 function parseUfiBody(body: string): z.infer<typeof ufiBodySchema> | undefined {
-	const parsed = z
-		.string()
-		.transform((value, context) => {
-			try {
-				return JSON.parse(value);
-			} catch (error) {
-				if (!(error instanceof SyntaxError)) throw error;
-				context.addIssue({ code: 'custom', message: 'invalid JSON' });
-				return z.NEVER;
-			}
-		})
-		.pipe(ufiBodySchema)
-		.safeParse(body);
-	return parsed.success ? parsed.data : undefined;
+	return parseJsonWith(ufiBodySchema, body);
 }
 
 export function parseHilinkSignal(input: {
