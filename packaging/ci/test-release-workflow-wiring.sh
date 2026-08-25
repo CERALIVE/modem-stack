@@ -48,6 +48,11 @@ echo "  workflow: ${WORKFLOW#"$REPO_ROOT"/}"
 # First 1-based line number matching a fixed string; empty when absent.
 line_of() { grep -n -m1 -F -- "$1" "$WORKFLOW" | cut -d: -f1; }
 
+# Same, for a command INVOCATION. The end-of-line anchor — not a `run:` prefix, which a step
+# that guards its invocation inside `run: |` no longer carries — is what skips an earlier
+# mention of the same path inside an `echo "::error::…"` string.
+line_of_invocation() { grep -nE -m1 -- "$1"'[[:space:]]*$' "$WORKFLOW" | cut -d: -f1; }
+
 # The comparator every ordering assertion goes through, so ONE non-vacuity control covers them all.
 assert_before() { # <label-a> <line-a> <label-b> <line-b>
 	local a_label="$1" a="$2" b_label="$3" b="$4"
@@ -97,7 +102,7 @@ DETECT_LINE="$(line_of '- name: Detect changed sources (per-source verdicts)')"
 STAGE_LINE="$(line_of '- name: Stage carry-forward debs (unchanged sources, sha256-verified)')"
 BUILD_STEP_LINE="$(line_of '- name: Build the MM 1.24 stack (.deb)')"
 BUILD_CALL_LINE="$(line_of 'packaging/ci/build-bookworm.sh amd64')"
-COMPANION_LINE="$(line_of 'run: packaging/ci/build-companion.sh')"
+COMPANION_LINE="$(line_of_invocation 'packaging/ci/build-companion\.sh')"
 MANIFEST_LINE="$(line_of 'run: bash packaging/ci/generate-release-manifest.sh')"
 UPLOAD_LINE="$(line_of '- name: Upload .deb artifacts + release manifest')"
 
