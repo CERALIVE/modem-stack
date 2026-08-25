@@ -58,19 +58,59 @@ const ECM_NCM_DRIVERS: ReadonlySet<string> = new Set(['cdc_ether', 'cdc_ncm']);
 const RNDIS_DRIVERS: ReadonlySet<string> = new Set(['rndis_host']);
 const STORAGE_DRIVERS: ReadonlySet<string> = new Set(['usb-storage', 'uas']);
 
-export type CellularModelEvidenceTier = 'modemmanager-1.24.2-fcc' | 'mainline-kernel';
+export type CellularModelEvidenceTier =
+	| 'modemmanager-1.24.2-fcc'
+	| 'mainline-kernel'
+	| 'usb-ids-registry';
+
+/**
+ * A POSITIVE, sourced claim that a labelled family is a router appliance whose only
+ * control surface is a vendor web UI — no ModemManager plugin, no kernel modem driver
+ * claiming its application PID. ABSENCE OF THIS FIELD IS NOT A CLAIM: it does not say
+ * a family is a modem module, only that nothing here asserts otherwise. Same tri-state
+ * discipline as `fcc/coverage.ts` — `unknown` is never folded into `absent`.
+ *
+ * It also does not, and must not, decide a DEVICE CLASS. `classifyDevice` reads live
+ * interfaces and bound drivers; this label is model-family evidence sitting beside it.
+ */
+export type CellularModelFamilyKind = 'router-webui';
 
 export interface CellularModelEvidence {
 	readonly vendor: string;
 	readonly family: string;
 	readonly evidenceTier: CellularModelEvidenceTier;
+	readonly familyKind?: CellularModelFamilyKind;
 }
+
+/** Where each evidence tier's rows were read from, so a reviewer can re-check them. */
+export const CELLULAR_MODEL_EVIDENCE_SOURCES = {
+	'modemmanager-1.24.2-fcc': {
+		source: 'ModemManager 1.24.2 data/dispatcher-fcc-unlock/meson.build',
+		pin: 'f2b9ab1ad78d322f32134a444b5b54c6e8160e19',
+	},
+	'mainline-kernel': {
+		source: 'Linux drivers/net/usb/qmi_wwan.c + drivers/usb/serial/option.c',
+		pin: '45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229',
+	},
+	'usb-ids-registry': {
+		source: 'The USB ID Repository (linux-usb.org/usb.ids)',
+		pin: '2026.06.26',
+	},
+} as const satisfies Record<CellularModelEvidenceTier, { source: string; pin: string }>;
 
 /**
  * Exact model-family evidence. This table may label a known VID:PID, but it never
  * decides whether the device is MM-managed: live interface/driver evidence below
- * remains authoritative. The pinned ModemManager FCC map is the stronger tier;
- * remaining application-mode PIDs come from Linux qmi_wwan/qcserial device tables.
+ * remains authoritative. The pinned ModemManager FCC map is the strongest tier;
+ * `mainline-kernel` rows are application-mode PIDs named by Linux's own qmi_wwan /
+ * qcserial / option device tables; `usb-ids-registry` is the weakest and is used only
+ * where NO kernel modem driver claims the id at all — which is itself the evidence
+ * that the device is a router appliance rather than a controllable module.
+ *
+ * EVERY ROW IS AN EXACT VID:PID. A vendor range is never inferred, and that is not a
+ * stylistic preference: NETGEAR's `0846` and u-blox's `1546` both carry non-cellular
+ * products (Wi-Fi/Ethernet adapters and GNSS receivers respectively), so a
+ * vendor-keyed rule on either would label hardware that has no radio.
  */
 export const CELLULAR_USB_MODEL_ROWS: ReadonlyMap<string, CellularModelEvidence> = new Map([
 	[
@@ -94,8 +134,40 @@ export const CELLULAR_USB_MODEL_ROWS: ReadonlyMap<string, CellularModelEvidence>
 		'413c:81a8',
 		{ vendor: 'Sierra Wireless', family: 'EM74xx', evidenceTier: 'modemmanager-1.24.2-fcc' },
 	],
+	['1bc7:1031', { vendor: 'Telit', family: 'LE910C1-EUX', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1034', { vendor: 'Telit', family: 'LE910C4-WWX', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1040', { vendor: 'Telit', family: 'LE922A', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1050', { vendor: 'Telit', family: 'FN980', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1060', { vendor: 'Telit', family: 'LN920', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1070', { vendor: 'Telit', family: 'FN990A', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1080', { vendor: 'Telit', family: 'FE990A', evidenceTier: 'mainline-kernel' }],
+	['1bc7:10a0', { vendor: 'Telit', family: 'FN920C04', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1100', { vendor: 'Telit', family: 'ME910', evidenceTier: 'mainline-kernel' }],
+	['1bc7:1200', { vendor: 'Telit', family: 'LE920', evidenceTier: 'mainline-kernel' }],
+	['1546:1311', { vendor: 'u-blox', family: 'LARA-R6', evidenceTier: 'mainline-kernel' }],
+	['1546:1312', { vendor: 'u-blox', family: 'LARA-R6', evidenceTier: 'mainline-kernel' }],
+	['1546:1313', { vendor: 'u-blox', family: 'LARA-R6', evidenceTier: 'mainline-kernel' }],
+	['1546:1341', { vendor: 'u-blox', family: 'LARA-L6', evidenceTier: 'mainline-kernel' }],
+	['1546:1342', { vendor: 'u-blox', family: 'LARA-L6', evidenceTier: 'mainline-kernel' }],
+	['1546:1343', { vendor: 'u-blox', family: 'LARA-L6', evidenceTier: 'mainline-kernel' }],
+	[
+		'0846:68e1',
+		{
+			vendor: 'NETGEAR',
+			family: 'LB1120',
+			evidenceTier: 'usb-ids-registry',
+			familyKind: 'router-webui',
+		},
+	],
 ]);
 
+/**
+ * Vendor ids whose ENTIRE USB range is cellular, so the vendor id alone is honest
+ * evidence of a radio. Membership is a claim about the whole range, which is why
+ * NETGEAR's `0846` is deliberately ABSENT despite having a row above: the USB ID
+ * Repository lists that vendor's Wi-Fi and Ethernet adapters under it, so a
+ * vendor-keyed rule there would report a Wi-Fi dongle as a cellular uplink.
+ */
 export const CELLULAR_USB_VENDOR_IDS: ReadonlyMap<string, string> = new Map([
 	['05c6', 'Qualcomm'],
 	['0af0', 'Option'],
@@ -104,6 +176,7 @@ export const CELLULAR_USB_VENDOR_IDS: ReadonlyMap<string, string> = new Map([
 	['1546', 'u-blox'],
 	['19d2', 'ZTE'],
 	['1bbb', 'TCL/Alcatel'],
+	['1bc7', 'Telit'],
 	['1c9e', 'Longcheer'],
 	['1e0e', 'SIMCom'],
 	['2c7c', 'Quectel'],

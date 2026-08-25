@@ -539,6 +539,50 @@ evidence remains the only authority for that class, and an unknown Sierra PID re
 unknown. Every classifier fixture is stamped `synthetic: true`, so it cannot cross the
 catalog-promotion gate.
 
+### Telit / u-blox / NETGEAR groundwork — and the mixed-VID trap
+
+The same table carries ten exact Telit (`1bc7`) rows, six u-blox (`1546`) LARA-R6/LARA-L6
+rows, and ONE NETGEAR (`0846`) row. `CELLULAR_MODEL_EVIDENCE_SOURCES` now pins each tier's
+provenance so a reviewer can re-derive any row; a test asserts every tier a row uses has a
+pin. **No provider was added for any of these vendors** — this is classifier and doc
+groundwork only.
+
+- **A third evidence tier exists: `usb-ids-registry`,** the weakest of the three. It is used
+  ONLY where no kernel modem driver claims the id at all — which is itself the evidence
+  that the device is a router appliance rather than a controllable module. The NETGEAR
+  LB1120 (`0846:68e1`) is the sole row at that tier.
+- **`CellularModelEvidence.familyKind` is an OPTIONAL, positive `router-webui` claim, and
+  its ABSENCE IS NOT A CLAIM.** Silence does not mean "modem module"; it means nothing here
+  asserts otherwise — the same tri-state discipline `fcc/coverage.ts` uses for `unknown`. A
+  test pins that exactly one row carries it. It still decides no device class: NETGEAR
+  classifies `router-mode` because its interfaces say so, and a test proves the class is
+  unchanged when the same composition is presented under an unlisted PID.
+- **`0846` is deliberately ABSENT from `CELLULAR_USB_VENDOR_IDS`, and that absence is
+  load-bearing.** The USB ID Repository's `0846` block is dominated by NETGEAR Wi-Fi and
+  Ethernet adapters — `68e1` is the only cellular entry — so a vendor-keyed rule would
+  report a Wi-Fi dongle as a cellular uplink. `1546` has the same shape (u-blox GNSS
+  receivers share it with cellular modules) but predates this work and stays; treat a
+  vendor-only match on it as WEAK evidence. `1bc7` IS added, because that range is Telit
+  cellular modules end to end. Consequence worth knowing: the LB1120 tether currently
+  reads `wired-ethernet` from `classifyUsbNetDevice`, which is honest — a known gap, not a
+  guess.
+
+### `docs/VENDOR-QUIRKS.md` — sourced, and capped at `implemented`
+
+[`docs/VENDOR-QUIRKS.md`](docs/VENDOR-QUIRKS.md) records the per-vendor behaviours that make
+one module behave differently from another on Linux, with a citation for every claim
+(pinned to MM `1.24.2`, a named Linux commit, `usb.ids` `2026.06.26`, OpenWrt's `qmi.sh`,
+`usb-modeswitch-data`, and the BELABOX tutorial wiki). Two properties are the whole point:
+
+- **No row sits above `implemented` on the five-state ladder, and none may.** `capable`
+  needs a live probe and `certified` needs a hardware drill; a document can produce
+  neither. Rows for surfaces this repo ships no code for read `unavailable`, which is
+  BELOW `implemented`, not above it.
+- **Nothing in it is on a write path, and nothing in it may be put on one.** A quirk is a
+  description of somebody else's firmware. It may inform a classifier LABEL, a diagnostic
+  READ, or a doc — never an AT command, a QMI/MBIM write, a composition switch, or a band
+  lock. An unsourced operator report is recorded AS unsourced and claims nothing.
+
 ## USB-COMPOSITION SWITCH — RUNTIME OFFER, TIERED PROOF
 
 The ModemManager provider's `usbComposition` operation derives its targets from the

@@ -35,6 +35,16 @@ complete ModemManager 1.24.2 available-tier mapping and does not install or acti
 RB-18 in [`docs/BENCH.md`](docs/BENCH.md) records the real identity/composition capture gate;
 the 2026-08-25 attempt is a named `device-not-present` skip with no fabricated bundle.
 
+The same table now also carries exact Telit (`1bc7`) and u-blox (`1546`) module rows plus
+one NETGEAR (`0846`) row for the LB1120, which is labelled a `router-webui` family — a
+positive claim whose absence elsewhere means nothing, and which still decides no device
+class. NETGEAR's vendor id is deliberately NOT treated as cellular evidence: its USB ID
+Repository block is mostly Wi-Fi and Ethernet adapters, so a vendor-keyed rule there would
+report a Wi-Fi dongle as an uplink. No Telit, u-blox, or NETGEAR provider exists.
+[`docs/VENDOR-QUIRKS.md`](docs/VENDOR-QUIRKS.md) is the sourced per-vendor edge-case
+reading list behind those rows — every claim carries a pinned citation, no claim sits above
+`implemented` on the five-state support ladder, and nothing in it is on a write path.
+
 The ModemManager operation surface also exposes runtime USB-composition capability. Known
 vendors are queried with exact reviewed READ/TEST forms, targets come from the device's own
 enumeration only when it includes a return path, and writes retain the shared admission,
