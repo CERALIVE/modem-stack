@@ -40,9 +40,9 @@ const ABSOLUTE_PATH_LITERAL = /(['"`])\/[A-Za-z][\w./${}-]*\1/g;
 const CERAUI_PATH_TOKENS = /\/data\b|ceralive\/modem-mutations|CERALIVE_MODEM_MUTATION_DIR/;
 
 async function shippedSources(): Promise<readonly (readonly [string, string])[]> {
-	const names = (await Array.fromAsync(new Bun.Glob('**/*.ts').scan({ cwd: JOURNAL_DIR, onlyFiles: true }))).filter(
-		(name) => !name.endsWith('.test.ts'),
-	);
+	const names = (
+		await Array.fromAsync(new Bun.Glob('**/*.ts').scan({ cwd: JOURNAL_DIR, onlyFiles: true }))
+	).filter((name) => !name.endsWith('.test.ts'));
 	return Promise.all(
 		names.map(async (name) => [name, await readFile(join(JOURNAL_DIR, name), 'utf8')] as const),
 	);
