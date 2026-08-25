@@ -8,10 +8,23 @@
 //   - `rsrp`, `rsrq`             pass through as numbers
 //   - `sinr`                     the REAL NR SINR key. A dict carrying `snr` (the
 //                                WRONG name) is IGNORED — `sinr` stays undefined.
-//   - `cell-id`                  the cell identifier (serving-cell tiebreak)
+//   - `ci`, else `cell-id`       the cell identifier (serving-cell tiebreak)
+//   - `tac`                      the tracking-area code, when the RAT reports one
 //   - `band`                     surfaced ONLY when the source supplies it directly;
 //                                never inferred from earfcn / frequency / anything.
 //   - `serving` / `cell-type`    whether this is the serving cell.
+//
+// `ci` IS THE REAL MM KEY and `cell-id` is the fallback, not the other way round.
+// ModemManager 1.24.2 spells it `PROPERTY_CI "ci"` in both `libmm-glib/mm-cell-info-lte.c`
+// and `mm-cell-info-nr5g.c`; `cell-id` is kept behind it so a source that already
+// flattened to that older spelling still decodes rather than silently losing its id.
+//
+// NO ARFCN IS READ HERE, and that is deliberate rather than pending. MM does publish
+// one — but under TWO different keys for two different quantities: `earfcn` in an LTE
+// cell dict and `nrarfcn` in a 5GNR one. There is no generic ARFCN property anywhere on
+// the `Modem`, `Modem3gpp` or `Location` interfaces, so a single `earfcn` field on this
+// reading would have to either merge the two or quietly pick a RAT. `CellReading` makes
+// no ARFCN claim instead, and an unread key stays available to a caller that needs it.
 //
 // Every reading also carries `source` + `observedAt` provenance, so a consumer can
 // tell a fresh reading from a cached one and know where it came from. Pure — no I/O.
@@ -33,6 +46,8 @@ export interface CellReading {
 	readonly serving: boolean;
 	/** The cell identifier, when supplied (serving-cell tiebreak key). */
 	readonly cellId?: string;
+	/** Tracking-area code — from the `tac` key ONLY, never derived from the cell id. */
+	readonly tac?: string;
 	/** Physical cell id — from the `physical-ci` key ONLY. */
 	readonly pci?: number;
 	readonly rsrp?: number;
@@ -60,7 +75,8 @@ export function normalizeCellReading(
 	cell: DecodedProps,
 	provenance: CellInfoProvenance,
 ): CellReading {
-	const cellId = stringProp(cell, 'cell-id');
+	const cellId = stringProp(cell, 'ci') ?? stringProp(cell, 'cell-id');
+	const tac = stringProp(cell, 'tac');
 	const pci = numberProp(cell, 'physical-ci');
 	const rsrp = numberProp(cell, 'rsrp');
 	const rsrq = numberProp(cell, 'rsrq');
@@ -71,6 +87,7 @@ export function normalizeCellReading(
 	return {
 		serving: readServing(cell),
 		...(cellId !== undefined ? { cellId } : {}),
+		...(tac !== undefined ? { tac } : {}),
 		...(pci !== undefined ? { pci } : {}),
 		...(rsrp !== undefined ? { rsrp } : {}),
 		...(rsrq !== undefined ? { rsrq } : {}),
@@ -140,6 +157,7 @@ function stableTag(reading: CellReading): string {
 	return JSON.stringify([
 		reading.serving,
 		reading.cellId ?? null,
+		reading.tac ?? null,
 		reading.pci ?? null,
 		reading.rsrp ?? null,
 		reading.rsrq ?? null,

@@ -28,7 +28,9 @@ import { createObservationDiagnostics, type ObservationDiagnosticNote } from '..
 import { flattenXmlBody, hasRawField, mergeRawRecords, rawKey } from '../raw';
 import {
 	type RouterProvenance,
+	routerCell,
 	routerHardware,
+	routerOperator,
 	routerSim,
 	unsupportedQualityRecent,
 	unsupportedRadioMetric,
@@ -93,6 +95,9 @@ export function normalizeHilinkObservation(
 			registration: unsupportedRadioMetric(provenance),
 			accessTechnologies: unknownMetric('unsupported', provenance([])),
 			modeLabel: normalizeModeLabel(capabilities.net_mode, provenance),
+			// The registered operator lives on `/api/net/current-plmn`, a body this
+			// source does not read and no migrated parser decodes.
+			...routerOperator(provenance, undefined),
 		},
 		signal: {
 			quality: unknownMetric<number>('unsupported', provenance([])),
@@ -112,6 +117,9 @@ export function normalizeHilinkObservation(
 			sinr: metricFromRouterSignal(signalModel.sinr, provenance([rawKey(SIGNAL, 'sinr')])),
 		},
 		sim: routerSim(provenance, hasRawField(raw, SIM_STATUS) ? SIM_STATUS : undefined),
+		// HiLink's `<cell_id>` is a raw tag no migrated parser reads; it stays verbatim
+		// in the diagnostics block rather than being lifted into a claim.
+		cell: routerCell(provenance, undefined),
 		diagnostics: createObservationDiagnostics({ source: SOURCE, raw, consumed, notes }),
 	});
 }

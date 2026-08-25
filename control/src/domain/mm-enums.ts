@@ -141,3 +141,61 @@ export function runtimeIdFromPath(path: string): number | undefined {
 	const value = /\/(\d+)$/.exec(path)?.[1];
 	return value === undefined ? undefined : Number.parseInt(value, 10);
 }
+
+/**
+ * The coarse registration context ModemManager's `3gpp-lac-ci` location source reports.
+ *
+ * Every field is kept as the SOURCE'S OWN TEXT. `locationAreaCode` / `cellId` /
+ * `trackingAreaCode` arrive as uppercase hexadecimal and a consumer that parsed them to
+ * a decimal number would render a different identifier than every other tool on the
+ * device shows; `mnc` is two OR three digits and its width is significant, so a numeric
+ * round-trip loses a leading zero that distinguishes two real operators.
+ *
+ * This is COARSE CELL location and is deliberately NOT a GNSS fix: it names a cell, not
+ * a position. It carries no coordinate, so it is outside the GNSS redaction class and
+ * outside `GNSS_SOURCES`, and decoding it enables nothing — `Location.Setup`'s
+ * `signal_location` argument stays false and this decoder never touches a mask.
+ */
+export interface Mm3gppLacCi {
+	readonly mcc: string;
+	readonly mnc: string;
+	readonly locationAreaCode: string;
+	readonly cellId: string;
+	readonly trackingAreaCode: string;
+}
+
+// ModemManager 1.24.2 `libmm-glib/mm-location-3gpp.c` builds this value with
+//   g_strdup_printf ("%.3s,%s,%lX,%lX,%lX", operator_code, operator_code + 3, lac, ci, tac)
+// so it is a STRING of exactly five comma-separated tokens — MCC, MNC, then LAC, CI and
+// TAC in uppercase hex. Its own parser reads exactly `split[0]`..`split[4]`, so a value
+// with a different token count is not a shape this build should guess at.
+const LAC_CI_TOKENS = 5;
+
+/**
+ * Decode the `3gpp-lac-ci` location string, or `undefined` when it is not that shape.
+ *
+ * A token count other than five, or an empty MCC/MNC/CI, decodes to nothing rather than
+ * to a partially-populated record: a cell identifier that is wrong is worse than one
+ * that is missing, because only the second is visible as missing.
+ */
+export function decode3gppLacCi(value: string | undefined): Mm3gppLacCi | undefined {
+	if (value === undefined) return undefined;
+	const tokens = value.trim().split(',');
+	if (tokens.length !== LAC_CI_TOKENS) return undefined;
+	const [mcc, mnc, locationAreaCode, cellId, trackingAreaCode] = tokens.map((token) =>
+		token.trim(),
+	) as [string, string, string, string, string];
+	if (mcc === '' || mnc === '' || cellId === '') return undefined;
+	return { mcc, mnc, locationAreaCode, cellId, trackingAreaCode };
+}
+
+/**
+ * The PLMN id (`Modem3gpp.OperatorCode`'s spelling) for a decoded `3gpp-lac-ci` value.
+ *
+ * MCC and MNC are concatenated with no separator and no padding — MM splits the operator
+ * code back apart at exactly three characters, so this is the inverse of its own
+ * serialization rather than a guess about the MNC's width.
+ */
+export function lacCiOperatorCode(decoded: Mm3gppLacCi): string {
+	return `${decoded.mcc}${decoded.mnc}`;
+}

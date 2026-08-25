@@ -25,7 +25,9 @@ import { createObservationDiagnostics, type ObservationDiagnosticNote } from '..
 import { hasRawField, parseJsonRecord, prefixRawRecord, rawKey } from '../raw';
 import {
 	type RouterProvenance,
+	routerCell,
 	routerHardware,
+	routerOperator,
 	routerSim,
 	unsupportedQualityRecent,
 	unsupportedRadioMetric,
@@ -70,6 +72,12 @@ export function normalizeZteObservation(
 			registration: unsupportedRadioMetric(provenance),
 			accessTechnologies: unknownMetric('unsupported', provenance([])),
 			modeLabel: normalizeModeLabel(details?.network_type, parsed !== undefined, provenance),
+			...routerOperator(
+				provenance,
+				details?.provider === undefined
+					? undefined
+					: { name: details.provider, field: rawKey(BODY, 'network_provider_fullname') },
+			),
 		},
 		signal: {
 			quality: unknownMetric<number>('unsupported', provenance([])),
@@ -88,6 +96,12 @@ export function normalizeZteObservation(
 			sinr: metricFromRouterSignal(signalModel.sinr, provenance([])),
 		},
 		sim: routerSim(provenance, hasRawField(raw, SIM_CARD_STATE) ? SIM_CARD_STATE : undefined),
+		cell: routerCell(
+			provenance,
+			details?.cell_id === undefined
+				? undefined
+				: { id: details.cell_id, field: rawKey(BODY, 'cell_id') },
+		),
 		diagnostics: createObservationDiagnostics({ source: SOURCE, raw, consumed, notes }),
 	});
 }

@@ -4,6 +4,7 @@ import type { SlotAccount } from './accounting';
 import { initialAccount } from './accounting';
 import { cycleStart } from './billing-cycle';
 import type { SlotUsageSnapshot, UsageSnapshot } from './sampler';
+import type { SlotRate } from './sampling';
 
 export interface UsagePolicyState {
 	readonly bootId: string;
@@ -43,14 +44,23 @@ export function applyPolicy(
 	return { cycleStartMs, cycleReset: true, dirty: true };
 }
 
+export interface UsageProjectionState {
+	readonly bootId: string;
+	readonly accounts: ReadonlyMap<string, SlotAccount>;
+	readonly policies: ReadonlyMap<string, DesiredUsage>;
+	readonly rates: ReadonlyMap<string, SlotRate>;
+}
+
 export function projectUsageSnapshot(
-	state: Pick<UsagePolicyState, 'bootId' | 'accounts' | 'policies'>,
+	state: UsageProjectionState,
 	generatedAtMs: number,
 ): UsageSnapshot {
 	const slots: SlotUsageSnapshot[] = [];
 	for (const [slotId, account] of state.accounts) {
 		const policy = state.policies.get(slotId);
 		const thresholdBytes = policy?.thresholdBytes;
+		// An unmeasured interval OMITS the key rather than reporting 0 — see `SlotRate`.
+		const bytesPerSecond = state.rates.get(slotId)?.bytesPerSecond;
 		slots.push({
 			logicalSlotId: slotId,
 			cycleBytes: account.cycleBytes,
@@ -59,6 +69,7 @@ export function projectUsageSnapshot(
 			...(policy?.cycleDay !== undefined ? { cycleDay: policy.cycleDay } : {}),
 			...(thresholdBytes !== undefined ? { thresholdBytes } : {}),
 			thresholdExceeded: thresholdBytes !== undefined && account.cycleBytes > thresholdBytes,
+			...(bytesPerSecond !== undefined ? { rateBytesPerSecond: bytesPerSecond } : {}),
 		});
 	}
 	return { bootId: state.bootId, generatedAtMs, slots };

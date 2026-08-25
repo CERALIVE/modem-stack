@@ -10,6 +10,7 @@
 // those three into one absent value is precisely the loss this layer exists to stop.
 
 import {
+	decode3gppLacCi,
 	decodeEsimStatus,
 	decodeMmAccessTechnologies,
 	decodeMmState,
@@ -27,7 +28,7 @@ import {
 import { readSimPresence, type SimPresenceFacts } from '../../hardware/router-parsers';
 import { freshObservation, metricProvenance, type NormalizationContext } from '../envelope';
 import { knownMetric, type NormalizedMetric, unknownMetric } from '../metric';
-import type { NormalizedModemObservation, SimPresenceValue } from '../model';
+import type { NormalizedCell, NormalizedModemObservation, SimPresenceValue } from '../model';
 import {
 	createObservationDiagnostics,
 	type ObservationDiagnosticNote,
@@ -62,12 +63,38 @@ export type ModemManagerObservationInput = {
 	readonly modem3gpp?: Readonly<Record<string, RawFieldValue>>;
 	readonly sim?: Readonly<Record<string, RawFieldValue>>;
 	readonly signal?: Readonly<Record<string, RawFieldValue>>;
+	/**
+	 * The `Modem.Location` reading, keyed by DECODED SOURCE NAME (`3gpp-lac-ci`).
+	 *
+	 * On the wire that property is an `a{uv}` keyed by the `MMModemLocationSource` BIT,
+	 * and the bit-to-name vocabulary lives in `backend/mm-location.ts`. Naming the
+	 * source here instead keeps this layer reading a flat named field like every other
+	 * body, and keeps exactly one copy of that vocabulary.
+	 *
+	 * Supplying it enables nothing. A location SOURCE is switched on by
+	 * `Location.Setup`, which this layer never calls; reading a value that is already
+	 * being reported is a normalization step. `3gpp-lac-ci` in particular is coarse cell
+	 * context rather than a GNSS fix, so it stays outside `GNSS_SOURCES` and the GNSS
+	 * enable/disable path is untouched by it.
+	 *
+	 * NOTHING SUPPLIES IT TODAY, and the reason is the fence rather than an oversight.
+	 * ModemManager masks the `Location` PROPERTY unless `Location.Setup` was called with
+	 * `signal_location = true` — which broadcasts the value over `PropertiesChanged` and
+	 * is therefore permanently forbidden here (`backend/mm-location.ts`). The value has
+	 * to come from an explicit `GetLocation()` call instead, and the provider's snapshot
+	 * path makes no such call. So an MM observation reads `not-observed` for `cell`:
+	 * nobody looked, which is the honest answer and is distinct from a modem that
+	 * reported nothing. Cell identity that IS wired today comes from `Modem.GetCellInfo`
+	 * through `backend/cell-info.ts`, a different method that needs no location source.
+	 */
+	readonly location?: Readonly<Record<string, RawFieldValue>>;
 };
 
 const MODEM = 'Modem';
 const MODEM3GPP = 'Modem3gpp';
 const SIM = 'Sim';
 const SIGNAL = 'Signal';
+const LOCATION = 'Location';
 
 export function normalizeModemManagerObservation(
 	input: ModemManagerObservationInput,
@@ -78,6 +105,7 @@ export function normalizeModemManagerObservation(
 		prefixRawRecord(MODEM3GPP, input.modem3gpp),
 		prefixRawRecord(SIM, input.sim),
 		prefixRawRecord(SIGNAL, input.signal),
+		prefixRawRecord(LOCATION, input.location),
 	);
 	const notes: ObservationDiagnosticNote[] = [];
 	const consumed: string[] = [];
@@ -104,6 +132,7 @@ export function normalizeModemManagerObservation(
 		notes,
 	);
 	const sim = normalizeSim(raw, input.sim !== undefined, provenance, notes);
+	const cell = normalizeCell(raw, input.location !== undefined, provenance, notes);
 
 	return freshObservation<NormalizedModemObservation>(SOURCE, context, {
 		source: SOURCE,
@@ -111,6 +140,7 @@ export function normalizeModemManagerObservation(
 		radio,
 		signal,
 		sim,
+		cell,
 		diagnostics: createObservationDiagnostics({ source: SOURCE, raw, consumed, notes }),
 	});
 }
@@ -131,8 +161,13 @@ const SIM_SLOTS = rawKey(MODEM, 'SimSlots');
 const FAILED_REASON = rawKey(MODEM, 'StateFailedReason');
 const UNLOCK_REQUIRED = rawKey(MODEM, 'UnlockRequired');
 const REGISTRATION_STATE = rawKey(MODEM3GPP, 'RegistrationState');
+const OPERATOR_NAME = rawKey(MODEM3GPP, 'OperatorName');
+const OPERATOR_CODE = rawKey(MODEM3GPP, 'OperatorCode');
 const SIM_TYPE = rawKey(SIM, 'SimType');
 const ESIM_STATUS = rawKey(SIM, 'EsimStatus');
+// The `Modem.Location` entry for MM's coarse-cell source. Named, not bit-keyed — see
+// `ModemManagerObservationInput.location`.
+const LAC_CI = rawKey(LOCATION, '3gpp-lac-ci');
 
 // `Modem.Signal` publishes ONE `a{sv}` per RAT, and the member sets differ (MM 1.24.2
 // `org.freedesktop.ModemManager1.Modem.Signal.xml`):
@@ -233,6 +268,65 @@ function normalizeRadio(
 		registration: decodedLabel(raw, REGISTRATION_STATE, decodeRegistrationState, provenance, notes),
 		accessTechnologies: normalizeAccessTechnologies(raw, provenance, notes),
 		modeLabel: normalizeModeLabel(raw, provenance, notes),
+		// `Modem3gpp`, never `Sim` — the registered operator, not the SIM's home one.
+		// A modem that is not registered reports these empty, which is `not-reported`:
+		// the property exists and this read carried no value.
+		operatorName: registrationString(raw, OPERATOR_NAME, provenance),
+		operatorCode: registrationString(raw, OPERATOR_CODE, provenance),
+	};
+}
+
+/** A `Modem3gpp` registration string — present-and-empty is still no reading. */
+function registrationString(
+	raw: RawFieldRecord,
+	key: string,
+	provenance: Provenance,
+): NormalizedMetric<string> {
+	const source = provenance(key);
+	const value = rawString(raw, key);
+	return value === undefined
+		? unknownMetric<string>('not-reported', source)
+		: knownMetric(value, source);
+}
+
+/**
+ * Coarse cell context from the `3gpp-lac-ci` location reading.
+ *
+ * The whole value is ONE string, so a `cellId` and a `tac` read out of it necessarily
+ * agree with each other — they came from the same reported cell, never from two reads
+ * that raced. A value in an unrecognized shape is `malformed` for both rather than
+ * partially decoded; see `decode3gppLacCi`.
+ */
+function normalizeCell(
+	raw: RawFieldRecord,
+	locationRead: boolean,
+	provenance: Provenance,
+	notes: ObservationDiagnosticNote[],
+): NormalizedCell {
+	const source = provenance(LAC_CI);
+	if (!hasRawField(raw, LAC_CI)) {
+		const reason = locationRead ? ('not-reported' as const) : ('not-observed' as const);
+		return {
+			cellId: unknownMetric<string>(reason, source),
+			tac: unknownMetric<string>(reason, source),
+		};
+	}
+	const decoded = decode3gppLacCi(rawString(raw, LAC_CI));
+	if (decoded === undefined) {
+		notes.push({ code: 'field-shape-unrecognized', field: LAC_CI });
+		return {
+			cellId: unknownMetric<string>('malformed', source),
+			tac: unknownMetric<string>('malformed', source),
+		};
+	}
+	return {
+		cellId: knownMetric(decoded.cellId, source),
+		// MM emits an EMPTY tracking-area code on a device with no LTE/NR attach — the
+		// reading arrived, this field of it did not.
+		tac:
+			decoded.trackingAreaCode === ''
+				? unknownMetric<string>('not-reported', source)
+				: knownMetric(decoded.trackingAreaCode, source),
 	};
 }
 

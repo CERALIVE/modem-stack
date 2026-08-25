@@ -30,6 +30,51 @@ export type NormalizedRadio = {
 	readonly registration: NormalizedMetric<string>;
 	readonly accessTechnologies: NormalizedMetric<readonly RadioAccessTechnology[]>;
 	readonly modeLabel: NormalizedMetric<string>;
+	/**
+	 * The operator the modem is REGISTERED WITH right now — `Modem3gpp.OperatorName`.
+	 *
+	 * Deliberately NOT `Sim.OperatorName`, which is the HOME operator written into the
+	 * SIM. The two agree on a home network and disagree the entire time a device is
+	 * roaming, which is exactly when an operator is looking at this field.
+	 */
+	readonly operatorName: NormalizedMetric<string>;
+	/**
+	 * The registered operator's PLMN id (MCC+MNC) — `Modem3gpp.OperatorCode`.
+	 *
+	 * Kept as text, not a number: the MNC is two OR three digits and the width is
+	 * significant, so `732101` and `73201` are different networks and a numeric
+	 * round-trip would lose the leading zero that separates them.
+	 */
+	readonly operatorCode: NormalizedMetric<string>;
+};
+
+/**
+ * Coarse registration context — WHICH CELL, not where the device is.
+ *
+ * This is the `3gpp-lac-ci` location source's output, and it is a different class of
+ * datum from a GNSS fix: it names a cell in the operator's network and carries no
+ * coordinate. That is why it lives here rather than behind the GPS module's privacy
+ * fence, why `3gpp-lac-ci` stays outside `GNSS_SOURCES`, and why nothing on this path
+ * enables a location source or flips `Location.Setup`'s `signal_location`.
+ *
+ * Both fields are the SOURCE'S OWN TEXT. ModemManager emits them as uppercase hex, the
+ * ZTE and UFI admin APIs emit their own vendor spellings, and no radix is common to all
+ * three — so parsing to a number here would render an identifier that matches nothing
+ * an operator sees in `mmcli` or in the vendor's own web UI.
+ *
+ * EARFCN IS ABSENT ON PURPOSE and cannot be added from these sources. ModemManager
+ * publishes no generic ARFCN anywhere on the `Modem`, `Modem3gpp` or `Location`
+ * interfaces (checked against 1.24.2's introspection, not recalled); the only place one
+ * appears is inside a PER-CELL `GetCellInfo` dict, under two DIFFERENT keys — `earfcn`
+ * for LTE (`libmm-glib/mm-cell-info-lte.c`) and `nrarfcn` for 5GNR
+ * (`libmm-glib/mm-cell-info-nr5g.c`). A single normalized slot would therefore have to
+ * either merge two different quantities or silently pick a RAT, so this model makes no
+ * ARFCN claim at all and `backend/cell-info.ts` keeps the per-cell reading where it
+ * belongs.
+ */
+export type NormalizedCell = {
+	readonly cellId: NormalizedMetric<string>;
+	readonly tac: NormalizedMetric<string>;
 };
 
 /**
@@ -92,6 +137,7 @@ export type NormalizedModemObservation = {
 	readonly radio: NormalizedRadio;
 	readonly signal: NormalizedSignal;
 	readonly sim: NormalizedSim;
+	readonly cell: NormalizedCell;
 	/** Everything the provider said, verbatim, plus what was and was not claimed. */
 	readonly diagnostics: ObservationDiagnostics;
 };

@@ -174,6 +174,29 @@ ModemManager's own `StateFailedReason: sim-missing`, never from a blank `Sim` ob
 `Modem.CurrentModes` and `Modem.SignalQuality` are retained as their D-Bus structs, so the
 preferred mode and the measurement-recency flag survive normalization.
 
+## Registration context + honest counter rates
+
+An observation now also reports **who the modem is registered with and to which cell**.
+`operatorName` / `operatorCode` come from `Modem3gpp` — the registered operator — and never
+from `Sim.OperatorName`, which is the SIM's *home* operator and differs throughout roaming;
+the code stays text because a two- versus three-digit MNC is a different network. An
+additive `cell` block reports `cellId` and `tac`, decoded together out of the existing
+`3gpp-lac-ci` source's single five-token value, hex preserved as written. That source is
+**coarse cell context, not a GNSS fix**: it stays outside `GNSS_SOURCES`, `signal_location`
+stays false, and nothing on the path enables a location source. No EARFCN is claimed
+anywhere — ModemManager publishes none generically, only a per-cell `earfcn` (LTE) and
+`nrarfcn` (5GNR), two keys for two quantities. `CellReading` gained `tac` and now reads
+ModemManager's real `ci` key ahead of the older `cell-id` spelling.
+
+The data-usage sampler reports throughput as `rateBytesPerSecond`, and **omits it rather
+than reporting 0** whenever there was no interval to measure. A counter that goes BACKWARDS
+— an interface re-created by a replug or a driver reload — yields no rate at all instead of
+a clamped zero or a whole-total spike, and the baseline is rebased in the same pass so the
+next interval is measured correctly. Rates are never persisted: a same-boot reload resumes
+the cumulative baseline but restarts the rate unmeasured. Idea provenance for the
+counter-reset rule: `irlserver/modem-metrics` (MIT), concepts adopted, no code copied — see
+[`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
+
 ## Provider-matching conformance matrix (Todo 27)
 
 `control/src/providers/conformance-matrix.test.ts` registers all four providers at once and

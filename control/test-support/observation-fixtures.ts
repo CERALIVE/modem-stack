@@ -86,7 +86,17 @@ export const MM_FIXTURE: ModemManagerObservationInput = {
 	},
 	modem3gpp: {
 		RegistrationState: 1,
+		// The REGISTERED operator. `sim.OperatorName` below is the SIM's HOME operator
+		// and is deliberately a different string, so a normalizer that read the wrong
+		// interface is visible rather than accidentally correct.
+		OperatorName: 'Claro',
+		OperatorCode: '732101',
 		Pco: 'dns-primary=10.0.0.1',
+	},
+	// `Modem.Location`, keyed by DECODED SOURCE NAME. The value is MM's own five-token
+	// `3gpp-lac-ci` string: MCC, MNC, then LAC / CI / TAC in uppercase hex.
+	location: {
+		'3gpp-lac-ci': '732,101,2B1C,0A1B2C3D,4E5F',
 	},
 	sim: {
 		SimType: 1,

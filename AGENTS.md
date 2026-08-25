@@ -481,6 +481,47 @@ near it.
 `SlotUsageSnapshot` gained an additive `cycleDay` so the read side reports the policy
 in force, not only its consequences.
 
+### COUNTER-RESET-AWARE THROUGHPUT — AN ABSENT RATE IS A REAL ANSWER
+
+`SlotUsageSnapshot` also gained an additive `rateBytesPerSecond`, measured in
+`backend/usage/sampling.ts` (`SlotRate`) and projected by `policy.ts`. The whole design is
+one rule: **a rate exists only when this process observed BOTH ends of one sampling
+interval over one unchanged counter.** Absent is not zero, and `projectUsageSnapshot`
+OMITS the key rather than emitting `0` — an operator cannot tell an idle link from an
+unmeasured one if both render as zero.
+
+- **A BACKWARDS COUNTER PRODUCES NO RATE AND REBASELINES.** `/proc/net/dev` counters
+  restart at zero when an interface is re-created — a replug, a `wwan0` teardown, a driver
+  reload. Both obvious repairs report something untrue: clamping the negative delta to 0
+  shows an idle link that was carrying traffic, and dividing the raw post-reset value by
+  the interval shows every byte since the interface came up as if it had all moved inside
+  that one interval. Reporting nothing is the honest answer, and `applySample` rebases the
+  baseline in the SAME pass so the next interval measures correctly instead of inheriting
+  the gap. Both halves are pinned together — the rollback fixture asserts the absent rate
+  AND the correct attribution on the following sample.
+- **Five other cases are equally unmeasured**, each for its own reason: the first sample
+  and a resume-from-pause are zero-delta rebaselines; a low-confidence slot attributes
+  nothing at all; a remap or reboot means the two values are two different counters
+  (`sameBaselineKey` is now exported from `accounting.ts` precisely so the rate and the
+  reducer cannot drift about what "same counter" means); an interface missing from the
+  counter table drops the rate sample, which deliberately costs the RETURN pass its rate
+  too; and a clock that did not advance yields no interval rather than `Infinity`.
+- **NO RATE IS PERSISTED, and the negative is pinned by a test.** A throughput is a
+  measurement over an interval whose two ends one process observed; a restart observed
+  neither. Persisting the last rate would republish a pre-gap figure as current, and
+  persisting the baseline's sample TIME would invite the next sample to divide a whole
+  downtime's bytes by one interval. So the counter BASELINE resumes across a same-boot
+  reload — it is a cumulative total and still true — while the rate restarts unmeasured.
+- **No history verb was added.** The sampler still reports the CURRENT window and the last
+  interval; there is no series, no retention and no export, and none may be added.
+
+Idea provenance: `irlserver/modem-metrics` (MIT) — concepts adopted, no source code
+copied, recorded in [`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
+
+Coverage: `control/src/backend/usage/sampling.test.ts` (the rollback fixture plus every
+unmeasured case) and `control/src/backend/usage/persistence.test.ts` (the persisted
+negative, from both the bytes on disk and the behaviour after a reload).
+
 ## CERTIFICATION EVIDENCE → CATALOG (evidence-gated, human-reviewed)
 
 A SKU reaches `control/src/usb-mode/certified-catalog.json` only through a captured
@@ -1307,6 +1348,61 @@ with the identical blank fields and NO failure reason, asserting `unknown`;
 absent-dict unknowns; `control/src/providers/modem-manager/signal-richness.test.ts` for
 the same claims over the real provider wire; `control/src/backend/signal-setup-rate.test.ts`
 for the injected rate and the once-per-(epoch, modem) issue count.
+
+### REGISTRATION AND CELL CONTEXT — WHO WE ARE ATTACHED TO, AND TO WHICH CELL
+
+`NormalizedRadio` gained `operatorName` / `operatorCode`, and `NormalizedModemObservation`
+gained an additive `cell` block (`NormalizedCell`: `cellId` + `tac`). Every slot is a
+`NormalizedMetric`, so the four-state model and the capability-vs-read reason split apply
+unchanged. Five facts are load-bearing:
+
+- **The operator comes from `Modem3gpp`, NEVER from `Sim`.** `Modem3gpp.OperatorName` is
+  the operator the modem is REGISTERED with; `Sim.OperatorName` is the HOME operator
+  written into the SIM. They agree on a home network and disagree for the entire time a
+  device is roaming — which is exactly when an operator reads the field. `MM_FIXTURE`
+  carries two DIFFERENT strings on purpose so reading the wrong interface fails a test
+  rather than looking right.
+- **`operatorCode` is TEXT and is never derived from parts.** The MNC is two OR three
+  digits and the width is significant (`31001` ≠ `310001`). MM emits the code as one
+  fixed-width string and splits it back apart at exactly three characters. The ZTE
+  payload has `rmcc` and `rmnc` as separate UNPADDED fields, so joining them would name a
+  different network whenever the leading zero matters — every router source therefore
+  answers `not-reported` for the code while ZTE does claim the NAME.
+- **TAC/CID come from the EXISTING `3gpp-lac-ci` source, and the GNSS fence is untouched.**
+  `decode3gppLacCi` (`domain/mm-enums.ts`) parses MM's own five-token string — verified
+  against 1.24.2's `libmm-glib/mm-location-3gpp.c`, whose serializer is
+  `g_strdup_printf ("%.3s,%s,%lX,%lX,%lX", …)`: MCC, MNC, then LAC/CI/TAC in uppercase
+  HEX. Values stay as that text; parsing the hex to decimal would render an identifier
+  matching nothing `mmcli` shows. A token count other than five decodes to NOTHING rather
+  than a partial record, and both `cellId` and `tac` fail together. `signal_location`
+  stays `false`, `3gpp-lac-ci` stays OUTSIDE `GNSS_SOURCES`, coarse cell context stays
+  outside the GNSS redaction class, and nothing on this path enables a location source.
+- **Nothing supplies `location` today, and that is the fence rather than an oversight.**
+  MM masks the `Location` PROPERTY unless `Location.Setup` was called with
+  `signal_location = true` — permanently forbidden here — so the value must come from an
+  explicit `GetLocation()` call, which the provider's snapshot path does not make. An MM
+  observation therefore reads `not-observed` for `cell`: nobody looked. Cell identity that
+  IS wired runs through `Modem.GetCellInfo` → `backend/cell-info.ts`, a different method
+  needing no location source. `CellReading` gained `tac` there, and its cell identifier now
+  reads MM's REAL key `ci` first (`PROPERTY_CI` in `mm-cell-info-{lte,nr5g}.c`) with the
+  older `cell-id` spelling kept behind it as a fallback.
+- **NO EARFCN IS CLAIMED ANYWHERE, and none may be added from these sources.** MM
+  publishes no generic ARFCN on `Modem`, `Modem3gpp` or `Location`; the only occurrences
+  are inside PER-CELL `GetCellInfo` dicts under two DIFFERENT keys for two different
+  quantities — `earfcn` (LTE) and `nrarfcn` (5GNR). A single normalized slot would have to
+  merge them or silently pick a RAT, so `NormalizedCell` and `CellReading` both make no
+  ARFCN claim and the raw keys stay available to a caller that needs them.
+
+Router sources claim only what a MIGRATED parser already decoded: ZTE claims the operator
+name and `cell_id`, UFI claims `cell_id`, and HiLink claims neither — its `<cell_id>` tag
+is retained verbatim in the diagnostics block's `unmapped` set rather than lifted into a
+claim, the same rule that keeps `SimStatus` out of `sim.presence`. `tac` reads
+`not-reported` for all three, never `unsupported`: no migrated parser decodes one, which
+is a fact about this package, not a claim about the vendor's firmware.
+
+Coverage: `control/src/observations/registration-context.test.ts` (the decoder's token
+rules, the Modem3gpp-vs-Sim distinction, the four unknown reasons, and the per-source
+claims) plus the `ci` / `tac` / no-ARFCN cases in `control/src/backend/cell-info.test.ts`.
 
 ## GPS / LOCATION — A LIVE FIX, AND DELIBERATELY NO HISTORY
 

@@ -16,7 +16,7 @@ import type { SlotAccount } from './accounting';
 import { hydrateUsageAccounts, persistedUsageState } from './persistence';
 import { applyPolicy, projectUsageSnapshot } from './policy';
 import type { CounterSource } from './proc-net-dev';
-import { applyUsageSamples } from './sampling';
+import { applyUsageSamples, type SlotRate } from './sampling';
 import type { PersistedUsage, UsageStore } from './store';
 
 /** One slot's observation for a sampling pass — identity + mapping + local policy. */
@@ -42,6 +42,12 @@ export interface SlotUsageSnapshot {
 	readonly thresholdBytes?: number;
 	/** Advisory-only: `cycleBytes > thresholdBytes`. Never gates the connection. */
 	readonly thresholdExceeded: boolean;
+	/**
+	 * Throughput over the last measured sampling interval. ABSENT — never 0 — when
+	 * this pass had no interval to measure: a first sample, a rebaseline, a paused
+	 * slot, a missing interface, or a counter that went BACKWARDS. See `SlotRate`.
+	 */
+	readonly rateBytesPerSecond?: number;
 }
 
 /** The sampler's current state, per slot, at a point in time. */
@@ -83,6 +89,10 @@ export class UsageSampler {
 	// revert. The durable store is the source of truth for both, so an override and
 	// an observation can only ever disagree inside that window.
 	readonly #policyOverrides = new Map<string, DesiredUsage>();
+	// Rates are IN-MEMORY ONLY and start empty on every construction — deliberately,
+	// see `persistence.ts`. A throughput is a measurement over an interval this
+	// process observed both ends of; a restart has observed neither.
+	readonly #rates = new Map<string, SlotRate>();
 	#lastPersistMs: number;
 	#dirty = false;
 
@@ -115,6 +125,7 @@ export class UsageSampler {
 				accounts: this.#accounts,
 				policies: this.#policies,
 				policyOverrides: this.#policyOverrides,
+				rates: this.#rates,
 			},
 			observations,
 			counters,
@@ -127,7 +138,12 @@ export class UsageSampler {
 	/** Current per-slot usage — the queryable snapshot the CLI and platform read. */
 	snapshot(): UsageSnapshot {
 		return projectUsageSnapshot(
-			{ bootId: this.#bootId, accounts: this.#accounts, policies: this.#policies },
+			{
+				bootId: this.#bootId,
+				accounts: this.#accounts,
+				policies: this.#policies,
+				rates: this.#rates,
+			},
 			this.#now(),
 		);
 	}
