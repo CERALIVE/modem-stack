@@ -82,12 +82,22 @@ export async function runWatch(
 			? setTimeout(() => resolveDone(), options.durationMs)
 			: undefined;
 	const onSigint = (): void => resolveDone();
+	const onAbort = (): void => resolveDone();
+	let cleaned = false;
+	const cleanup = (): void => {
+		if (cleaned) return;
+		cleaned = true;
+		if (timer !== undefined) clearTimeout(timer);
+		process.off('SIGINT', onSigint);
+		options.signal?.removeEventListener('abort', onAbort);
+		unsubscribe();
+	};
 	process.on('SIGINT', onSigint);
 	if (options.signal !== undefined) {
 		if (options.signal.aborted) {
 			resolveDone();
 		} else {
-			options.signal.addEventListener('abort', () => resolveDone(), { once: true });
+			options.signal.addEventListener('abort', onAbort, { once: true });
 		}
 	}
 	if (
@@ -98,14 +108,12 @@ export async function runWatch(
 		io.err('watch: streaming changes — press Ctrl-C to stop');
 	}
 
-	await ctx.backend.start();
-	await done;
-
-	if (timer !== undefined) {
-		clearTimeout(timer);
+	try {
+		await ctx.backend.start();
+		await done;
+	} finally {
+		cleanup();
 	}
-	process.off('SIGINT', onSigint);
-	unsubscribe();
 	io.out(`WATCH DONE: events=${events}, unavailable=${unavailable}, removed=${removed}`);
 	return 0;
 }

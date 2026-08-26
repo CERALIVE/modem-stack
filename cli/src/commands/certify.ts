@@ -18,11 +18,11 @@ import {
 	readRevision,
 	type UsbDeviceSnapshot,
 } from '@ceralive/modem-control';
+import { benchAtSender } from '../bench-at-sender';
 import { buildCertificationBundle } from '../certify/bundle';
 import type { SignalRecord } from '../certify/bundle-schema';
 import { captureBase } from '../certify/capture';
 import { type CommandResult, SpawnCommandRunner } from '../certify/command-runner';
-import { CertifyError } from '../certify/errors';
 import {
 	createTransportSignalWindow,
 	DEFAULT_SIGNAL_WINDOW,
@@ -58,15 +58,6 @@ export interface CertifyDeps {
 	readonly synthetic: boolean;
 	writeBundle(path: string, content: string): Promise<void>;
 }
-
-/** A bench AT sender: there is no raw serial port here, so any send is a clear error. */
-const benchAtSender: AtCommandSender = {
-	send(command: string) {
-		return Promise.reject(
-			new CertifyError(`no AT serial transport on the bench (hardware-gated): '${command}'`),
-		);
-	},
-};
 
 /** Build the production capture seams from a live stack context. */
 export function certifyDepsFromContext(ctx: StackContext, args: CertifyArgs): CertifyDeps {

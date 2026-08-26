@@ -310,7 +310,13 @@ jobs:
       - name: "Build the first-party companion .deb (Architecture: all)"
         env:
           RELEASE_VERSION: ${{ github.event.inputs.tag }}
-        run: packaging/ci/build-companion.sh
+          EXPECTED_VERSION: ${{ needs.tag-guard.outputs.version }}
+        run: |
+          if [ "${RELEASE_VERSION#v}" != "$EXPECTED_VERSION" ]; then
+            echo "::error::packaging/ci/build-companion.sh RELEASE_VERSION ($RELEASE_VERSION) != release tag version ($EXPECTED_VERSION)"
+            exit 1
+          fi
+          packaging/ci/build-companion.sh
 
       # Chroot-stage packaging contract for the companion: install / upgrade / downgrade /
       # purge, /etc override precedence, the chroot guard, both /etc-override maintscript
@@ -376,19 +382,20 @@ jobs:
       - name: Install pinned trusted-publishing npm
         run: npm install -g npm@11.18.0
 
-      # npm side is VERIFIED (not injected): control/package.json version must equal the release
-      # tag's X.Y.Z, else fail closed before publish.
-      - name: Verify package version matches the release tag
-        working-directory: control
+      # First-party package versions are VERIFIED (not injected): all workspace package manifests
+      # must equal the release tag's X.Y.Z, else fail closed before publish.
+      - name: Verify first-party package versions match the release tag
         env:
           EXPECTED_VERSION: ${{ needs.tag-guard.outputs.version }}
         run: |
-          pkg="$(node -p "require('./package.json').version")"
-          if [ "$pkg" != "$EXPECTED_VERSION" ]; then
-            echo "::error::control/package.json version ($pkg) != release tag ($EXPECTED_VERSION)"
-            exit 1
-          fi
-          echo "npm version provenance OK: $pkg"
+          for package_file in package.json control/package.json cli/package.json; do
+            pkg="$(node -p "require('./${package_file}').version")"
+            if [ "$pkg" != "$EXPECTED_VERSION" ]; then
+              echo "::error::${package_file} version ($pkg) != release tag ($EXPECTED_VERSION)"
+              exit 1
+            fi
+          done
+          echo "first-party version provenance OK: $EXPECTED_VERSION"
 
       - name: Install workspace (frozen lockfile)
         run: bun install --frozen-lockfile

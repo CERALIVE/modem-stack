@@ -481,6 +481,47 @@ near it.
 `SlotUsageSnapshot` gained an additive `cycleDay` so the read side reports the policy
 in force, not only its consequences.
 
+### COUNTER-RESET-AWARE THROUGHPUT — AN ABSENT RATE IS A REAL ANSWER
+
+`SlotUsageSnapshot` also gained an additive `rateBytesPerSecond`, measured in
+`backend/usage/sampling.ts` (`SlotRate`) and projected by `policy.ts`. The whole design is
+one rule: **a rate exists only when this process observed BOTH ends of one sampling
+interval over one unchanged counter.** Absent is not zero, and `projectUsageSnapshot`
+OMITS the key rather than emitting `0` — an operator cannot tell an idle link from an
+unmeasured one if both render as zero.
+
+- **A BACKWARDS COUNTER PRODUCES NO RATE AND REBASELINES.** `/proc/net/dev` counters
+  restart at zero when an interface is re-created — a replug, a `wwan0` teardown, a driver
+  reload. Both obvious repairs report something untrue: clamping the negative delta to 0
+  shows an idle link that was carrying traffic, and dividing the raw post-reset value by
+  the interval shows every byte since the interface came up as if it had all moved inside
+  that one interval. Reporting nothing is the honest answer, and `applySample` rebases the
+  baseline in the SAME pass so the next interval measures correctly instead of inheriting
+  the gap. Both halves are pinned together — the rollback fixture asserts the absent rate
+  AND the correct attribution on the following sample.
+- **Five other cases are equally unmeasured**, each for its own reason: the first sample
+  and a resume-from-pause are zero-delta rebaselines; a low-confidence slot attributes
+  nothing at all; a remap or reboot means the two values are two different counters
+  (`sameBaselineKey` is now exported from `accounting.ts` precisely so the rate and the
+  reducer cannot drift about what "same counter" means); an interface missing from the
+  counter table drops the rate sample, which deliberately costs the RETURN pass its rate
+  too; and a clock that did not advance yields no interval rather than `Infinity`.
+- **NO RATE IS PERSISTED, and the negative is pinned by a test.** A throughput is a
+  measurement over an interval whose two ends one process observed; a restart observed
+  neither. Persisting the last rate would republish a pre-gap figure as current, and
+  persisting the baseline's sample TIME would invite the next sample to divide a whole
+  downtime's bytes by one interval. So the counter BASELINE resumes across a same-boot
+  reload — it is a cumulative total and still true — while the rate restarts unmeasured.
+- **No history verb was added.** The sampler still reports the CURRENT window and the last
+  interval; there is no series, no retention and no export, and none may be added.
+
+Idea provenance: `irlserver/modem-metrics` (MIT) — concepts adopted, no source code
+copied, recorded in [`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
+
+Coverage: `control/src/backend/usage/sampling.test.ts` (the rollback fixture plus every
+unmeasured case) and `control/src/backend/usage/persistence.test.ts` (the persisted
+negative, from both the bytes on disk and the behaviour after a reload).
+
 ## CERTIFICATION EVIDENCE → CATALOG (evidence-gated, human-reviewed)
 
 A SKU reaches `control/src/usb-mode/certified-catalog.json` only through a captured
@@ -519,10 +560,96 @@ transform in `control/src/usb-mode/{ingestion,promotion-review,usb-devices-parse
   nothing: the SIMCom's PID→composition mapping is unproven so its target modes stay
   UNCERTIFIED and HIDDEN, and the FM350 gains **no** classifier entry for its `0e8d:7127`
   carrier id — `docs/FM350-DECISION.md` is unchanged.
-- The full bench-runbook ladder, RB-1 through RB-17, lives in `docs/BENCH.md`: RB-9 is the
+- The full bench-runbook ladder, RB-1 through RB-18, lives in `docs/BENCH.md`: RB-9 is the
   fleet-inventory capture (one identity bundle per acquired physical unit), RB-10 is the
   hub VBUS port-cycle verification backing the PowerHook above, RB-11..15/17 are the
-  per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe.
+  per-SKU/flap-resilience captures documented above, RB-16 is the FM350 probe, and RB-18 is
+  the Sierra identity/composition capture. Its 2026-08-25 run is an honest
+  `device-not-present` skip: no Sierra VID was attached, `certify` was not invoked, and no
+  bundle or certification claim exists.
+
+### Sierra classifier groundwork — exact evidence, never a support claim
+
+`backend/device-classifier.ts` carries exact application-mode Sierra family rows for
+EM74xx, EM75xx, and EM919x-class devices, including Sierra's `1199` VID and the HP/Dell
+rebrands represented in ModemManager's pinned FCC mapping. Rows are evidence-tiered:
+`modemmanager-1.24.2-fcc` means the VID:PID occurs in the pinned release's available-tier
+mapping; `mainline-kernel` means Linux's qmi_wwan/qcserial tables name that family. A row can
+label a known family but cannot make a device `mm-managed` — live control-interface/driver
+evidence remains the only authority for that class, and an unknown Sierra PID remains
+unknown. Every classifier fixture is stamped `synthetic: true`, so it cannot cross the
+catalog-promotion gate.
+
+### Telit / u-blox / NETGEAR groundwork — and the mixed-VID trap
+
+The same table carries ten exact Telit (`1bc7`) rows, six u-blox (`1546`) LARA-R6/LARA-L6
+rows, and ONE NETGEAR (`0846`) row. `CELLULAR_MODEL_EVIDENCE_SOURCES` now pins each tier's
+provenance so a reviewer can re-derive any row; a test asserts every tier a row uses has a
+pin. **No provider was added for any of these vendors** — this is classifier and doc
+groundwork only.
+
+- **A third evidence tier exists: `usb-ids-registry`,** the weakest of the three. It is used
+  ONLY where no kernel modem driver claims the id at all — which is itself the evidence
+  that the device is a router appliance rather than a controllable module. The NETGEAR
+  LB1120 (`0846:68e1`) is the sole row at that tier.
+- **`CellularModelEvidence.familyKind` is an OPTIONAL, positive `router-webui` claim, and
+  its ABSENCE IS NOT A CLAIM.** Silence does not mean "modem module"; it means nothing here
+  asserts otherwise — the same tri-state discipline `fcc/coverage.ts` uses for `unknown`. A
+  test pins that exactly one row carries it. It still decides no device class: NETGEAR
+  classifies `router-mode` because its interfaces say so, and a test proves the class is
+  unchanged when the same composition is presented under an unlisted PID.
+- **`0846` is deliberately ABSENT from `CELLULAR_USB_VENDOR_IDS`, and that absence is
+  load-bearing.** The USB ID Repository's `0846` block is dominated by NETGEAR Wi-Fi and
+  Ethernet adapters — `68e1` is the only cellular entry — so a vendor-keyed rule would
+  report a Wi-Fi dongle as a cellular uplink. `1546` has the same shape (u-blox GNSS
+  receivers share it with cellular modules) but predates this work and stays; treat a
+  vendor-only match on it as WEAK evidence. `1bc7` IS added, because that range is Telit
+  cellular modules end to end. Consequence worth knowing: the LB1120 tether currently
+  reads `wired-ethernet` from `classifyUsbNetDevice`, which is honest — a known gap, not a
+  guess.
+
+### `docs/VENDOR-QUIRKS.md` — sourced, and capped at `implemented`
+
+[`docs/VENDOR-QUIRKS.md`](docs/VENDOR-QUIRKS.md) records the per-vendor behaviours that make
+one module behave differently from another on Linux, with a citation for every claim
+(pinned to MM `1.24.2`, a named Linux commit, `usb.ids` `2026.06.26`, OpenWrt's `qmi.sh`,
+`usb-modeswitch-data`, and the BELABOX tutorial wiki). Two properties are the whole point:
+
+- **No row sits above `implemented` on the five-state ladder, and none may.** `capable`
+  needs a live probe and `certified` needs a hardware drill; a document can produce
+  neither. Rows for surfaces this repo ships no code for read `unavailable`, which is
+  BELOW `implemented`, not above it.
+- **Nothing in it is on a write path, and nothing in it may be put on one.** A quirk is a
+  description of somebody else's firmware. It may inform a classifier LABEL, a diagnostic
+  READ, or a doc — never an AT command, a QMI/MBIM write, a composition switch, or a band
+  lock. An unsourced operator report is recorded AS unsourced and claims nothing.
+
+### `docs/COMPAT-MATRIX.md` — the one tracked support matrix
+
+[`docs/COMPAT-MATRIX.md`](docs/COMPAT-MATRIX.md) is the single vendor × firmware ×
+composition × operation matrix: 22 hardware rows (the six long-standing vendor families plus
+the Sierra, Telit, u-blox and NETGEAR groundwork rows) against 18 operations spanning first
+enumeration through a sustained bonded uplink.
+
+- **Every claim cell is a member of the five-state ladder in `capability/support-claim.ts`,
+  and there is no second status vocabulary.** No "partial", no "works", no tick-and-cross.
+  198 cells, all of them `implemented` or `unavailable`; `enabled` / `capable` / `certified`
+  appear in the matrix nowhere, for exactly the reason `VENDOR-QUIRKS.md` is capped the same
+  way. It follows that **no combination in the repository is `certified`, so none may be
+  described as supported.**
+- **It states which claims are hardware-free and which are hardware-required**, and links
+  each hardware-required operation to its RB runbook. `BENCH.md` remains the sole owner of
+  per-runbook status; the matrix links and restates none of it. A cell is raised by a bench
+  capture plus a reviewed commit, never by an edit to the matrix.
+- **The NETGEAR LB1120 gap is recorded rather than smoothed over**: the row labels the
+  family `router-webui`, but with no positive cellular evidence the tether classifies
+  `wired-ethernet`, so no operation in this stack reaches it. Its column is mostly
+  `unavailable` as a consequence, and the phone-tether row reads the same way for the same
+  reason.
+- It also records one discrepancy in `VENDOR-QUIRKS.md`: the Sierra row's "no `AT!` form
+  exists anywhere in this repository" is true of the `providers/ufi-himi` gate it cites, but
+  `usb-mode/runtime-capability.ts` carries Sierra's reviewed `AT!USBCOMP` forms, which is
+  what makes the composition-switch operation `implemented` for Sierra.
 
 ## USB-COMPOSITION SWITCH — RUNTIME OFFER, TIERED PROOF
 
@@ -963,6 +1090,13 @@ that record on every boot. The unlocking is ModemManager's dispatcher's job, sta
 to finish. Full model, matrix and certification status:
 [`docs/FCC-UNLOCK-COVERAGE.md`](docs/FCC-UNLOCK-COVERAGE.md).
 
+The coverage mirror names its exact provenance in `MM_FCC_UNLOCK_SOURCE`: ModemManager
+1.24.2 commit `f2b9ab1ad78d322f32134a444b5b54c6e8160e19`,
+`data/dispatcher-fcc-unlock/meson.build`, installed into the inert
+`fcc-unlock.available.d` tier. Its four Sierra entries are `03f0:4e1d`, `1199:9079`,
+`413c:81a3`, and `413c:81a8`; another well-formed Sierra PID is positively `absent`, not
+guessed covered. This classifier-side mirror does not create or own any packaging link.
+
 - **`<vid>:<pid>` is the ONLY correct key.** `mm-dispatcher-fcc-unlock.c` builds
   exactly `g_strdup_printf("%04x:%04x", vid, pid)` and opens no other name, so a
   vendor-only file is never a dispatcher target — it exists only as what the
@@ -1163,8 +1297,112 @@ The observation layer's SIM and signal halves are finalized on top of todo 18.
   (when WE last read). The router APIs have no such flag and answer `unsupported` — a
   capability claim, the `bars` / `maxBars` precedent.
 
+### `Modem.Signal`'s per-RAT dicts — the detail the router dongles already carried
+
+`NormalizedSignal.rsrp` / `rsrq` / `snr` / `sinr` are now claimed for MM-managed modems
+too, from the `Modem.Signal` interface's own `a{sv}` properties. Five facts about that
+path are load-bearing, and each is pinned by a test:
+
+- **A dict member arrives WRAPPED, and used to be dropped.** An `a{sv}` decodes to
+  `[key, variant][]`, so `snapshot.ts`'s `rawValue` kept the key and discarded the reading
+  — `Signal.Lte` retained as `[['rsrp'], ['rsrq'], …]`. It now unwraps the variant, which
+  is why the extended metrics are reachable at all. `signal-richness.test.ts` fails three
+  ways with that unwrap removed, so the fix is not a silent one.
+- **The dict is read by MEMBER, never flattened at retention.** `raw.ts`'s
+  `rawDictMember` / `rawDictNumber` / `hasRawDictMember` read one member by name, so
+  `error-rate`, `ecio`, `io` and `rscp` — every key the normalized model has no slot for —
+  stay verbatim in the diagnostics block instead of being lost to make four metrics fit.
+- **The RAT ladder is NEWEST FIRST, and provenance names which rung answered.** On an NSA
+  attach `Nr5g` and `Lte` are both populated with genuinely different measurements (the NR
+  leg and the LTE anchor), so one has to be the reported reading. `rsrp`/`rsrq`/`snr` take
+  `Nr5g` then `Lte`; `dbm` takes `Lte → Umts → Gsm → Evdo → Cdma`. Nothing is merged and
+  nothing is averaged — `MetricProvenance.rawFields` carries `Signal.Nr5g.rsrp` rather than
+  a bare `Signal.rsrp`, and the unchosen dict is still in `raw`.
+- **SINR comes from `Evdo` and from NOWHERE ELSE.** Checked against MM 1.24.2's own
+  introspection rather than recalled: `sinr` is a member of the `Evdo` dict only — `Lte`
+  and `Nr5g` publish `snr`, which is a different quantity and must never populate it (the
+  same rule `backend/cell-info.ts` already enforces in the other direction). So an LTE/NR
+  modem reporting no SINR answers **`not-reported`, not `unsupported`**: the source CAN
+  express it, this modem did not. The former blanket `unsupported` was a false capability
+  claim and is gone. The NR SINR a device may publish through `Modem.GetCellInfo` is a
+  different call on a different interface and is deliberately NOT folded in here.
+- **A dict-sourced metric consumes the whole property.** `consumed` must name a real raw
+  key or `createObservationDiagnostics` drops it, so the entry is `Signal.Nr5g` while
+  `rawFields` stays member-precise. An exported-but-silent `Modem.Signal` therefore yields
+  five READ-class `not-reported` metrics carrying no `value` field at all, and a modem with
+  no `Modem.Signal` interface yields `not-observed` — never a zero, in either case.
+
+**The `Signal.Setup` rate is injected at three levels and defaults at all three.**
+`SignalSetupManagerOptions.intervalSeconds` → `MmDbusBackendOptions.signalIntervalSeconds`
+→ `ModemManagerProviderOptions.signalIntervalSeconds`, each resolving to
+`DEFAULT_SIGNAL_INTERVAL_SECONDS` (5) when absent. The provider seam is the one this work
+added: the backend had accepted the option since it was written, and the provider — which
+is what an embedder actually constructs — had no way to pass it. `Setup` takes a `u`, so a
+fractional or non-positive rate is REFUSED at construction rather than marshalled; a modem
+silently polling at the wrong cadence is a defect nothing downstream can see. The
+once-per-(epoch, modem) issue semantics are the conformance-scale pin and are untouched.
+
 Coverage: `control/src/observations/sim-evidence.test.ts`, whose control case is a modem
-with the identical blank fields and NO failure reason, asserting `unknown`.
+with the identical blank fields and NO failure reason, asserting `unknown`;
+`control/src/observations/normalization.test.ts` for the per-metric claims and the
+absent-dict unknowns; `control/src/providers/modem-manager/signal-richness.test.ts` for
+the same claims over the real provider wire; `control/src/backend/signal-setup-rate.test.ts`
+for the injected rate and the once-per-(epoch, modem) issue count.
+
+### REGISTRATION AND CELL CONTEXT — WHO WE ARE ATTACHED TO, AND TO WHICH CELL
+
+`NormalizedRadio` gained `operatorName` / `operatorCode`, and `NormalizedModemObservation`
+gained an additive `cell` block (`NormalizedCell`: `cellId` + `tac`). Every slot is a
+`NormalizedMetric`, so the four-state model and the capability-vs-read reason split apply
+unchanged. Five facts are load-bearing:
+
+- **The operator comes from `Modem3gpp`, NEVER from `Sim`.** `Modem3gpp.OperatorName` is
+  the operator the modem is REGISTERED with; `Sim.OperatorName` is the HOME operator
+  written into the SIM. They agree on a home network and disagree for the entire time a
+  device is roaming — which is exactly when an operator reads the field. `MM_FIXTURE`
+  carries two DIFFERENT strings on purpose so reading the wrong interface fails a test
+  rather than looking right.
+- **`operatorCode` is TEXT and is never derived from parts.** The MNC is two OR three
+  digits and the width is significant (`31001` ≠ `310001`). MM emits the code as one
+  fixed-width string and splits it back apart at exactly three characters. The ZTE
+  payload has `rmcc` and `rmnc` as separate UNPADDED fields, so joining them would name a
+  different network whenever the leading zero matters — every router source therefore
+  answers `not-reported` for the code while ZTE does claim the NAME.
+- **TAC/CID come from the EXISTING `3gpp-lac-ci` source, and the GNSS fence is untouched.**
+  `decode3gppLacCi` (`domain/mm-enums.ts`) parses MM's own five-token string — verified
+  against 1.24.2's `libmm-glib/mm-location-3gpp.c`, whose serializer is
+  `g_strdup_printf ("%.3s,%s,%lX,%lX,%lX", …)`: MCC, MNC, then LAC/CI/TAC in uppercase
+  HEX. Values stay as that text; parsing the hex to decimal would render an identifier
+  matching nothing `mmcli` shows. A token count other than five decodes to NOTHING rather
+  than a partial record, and both `cellId` and `tac` fail together. `signal_location`
+  stays `false`, `3gpp-lac-ci` stays OUTSIDE `GNSS_SOURCES`, coarse cell context stays
+  outside the GNSS redaction class, and nothing on this path enables a location source.
+- **Nothing supplies `location` today, and that is the fence rather than an oversight.**
+  MM masks the `Location` PROPERTY unless `Location.Setup` was called with
+  `signal_location = true` — permanently forbidden here — so the value must come from an
+  explicit `GetLocation()` call, which the provider's snapshot path does not make. An MM
+  observation therefore reads `not-observed` for `cell`: nobody looked. Cell identity that
+  IS wired runs through `Modem.GetCellInfo` → `backend/cell-info.ts`, a different method
+  needing no location source. `CellReading` gained `tac` there, and its cell identifier now
+  reads MM's REAL key `ci` first (`PROPERTY_CI` in `mm-cell-info-{lte,nr5g}.c`) with the
+  older `cell-id` spelling kept behind it as a fallback.
+- **NO EARFCN IS CLAIMED ANYWHERE, and none may be added from these sources.** MM
+  publishes no generic ARFCN on `Modem`, `Modem3gpp` or `Location`; the only occurrences
+  are inside PER-CELL `GetCellInfo` dicts under two DIFFERENT keys for two different
+  quantities — `earfcn` (LTE) and `nrarfcn` (5GNR). A single normalized slot would have to
+  merge them or silently pick a RAT, so `NormalizedCell` and `CellReading` both make no
+  ARFCN claim and the raw keys stay available to a caller that needs them.
+
+Router sources claim only what a MIGRATED parser already decoded: ZTE claims the operator
+name and `cell_id`, UFI claims `cell_id`, and HiLink claims neither — its `<cell_id>` tag
+is retained verbatim in the diagnostics block's `unmapped` set rather than lifted into a
+claim, the same rule that keeps `SimStatus` out of `sim.presence`. `tac` reads
+`not-reported` for all three, never `unsupported`: no migrated parser decodes one, which
+is a fact about this package, not a claim about the vendor's firmware.
+
+Coverage: `control/src/observations/registration-context.test.ts` (the decoder's token
+rules, the Modem3gpp-vs-Sim distinction, the four unknown reasons, and the per-source
+claims) plus the `ci` / `tac` / no-ARFCN cases in `control/src/backend/cell-info.test.ts`.
 
 ## GPS / LOCATION — A LIVE FIX, AND DELIBERATELY NO HISTORY
 
@@ -1361,6 +1599,14 @@ The Fibocom **FM350** modem (PCIe / `mtk_t7xx`) is documented-**deferred**, not 
 rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION.md`.
 
 ## WORKSPACE / TOOLCHAIN
+
+**The language is a decided question, not a default.** A Rust migration (a `zbus` daemon
+fronted by a thin TS client, the `srtla-send-rs` shape) was assessed and **rejected by the
+project owner on 2026-08-24**. TypeScript on Bun stays, and the decision is final until one
+of the named revisit triggers fires. That record also carries the idea-attribution for
+`irlserver/modem-metrics`: MIT-licensed, concepts adopted, **no source code copied**. Read it
+before proposing a rewrite or extending the telemetry surface:
+[`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
 
 - **Bun 1.4.0** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
   are Bun workspace members.

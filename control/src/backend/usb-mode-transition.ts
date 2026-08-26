@@ -22,29 +22,21 @@
 
 import type { DeviceIfname, InhibitLease, ModemManagerPort, NetworkManagerPort } from '../ports';
 import { deviceIfname } from '../ports';
-import {
-	CERTIFIED_CATALOG,
-	type CertifiedCatalog,
-	readRuntimeCompositionCurrent,
-} from '../usb-mode';
-import {
-	type AtAuditSink,
-	AtCommandLease,
-	type AtCommandSender,
-	computeAtAllowlist,
-} from './at-lease';
-import { descriptorsMatch, detectUsbMode, type UsbDeviceSnapshot } from './device-classifier';
+import { CERTIFIED_CATALOG, type CertifiedCatalog } from '../usb-mode';
+import type { AtAuditSink, AtCommandSender } from './at-lease';
+import type { UsbDeviceSnapshot } from './device-classifier';
 import type { ModemActor } from './modem-actor';
 import {
 	ALLOW_ALL_TRANSITION_INTERLOCK,
-	checkTransitionPreconditions,
 	type TransitionInterlock,
 	type UsbModeTransitionOutcome,
 	type UsbModeTransitionPlan,
 	type UsbModeTransitionRequest,
 } from './transition-preconditions';
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+import { checkTransitionAdmission, releaseInhibit } from './usb-mode-transition/admission';
+import { createTransitionAtLease } from './usb-mode-transition/at';
+import { transitionPostconditionFailure } from './usb-mode-transition/outcome';
+import { ReenumerationWaiter } from './usb-mode-transition/reenumeration';
 
 const DEFAULT_WATCHDOG_MS = 30_000;
 const DEFAULT_REENUM_TIMEOUT_MS = 60_000;
@@ -87,6 +79,7 @@ export class UsbModeTransition {
 	readonly #watchdogMs: number;
 	readonly #reenumMs: number;
 	readonly #pollMs: number;
+	readonly #waiter: ReenumerationWaiter;
 
 	constructor(deps: UsbModeTransitionDeps) {
 		this.#actor = deps.actor;
@@ -101,13 +94,14 @@ export class UsbModeTransition {
 		this.#watchdogMs = deps.watchdogMs ?? DEFAULT_WATCHDOG_MS;
 		this.#reenumMs = deps.reenumerationTimeoutMs ?? DEFAULT_REENUM_TIMEOUT_MS;
 		this.#pollMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+		this.#waiter = new ReenumerationWaiter(this.#enumerate, this.#reenumMs, this.#pollMs);
 	}
 
 	/** Run one transition. Preconditions are checked at entry, then again in-actor. */
 	async execute(request: UsbModeTransitionRequest): Promise<UsbModeTransitionOutcome> {
 		const steps: string[] = [];
 		// ENTRY check — a doomed request NEVER enters the actor (TIER A: zero calls).
-		const entry = await checkTransitionPreconditions(request, this.#catalog, this.#interlock);
+		const entry = await checkTransitionAdmission(request, this.#catalog, this.#interlock);
 		if (!entry.ok) {
 			return { status: 'refused', stage: 'entry', reason: entry.reason, steps };
 		}
@@ -120,7 +114,7 @@ export class UsbModeTransition {
 	): Promise<UsbModeTransitionOutcome> {
 		steps.push('actor-enter');
 		// IN-ACTOR re-check — catches a race that closed a gate while queued (TIER B).
-		const recheck = await checkTransitionPreconditions(request, this.#catalog, this.#interlock);
+		const recheck = await checkTransitionAdmission(request, this.#catalog, this.#interlock);
 		if (!recheck.ok) {
 			return { status: 'refused', stage: 'in-actor', reason: recheck.reason, steps };
 		}
@@ -142,19 +136,20 @@ export class UsbModeTransition {
 		let inhibit: InhibitLease | undefined;
 		let reactivated = false;
 		const forceUninhibit = async (): Promise<void> => {
-			if (inhibit === undefined) {
-				return;
-			}
 			const held = inhibit;
 			inhibit = undefined;
-			steps.push('force-uninhibit');
-			await this.#modemManager.uninhibit(held).catch(() => undefined);
+			await releaseInhibit(this.#modemManager, held, steps);
 		};
-		const lease = new AtCommandLease({
+		const lease = createTransitionAtLease({
 			sender: this.#atSender,
-			allowlist: computeAtAllowlist(allowlistedCommands),
+			allowlistedCommands,
 			timeoutMs: this.#watchdogMs,
-			onWatchdog: forceUninhibit,
+			modemManager: this.#modemManager,
+			currentInhibit: () => inhibit,
+			clearInhibit: () => {
+				inhibit = undefined;
+			},
+			steps,
 			...(this.#audit !== undefined ? { audit: this.#audit } : {}),
 		});
 
@@ -174,7 +169,7 @@ export class UsbModeTransition {
 			}
 
 			steps.push('await-port-drop');
-			await this.#awaitPortDrop(request.cachedPhysicalUid);
+			await this.#waiter.awaitPortDrop(request.cachedPhysicalUid);
 
 			steps.push('uninhibit');
 			if (inhibit !== undefined) {
@@ -184,34 +179,18 @@ export class UsbModeTransition {
 			}
 
 			steps.push('await-reenumeration');
-			const device = await this.#awaitReenumeration(request.cachedPhysicalUid);
+			const device = await this.#waiter.awaitDevice(request.cachedPhysicalUid);
 
 			steps.push('postcondition');
-			if (plan.proof.tier === 'catalog-descriptors') {
-				const observedMode = detectUsbMode(device);
-				const descriptorsOk = descriptorsMatch(device, plan.proof.transition.expectedDescriptors);
-				if (observedMode !== plan.proof.transition.to || !descriptorsOk) {
-					return {
-						status: 'failed',
-						degraded: true,
-						reason: `postcondition mismatch: observed ${observedMode ?? 'unknown'} vs target ${plan.proof.transition.to}; descriptors ${descriptorsOk ? 'ok' : 'mismatch'}`,
-						steps,
-					};
-				}
-			} else {
-				steps.push('postcondition-runtime-read');
-				const response = await lease.run(plan.proof.currentQuery, {
-					inhibitUid: request.inhibitUid,
-				});
-				const observed = readRuntimeCompositionCurrent(plan.proof.vendor, response.raw);
-				if (!Object.is(observed, plan.proof.target)) {
-					return {
-						status: 'failed',
-						degraded: true,
-						reason: `runtime readback mismatch: observed ${observed ?? 'unknown'} vs target ${plan.proof.target}`,
-						steps,
-					};
-				}
+			const postconditionFailure = await transitionPostconditionFailure(
+				plan,
+				device,
+				lease,
+				request.inhibitUid,
+				steps,
+			);
+			if (postconditionFailure !== undefined) {
+				return { status: 'failed', degraded: true, reason: postconditionFailure, steps };
 			}
 
 			steps.push('resolve-ifname');
@@ -226,7 +205,7 @@ export class UsbModeTransition {
 			return { status: 'succeeded', newIfname, steps };
 		} catch (error) {
 			await forceUninhibit();
-			await this.#reprobe();
+			await this.#waiter.reprobe();
 			return {
 				status: 'failed',
 				degraded: true,
@@ -242,38 +221,5 @@ export class UsbModeTransition {
 				await this.#nm.releaseQuiesceLease(quiesce).catch(() => undefined);
 			}
 		}
-	}
-
-	async #awaitPortDrop(uid: string): Promise<void> {
-		const deadline = Date.now() + this.#reenumMs;
-		while (Date.now() < deadline) {
-			const devices = await this.#enumerate();
-			if (!devices.some((d) => d.physicalUid === uid)) {
-				return;
-			}
-			await sleep(this.#pollMs);
-		}
-		throw new Error(`control port did not drop within ${this.#reenumMs}ms (uid ${uid})`);
-	}
-
-	async #awaitReenumeration(uid: string): Promise<UsbDeviceSnapshot> {
-		const deadline = Date.now() + this.#reenumMs;
-		while (Date.now() < deadline) {
-			const devices = await this.#enumerate();
-			const device = devices.find((d) => d.physicalUid === uid);
-			if (device !== undefined) {
-				return device;
-			}
-			await sleep(this.#pollMs);
-		}
-		throw new Error(`device did not re-enumerate within ${this.#reenumMs}ms (uid ${uid})`);
-	}
-
-	/** Best-effort state re-read after a crash — the transaction still fails degraded. */
-	async #reprobe(): Promise<void> {
-		await this.#enumerate().then(
-			() => undefined,
-			() => undefined,
-		);
 	}
 }

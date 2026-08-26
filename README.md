@@ -27,6 +27,32 @@ helpers for portable modem identity, display naming, ModemManager enums, USB-net
 classification, capability selection, and shadow-result comparison; these helpers perform
 no discovery or transport and leave CeraUI integration to a separate cutover.
 
+Sierra groundwork uses exact, evidence-tiered USB model rows for EM74xx, EM75xx, and
+EM919x-class application PIDs across Sierra, HP, and Dell branding. These rows provide a
+family label only; interface/driver evidence still decides whether a device is MM-managed,
+and unknown Sierra PIDs remain unknown. The FCC classifier table separately mirrors the
+complete ModemManager 1.24.2 available-tier mapping and does not install or activate links.
+RB-18 in [`docs/BENCH.md`](docs/BENCH.md) records the real identity/composition capture gate;
+the 2026-08-25 attempt is a named `device-not-present` skip with no fabricated bundle.
+
+The same table now also carries exact Telit (`1bc7`) and u-blox (`1546`) module rows plus
+one NETGEAR (`0846`) row for the LB1120, which is labelled a `router-webui` family — a
+positive claim whose absence elsewhere means nothing, and which still decides no device
+class. NETGEAR's vendor id is deliberately NOT treated as cellular evidence: its USB ID
+Repository block is mostly Wi-Fi and Ethernet adapters, so a vendor-keyed rule there would
+report a Wi-Fi dongle as an uplink. No Telit, u-blox, or NETGEAR provider exists.
+[`docs/VENDOR-QUIRKS.md`](docs/VENDOR-QUIRKS.md) is the sourced per-vendor edge-case
+reading list behind those rows — every claim carries a pinned citation, no claim sits above
+`implemented` on the five-state support ladder, and nothing in it is on a write path.
+
+[`docs/COMPAT-MATRIX.md`](docs/COMPAT-MATRIX.md) is the one tracked support matrix built on
+those rows: 22 hardware rows against 18 operations, from first enumeration through a
+sustained bonded uplink, with a hardware-free versus hardware-required split that says which
+claims a green CI run establishes and which ones only a bench device can. Every cell is a
+member of the same five-state ladder and there is no second status vocabulary, so no
+combination is `certified` and none may be described as supported. Hardware evidence lives
+in [`docs/BENCH.md`](docs/BENCH.md); the matrix links to it and restates none of it.
+
 The ModemManager operation surface also exposes runtime USB-composition capability. Known
 vendors are queried with exact reviewed READ/TEST forms, targets come from the device's own
 enumeration only when it includes a return path, and writes retain the shared admission,
@@ -38,12 +64,12 @@ data before `ERROR`. Band certification remains catalog-gated and unchanged.
 
 ## Versioning at a glance
 
-ONE unified **SemVer** tag `vX.Y.Z` releases **both** artifacts together: `v1.1.0` publishes
-`@ceralive/modem-control@1.1.0` to npm **and** the `.deb` artifact set in the same release.
-This repo deliberately does **not** use the CeraLive CalVer scheme. New upstream-source
-rebuilds use per-source `<upstream>-<rev>~ceralive.N` counters; unchanged sources retain their
-previous version and exact bytes. Legacy published releases keep their tag-shaped suffixes.
-Full contract:
+ONE unified **SemVer** tag `vX.Y.Z` requires the root, control, and CLI `package.json`
+versions to all be `X.Y.Z`; it publishes `@ceralive/modem-control@X.Y.Z` to npm **and** the
+`.deb` artifact set in the same release. This repo deliberately does **not** use the CeraLive
+CalVer scheme. New upstream-source rebuilds use per-source `<upstream>-<rev>~ceralive.N`
+counters; unchanged sources retain their previous version and exact bytes. Legacy published
+releases keep their tag-shaped suffixes. Full contract:
 [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Layout
@@ -55,6 +81,7 @@ modem-stack/
 ├── packaging/      ModemManager-stack .deb rebuilds + provenance/verification CI
 ├── docs/           BENCH.md runbooks, CATALOG-INGESTION.md, COMPOSITION-EVIDENCE.md,
 │                   VERSIONING.md, FM350-DECISION.md, ESIM-DECISION.md
+│   └── adr/        ADR-FM350-RNDIS-BEARER.md, ADR-STAY-TYPESCRIPT.md
 ├── AGENTS.md       AI routing + repo contract (self-contained; see Rule D)
 └── POLICY.md       no-fork gate + upstream-contribution-first policy
 ```
@@ -63,6 +90,11 @@ modem-stack/
 Biome via `@ceralive/biome-config`). `packaging/` is built in a bookworm container.
 The two AST-backed source-shape guard tests use the test-only TypeScript 6 compiler-API
 compatibility package; workspace typechecking and package emit remain TypeScript 7.
+
+That language choice is recorded, not incidental: a Rust migration was assessed and rejected
+by the project owner on 2026-08-24, and the same record carries the MIT-licensed
+`irlserver/modem-metrics` idea attribution (concepts adopted, no source code copied). See
+[`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
 
 ## Develop
 
@@ -141,6 +173,29 @@ ModemManager's own `StateFailedReason: sim-missing`, never from a blank `Sim` ob
 (which MM also reports while a modem initializes and while a slot switch is in flight).
 `Modem.CurrentModes` and `Modem.SignalQuality` are retained as their D-Bus structs, so the
 preferred mode and the measurement-recency flag survive normalization.
+
+## Registration context + honest counter rates
+
+An observation now also reports **who the modem is registered with and to which cell**.
+`operatorName` / `operatorCode` come from `Modem3gpp` — the registered operator — and never
+from `Sim.OperatorName`, which is the SIM's *home* operator and differs throughout roaming;
+the code stays text because a two- versus three-digit MNC is a different network. An
+additive `cell` block reports `cellId` and `tac`, decoded together out of the existing
+`3gpp-lac-ci` source's single five-token value, hex preserved as written. That source is
+**coarse cell context, not a GNSS fix**: it stays outside `GNSS_SOURCES`, `signal_location`
+stays false, and nothing on the path enables a location source. No EARFCN is claimed
+anywhere — ModemManager publishes none generically, only a per-cell `earfcn` (LTE) and
+`nrarfcn` (5GNR), two keys for two quantities. `CellReading` gained `tac` and now reads
+ModemManager's real `ci` key ahead of the older `cell-id` spelling.
+
+The data-usage sampler reports throughput as `rateBytesPerSecond`, and **omits it rather
+than reporting 0** whenever there was no interval to measure. A counter that goes BACKWARDS
+— an interface re-created by a replug or a driver reload — yields no rate at all instead of
+a clamped zero or a whole-total spike, and the baseline is rebased in the same pass so the
+next interval is measured correctly. Rates are never persisted: a same-boot reload resumes
+the cumulative baseline but restarts the rate unmeasured. Idea provenance for the
+counter-reset rule: `irlserver/modem-metrics` (MIT), concepts adopted, no code copied — see
+[`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
 
 ## Provider-matching conformance matrix (Todo 27)
 

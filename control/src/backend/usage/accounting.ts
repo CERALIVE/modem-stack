@@ -58,7 +58,13 @@ export function initialAccount(cycleStartMs: number): SlotAccount {
 	return { cycleBytes: 0, cycleStartMs, paused: false };
 }
 
-function sameKey(a: BaselineKey, b: BaselineKey): boolean {
+/**
+ * Whether two baseline keys name the SAME counter — a difference in any field is a
+ * remap. Exported because `sampling.ts` must ask the identical question before it
+ * divides a delta by an interval; two spellings of it would eventually disagree, and
+ * the rate is the half that would then be wrong silently.
+ */
+export function sameBaselineKey(a: BaselineKey, b: BaselineKey): boolean {
 	return (
 		a.logicalSlotId === b.logicalSlotId &&
 		a.mappingGeneration === b.mappingGeneration &&
@@ -92,7 +98,7 @@ export function applySample(prior: SlotAccount | undefined, input: SampleInput):
 	if (base.paused || base.key === undefined || base.lastObserved === undefined) {
 		return { ...base, paused: false, key: input.key, lastObserved: input.current };
 	}
-	if (!sameKey(base.key, input.key)) {
+	if (!sameBaselineKey(base.key, input.key)) {
 		return { ...base, paused: false, key: input.key, lastObserved: input.current };
 	}
 

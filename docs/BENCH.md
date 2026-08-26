@@ -1577,6 +1577,101 @@ guessed here; the `${GROUPS_CMD:?…}` guard makes an unfilled run fail closed o
 
 ---
 
+## RB-18 — Sierra identity + composition capture `[PARTIAL]`
+
+Capture a real Sierra module's redacted stage-1 identity bundle and its observed USB
+composition. This is groundwork only: it certifies no SKU, adds no catalog entry, performs
+no FCC unlock, and sends no AT command.
+
+**Preconditions**
+
+- A Sierra module physically attached under Sierra's own VID `1199`, HP's `03f0`, or Dell's
+  `413c`, and visible in `mmcli -L`.
+- The compiled `modem-control` binary and the existing `certify` prerequisites from the
+  shared RB-11…RB-15 contract.
+
+**Commands**
+
+```sh
+OUT=test-results/modem-control/RB-18; mkdir -p "$OUT"
+
+# 1) Presence gate. An absent device is a named SKIP and certify is not invoked.
+SIERRA_USB=$(lsusb | grep -Ei ' ID (1199|03f0|413c):' || true)
+if [ -z "$SIERRA_USB" ]; then
+  {
+    echo 'runbook: RB-18'
+    echo 'outcome: SKIP'
+    echo 'reason: device-not-present'
+    echo 'certify_invoked: false'
+    echo 'bundle: none'
+  } | tee "$OUT/status.txt"
+  exit 0
+fi
+
+# 2) Resolve the Sierra MM slot from a fresh inventory; never reuse a recorded index.
+mmcli -L | tee "$OUT/mmcli-list.txt"
+SLOT=${SIERRA_MM_SLOT:?set from the Sierra row in the fresh mmcli listing}
+
+# 3) Existing redacted identity capture. No --transition and no AT/FCC action.
+./modem-control certify "$SLOT" --output "$OUT/bundle.json" \
+  2>&1 | tee "$OUT/certify.txt"
+
+# 4) Record the descriptors and bound drivers that determined the composition.
+usb-devices | tee "$OUT/usb-devices.txt"
+{
+  echo 'runbook: RB-18'
+  echo 'outcome: EXECUTED'
+  echo 'reason: none'
+  echo 'certify_invoked: true'
+  echo 'bundle: bundle.json'
+} | tee "$OUT/status.txt"
+```
+
+**Expected output**
+
+With the module attached, `certify` ends with the real-capture gate:
+
+```
+CERTIFY OK: sha256=<64 hex> synthetic=false transition=none slot=<SLOT>
+```
+
+Without it, `status.txt` names the skip rather than simulating a bundle:
+
+```
+outcome: SKIP
+reason: device-not-present
+certify_invoked: false
+bundle: none
+```
+
+**Machine check**
+
+```sh
+OUT=test-results/modem-control/RB-18
+if grep -Fqx 'outcome: EXECUTED' "$OUT/status.txt"; then
+  grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=' \
+    "$OUT/certify.txt" \
+    && grep -Eq '"vidPid": *"(1199|03f0|413c):[0-9a-f]{4}"' "$OUT/bundle.json" \
+    && echo 'RB-18 PASS' || echo 'RB-18 FAIL'
+elif grep -Fqx 'outcome: SKIP' "$OUT/status.txt" \
+  && grep -Fqx 'reason: device-not-present' "$OUT/status.txt" \
+  && grep -Fqx 'certify_invoked: false' "$OUT/status.txt"; then
+  echo 'RB-18 SKIP reason=device-not-present'
+else
+  echo 'RB-18 FAIL (neither executed bundle nor named skip)'
+fi
+```
+
+**Status (2026-08-25):** `[PARTIAL]` — `SKIP`, reason `device-not-present`. The local USB
+inventory contained no `1199:*`, `03f0:*`, or `413c:*` device, so `certify` was not invoked
+and no bundle exists. This is a recorded hardware absence, not a passing capture.
+
+**Evidence:** `test-results/modem-control/RB-18/status.txt` (repo-local, gitignored); on an
+executed run the same directory also carries `{mmcli-list,certify,usb-devices}.txt` and
+`bundle.json`.
+
+---
+
 ## Evidence index
 
 | Runbook | Item | Status | Evidence path (`test-results/modem-control/…`) |
@@ -1598,6 +1693,7 @@ guessed here; the `${GROUPS_CMD:?…}` guard makes an unfilled run fail closed o
 | RB-15 | ZTE MF79U router-mode capture | `[PARTIAL]` | `test-results/modem-phase-b/08/zte-mf79u/{class-evidence.txt,lan-dhcp.txt,web-ui.txt}` |
 | RB-16 | Fibocom FM350 USB-vs-PCIe probe | `[PARTIAL]` | `test-results/modem-phase-b/09/{usb-sweep,driver-binding,pcie-sweep,mmcli-list,mm-version,bearer-connect,hil-cycle-fm350}.txt` |
 | RB-17 | Modem-flap resilience under a live bonded stream | `[PARTIAL]` | `test-results/modem-phase-b/08/flap/{baseline.txt,flap-x5.txt,final-groups.txt,hub-map.json}` |
+| RB-18 | Sierra identity + composition capture | `[PARTIAL]` — `SKIP: device-not-present` | `RB-18/status.txt` (+ `{mmcli-list,certify,usb-devices}.txt`, `bundle.json` when executed) |
 
 Every row stays `[PARTIAL]` until its evidence artifact is captured on a real bench device
 and its machine check prints `PASS`. No row may be claimed `[EXISTS]` on the strength of the

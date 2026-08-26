@@ -11,12 +11,13 @@
 // deltas (the window since the last rate-limited write); a clean shutdown calls
 // `flush()` and loses effectively nothing.
 
-import { type DesiredUsage, epochMillis, type LogicalSlotId } from '../../domain';
-import { applySample, type BaselineKey, initialAccount, type SlotAccount } from './accounting';
-import { cycleStart } from './billing-cycle';
+import type { DesiredUsage, LogicalSlotId } from '../../domain';
+import type { SlotAccount } from './accounting';
+import { hydrateUsageAccounts, persistedUsageState } from './persistence';
+import { applyPolicy, projectUsageSnapshot } from './policy';
 import type { CounterSource } from './proc-net-dev';
-import type { PersistedSlot, PersistedUsage, UsageStore } from './store';
-import { USAGE_SCHEMA_VERSION } from './store';
+import { applyUsageSamples, type SlotRate } from './sampling';
+import type { PersistedUsage, UsageStore } from './store';
 
 /** One slot's observation for a sampling pass — identity + mapping + local policy. */
 export interface UsageObservation {
@@ -41,6 +42,12 @@ export interface SlotUsageSnapshot {
 	readonly thresholdBytes?: number;
 	/** Advisory-only: `cycleBytes > thresholdBytes`. Never gates the connection. */
 	readonly thresholdExceeded: boolean;
+	/**
+	 * Throughput over the last measured sampling interval. ABSENT — never 0 — when
+	 * this pass had no interval to measure: a first sample, a rebaseline, a paused
+	 * slot, a missing interface, or a counter that went BACKWARDS. See `SlotRate`.
+	 */
+	readonly rateBytesPerSecond?: number;
 }
 
 /** The sampler's current state, per slot, at a point in time. */
@@ -66,18 +73,6 @@ export interface UsageSamplerOptions {
 const DEFAULT_PERSIST_INTERVAL_MS = 60_000;
 const DEFAULT_CYCLE_DAY = 1;
 
-function toPersistedSlot(logicalSlotId: string, account: SlotAccount): PersistedSlot {
-	return {
-		logicalSlotId,
-		cycleBytes: account.cycleBytes,
-		cycleStartMs: account.cycleStartMs,
-		...(account.key !== undefined
-			? { mappingGeneration: account.key.mappingGeneration, ifname: account.key.ifname }
-			: {}),
-		...(account.lastObserved !== undefined ? { lastObserved: account.lastObserved } : {}),
-	};
-}
-
 export class UsageSampler {
 	readonly #bootId: string;
 	readonly #source: CounterSource;
@@ -85,7 +80,7 @@ export class UsageSampler {
 	readonly #now: () => number;
 	readonly #persistIntervalMs: number;
 	readonly #defaultCycleDay: number;
-	readonly #accounts = new Map<string, SlotAccount>();
+	readonly #accounts: Map<string, SlotAccount>;
 	readonly #policies = new Map<string, DesiredUsage>();
 	// Policies written through `applyUsagePolicy` OUTRANK whatever an observation
 	// carries, for the life of the process. Without this, the next `sample()` would
@@ -94,6 +89,10 @@ export class UsageSampler {
 	// revert. The durable store is the source of truth for both, so an override and
 	// an observation can only ever disagree inside that window.
 	readonly #policyOverrides = new Map<string, DesiredUsage>();
+	// Rates are IN-MEMORY ONLY and start empty on every construction — deliberately,
+	// see `persistence.ts`. A throughput is a measurement over an interval this
+	// process observed both ends of; a restart has observed neither.
+	readonly #rates = new Map<string, SlotRate>();
 	#lastPersistMs: number;
 	#dirty = false;
 
@@ -105,7 +104,7 @@ export class UsageSampler {
 		this.#persistIntervalMs = options.persistIntervalMs ?? DEFAULT_PERSIST_INTERVAL_MS;
 		this.#defaultCycleDay = options.defaultCycleDay ?? DEFAULT_CYCLE_DAY;
 		this.#lastPersistMs = this.#now();
-		this.#hydrate(initial);
+		this.#accounts = hydrateUsageAccounts(initial, this.#bootId);
 	}
 
 	/** Load persisted state (recreating a fresh file if absent/corrupt) then build the sampler. */
@@ -115,93 +114,38 @@ export class UsageSampler {
 		return new UsageSampler(options, initial);
 	}
 
-	/** Rebuild in-memory accounts. A reboot (differing boot id) drops the baselines. */
-	#hydrate(initial: PersistedUsage): void {
-		const sameBoot = initial.bootId === this.#bootId;
-		for (const slot of initial.slots) {
-			const canResume =
-				sameBoot &&
-				slot.ifname !== undefined &&
-				slot.mappingGeneration !== undefined &&
-				slot.lastObserved !== undefined;
-			if (canResume) {
-				const key: BaselineKey = {
-					logicalSlotId: slot.logicalSlotId,
-					mappingGeneration: slot.mappingGeneration as number,
-					ifname: slot.ifname as string,
-					bootId: this.#bootId,
-				};
-				this.#accounts.set(slot.logicalSlotId, {
-					cycleBytes: slot.cycleBytes,
-					cycleStartMs: slot.cycleStartMs,
-					paused: false,
-					key,
-					lastObserved: slot.lastObserved as number,
-				});
-			} else {
-				this.#accounts.set(slot.logicalSlotId, {
-					cycleBytes: slot.cycleBytes,
-					cycleStartMs: slot.cycleStartMs,
-					paused: false,
-				});
-			}
-		}
-	}
-
 	/** Take one sampling pass over the current counters for the given observations. */
 	async sample(observations: readonly UsageObservation[]): Promise<void> {
 		const counters = await this.#source.read();
 		const now = this.#now();
-		for (const obs of observations) {
-			const slotId = obs.logicalSlotId as string;
-			const usage = this.#policyOverrides.get(slotId) ?? obs.usage;
-			this.#policies.set(slotId, usage);
-			const cycleDay = usage.cycleDay ?? this.#defaultCycleDay;
-			const cycleStartMs = cycleStart(epochMillis(now), cycleDay);
-			const current = counters.get(obs.ifname);
-			if (current === undefined) {
-				// No reading for this interface — ensure the slot exists, attribute nothing.
-				if (!this.#accounts.has(slotId)) {
-					this.#accounts.set(slotId, initialAccount(cycleStartMs));
-				}
-				continue;
-			}
-			const key: BaselineKey = {
-				logicalSlotId: slotId,
-				mappingGeneration: obs.mappingGeneration,
-				ifname: obs.ifname,
+		applyUsageSamples(
+			{
 				bootId: this.#bootId,
-			};
-			const next = applySample(this.#accounts.get(slotId), {
-				key,
-				current,
-				confidence: obs.confidence,
-				cycleStartMs,
-			});
-			this.#accounts.set(slotId, next);
-		}
+				defaultCycleDay: this.#defaultCycleDay,
+				accounts: this.#accounts,
+				policies: this.#policies,
+				policyOverrides: this.#policyOverrides,
+				rates: this.#rates,
+			},
+			observations,
+			counters,
+			now,
+		);
 		this.#dirty = true;
 		await this.#maybePersist(now);
 	}
 
 	/** Current per-slot usage — the queryable snapshot the CLI and platform read. */
 	snapshot(): UsageSnapshot {
-		const generatedAtMs = this.#now();
-		const slots: SlotUsageSnapshot[] = [];
-		for (const [slotId, account] of this.#accounts) {
-			const policy = this.#policies.get(slotId);
-			const thresholdBytes = policy?.thresholdBytes;
-			slots.push({
-				logicalSlotId: slotId,
-				cycleBytes: account.cycleBytes,
-				cycleStartMs: account.cycleStartMs,
-				paused: account.paused,
-				...(policy?.cycleDay !== undefined ? { cycleDay: policy.cycleDay } : {}),
-				...(thresholdBytes !== undefined ? { thresholdBytes } : {}),
-				thresholdExceeded: thresholdBytes !== undefined && account.cycleBytes > thresholdBytes,
-			});
-		}
-		return { bootId: this.#bootId, generatedAtMs, slots };
+		return projectUsageSnapshot(
+			{
+				bootId: this.#bootId,
+				accounts: this.#accounts,
+				policies: this.#policies,
+				rates: this.#rates,
+			},
+			this.#now(),
+		);
 	}
 
 	/**
@@ -225,25 +169,20 @@ export class UsageSampler {
 		cycleStartMs: number;
 		cycleReset: boolean;
 	} {
-		const now = atMs ?? this.#now();
-		this.#policyOverrides.set(logicalSlotId, usage);
-		this.#policies.set(logicalSlotId, usage);
-		const cycleStartMs = cycleStart(
-			epochMillis(now),
-			usage.cycleDay ?? this.#defaultCycleDay,
-		) as number;
-		const account = this.#accounts.get(logicalSlotId);
-		if (account === undefined) {
-			this.#accounts.set(logicalSlotId, initialAccount(cycleStartMs));
-			this.#dirty = true;
-			return { cycleStartMs, cycleReset: false };
-		}
-		if (account.cycleStartMs === cycleStartMs) {
-			return { cycleStartMs, cycleReset: false };
-		}
-		this.#accounts.set(logicalSlotId, { ...account, cycleBytes: 0, cycleStartMs });
-		this.#dirty = true;
-		return { cycleStartMs, cycleReset: true };
+		const result = applyPolicy(
+			{
+				bootId: this.#bootId,
+				defaultCycleDay: this.#defaultCycleDay,
+				accounts: this.#accounts,
+				policies: this.#policies,
+				policyOverrides: this.#policyOverrides,
+			},
+			logicalSlotId,
+			usage,
+			atMs ?? this.#now(),
+		);
+		this.#dirty ||= result.dirty;
+		return { cycleStartMs: result.cycleStartMs, cycleReset: result.cycleReset };
 	}
 
 	/** Flush unpersisted state immediately — the shutdown hook (bounds loss to ≤1 min). */
@@ -260,16 +199,7 @@ export class UsageSampler {
 	}
 
 	async #persist(now: number): Promise<void> {
-		const slots: PersistedSlot[] = [];
-		for (const [slotId, account] of this.#accounts) {
-			slots.push(toPersistedSlot(slotId, account));
-		}
-		const state: PersistedUsage = {
-			schemaVersion: USAGE_SCHEMA_VERSION,
-			bootId: this.#bootId,
-			savedAtMs: now,
-			slots,
-		};
+		const state = persistedUsageState(this.#bootId, now, this.#accounts);
 		await this.#store.save(state);
 		this.#lastPersistMs = now;
 		this.#dirty = false;
