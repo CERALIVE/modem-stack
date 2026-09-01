@@ -7,14 +7,14 @@
 # show you cheaply: a release costs two QEMU container builds, and the two failure modes this
 # guards against (staging after the build, and a `${{ }}` reaching a shell body) are both SILENT.
 #
-#   * ORDER — `stage-carryforward-debs.sh` must precede EVERY `build-bookworm.sh` invocation.
-#     Carried debs are a build INPUT: build-bookworm.sh seeds its Pin-Priority-1001 local apt repo
+#   * ORDER — `stage-carryforward-debs.sh` must precede EVERY `build-stack.sh` invocation.
+#     Carried debs are a build INPUT: build-stack.sh seeds its Pin-Priority-1001 local apt repo
 #     from packaging/build/<arch>/. Staged late, a changed source silently resolves its build-deps
-#     against stock bookworm and the release still goes green.
+#     against the stock suite and the release still goes green.
 #   * ENV-ROUTING — no `${{ … }}` may be interpolated into a `run:` body (the file's own security
 #     model, release.yml header). An interpolated tag is a shell-injection surface.
 #   * ONE FETCH — the previous manifest is resolved once and reused by all three consumers.
-#   * NO WORKFLOW-LEVEL `if:` — conditional/zero-build selection lives INSIDE build-bookworm.sh.
+#   * NO WORKFLOW-LEVEL `if:` — conditional/zero-build selection lives INSIDE build-stack.sh.
 #     A step-level `if:` would skip the companion build or the merged-closure assertion with it.
 #
 # Both non-trivial detectors carry a non-vacuity control, so a green run cannot come from a
@@ -22,7 +22,7 @@
 #
 # RESIDUAL RISK (accepted by the plan): the zero-build path reaching manifest generation with
 # staged-only debs is NOT proven end-to-end here or anywhere else — it is proven in pieces by
-# test-build-bookworm-differential.sh and test-suffix-coherence-manifest.sh, and the full proof
+# test-build-stack-differential.sh and test-suffix-coherence-manifest.sh, and the full proof
 # lands at the FIRST REAL RELEASE RUN.
 set -uo pipefail
 
@@ -101,7 +101,7 @@ RESOLVE_LINE="$(line_of '- name: Resolve previous release + fetch its manifest (
 DETECT_LINE="$(line_of '- name: Detect changed sources (per-source verdicts)')"
 STAGE_LINE="$(line_of '- name: Stage carry-forward debs (unchanged sources, sha256-verified)')"
 BUILD_STEP_LINE="$(line_of '- name: Build the MM 1.24 stack (.deb)')"
-BUILD_CALL_LINE="$(line_of 'packaging/ci/build-bookworm.sh amd64')"
+BUILD_CALL_LINE="$(line_of 'packaging/ci/build-stack.sh amd64')"
 COMPANION_LINE="$(line_of_invocation 'packaging/ci/build-companion\.sh')"
 MANIFEST_LINE="$(line_of 'run: bash packaging/ci/generate-release-manifest.sh')"
 UPLOAD_LINE="$(line_of '- name: Upload .deb artifacts + release manifest')"
@@ -110,7 +110,7 @@ for pair in \
 	"resolve-previous-release:$RESOLVE_LINE" \
 	"detect-changed-sources:$DETECT_LINE" \
 	"stage-carryforward-debs:$STAGE_LINE" \
-	"build-bookworm-invocation:$BUILD_CALL_LINE" \
+	"build-stack-invocation:$BUILD_CALL_LINE" \
 	"build-companion:$COMPANION_LINE" \
 	"generate-release-manifest:$MANIFEST_LINE" \
 	"upload-artifacts:$UPLOAD_LINE"; do
@@ -127,20 +127,20 @@ assert_before "Checkout the resolved commit" "$CHECKOUT_LINE" "Resolve previous 
 assert_before "Resolve previous release" "$RESOLVE_LINE" "Detect changed sources" "$DETECT_LINE"
 assert_before "Detect changed sources" "$DETECT_LINE" "Stage carry-forward debs" "$STAGE_LINE"
 assert_before "Stage carry-forward debs" "$STAGE_LINE" "Build the MM 1.24 stack" "$BUILD_STEP_LINE"
-assert_before "Stage carry-forward debs" "$STAGE_LINE" "build-bookworm.sh invocation" "$BUILD_CALL_LINE"
-assert_before "build-bookworm.sh invocation" "$BUILD_CALL_LINE" "companion build" "$COMPANION_LINE"
+assert_before "Stage carry-forward debs" "$STAGE_LINE" "build-stack.sh invocation" "$BUILD_CALL_LINE"
+assert_before "build-stack.sh invocation" "$BUILD_CALL_LINE" "companion build" "$COMPANION_LINE"
 assert_before "companion build" "$COMPANION_LINE" "generate-release-manifest.sh" "$MANIFEST_LINE"
 assert_before "generate-release-manifest.sh" "$MANIFEST_LINE" "artifact upload" "$UPLOAD_LINE"
 
 # The headline invariant, stated over EVERY invocation rather than the first. Comment lines are
-# excluded because release.yml discusses build-bookworm.sh in prose above the job's first step;
+# excluded because release.yml discusses build-stack.sh in prose above the job's first step;
 # only an executable mention is an invocation.
 earliest_build=""
 while IFS=: read -r n _; do
 	[ -n "$n" ] || continue
 	if [ -z "$earliest_build" ] || [ "$n" -lt "$earliest_build" ]; then earliest_build="$n"; fi
-done < <(grep -n -F 'build-bookworm.sh' "$WORKFLOW" | grep -vE '^[0-9]+:[[:space:]]*#')
-assert_before "Stage carry-forward debs" "$STAGE_LINE" "EARLIEST executable build-bookworm.sh mention" "$earliest_build"
+done < <(grep -n -F 'build-stack.sh' "$WORKFLOW" | grep -vE '^[0-9]+:[[:space:]]*#')
+assert_before "Stage carry-forward debs" "$STAGE_LINE" "EARLIEST executable build-stack.sh mention" "$earliest_build"
 
 # Non-vacuity: the comparator must reject an inverted pair. The operands are SYNTHETIC constants,
 # not line numbers read from the file, so this control keeps its meaning even when it is run
@@ -239,16 +239,16 @@ fi
 if grep -qE '^\s+VERDICTS_FILE: verdicts\.txt$' "$WORKFLOW"; then
 	ok "the builder receives an EXPLICIT build set (VERDICTS_FILE) — never the build-all local-dev default"
 else
-	bad "the build step does not supply VERDICTS_FILE; CI would fall back to build-bookworm.sh's build-all default"
+	bad "the build step does not supply VERDICTS_FILE; CI would fall back to build-stack.sh's build-all default"
 fi
 
 # ---- 7. no workflow-level `if:` in build-deb ---------------------------------------------------
-# Zero-build selection is build-bookworm.sh's job. A step-level `if:` here would also skip the
+# Zero-build selection is build-stack.sh's job. A step-level `if:` here would also skip the
 # always-rebuilt companion and the merged-closure assertion, which must run on every release.
 
 if [ -n "$build_deb_start" ] && [ -n "$publish_npm_start" ]; then
 	if sed -n "${build_deb_start},${publish_npm_start}p" "$WORKFLOW" | grep -qE '^\s+if:'; then
-		bad "build-deb carries a step/job-level 'if:' — conditionality belongs inside build-bookworm.sh"
+		bad "build-deb carries a step/job-level 'if:' — conditionality belongs inside build-stack.sh"
 	else
 		ok "build-deb has no workflow-level 'if:' (the companion build stays unconditional)"
 	fi

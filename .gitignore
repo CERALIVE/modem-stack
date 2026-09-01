@@ -5,7 +5,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Packaging build artifacts (.deb output from packaging/ci/build-bookworm.sh)
+# Packaging build artifacts (.deb output from packaging/ci/build-stack.sh)
 packaging/build/
 
 # Local QA evidence (agent-generated, never committed)

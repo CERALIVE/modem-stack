@@ -18,7 +18,7 @@
 #
 #   Source names are the upstream-pins.yaml PIN KEYS (lowercase `modemmanager`), not the
 #   packaging directory names (`ModemManager`) — the mapping is NON-IDENTITY and is the same
-#   one build-bookworm.sh's `pin_key()` and read-pin.sh's `recipe_dir()` carry. Lines are
+#   one build-stack.sh's `pin_key()` and read-pin.sh's `recipe_dir()` carry. Lines are
 #   emitted in BOOTSTRAP ORDER, so a consumer can build the selected set by reading top to
 #   bottom. Every human-readable reason goes to STDERR, so stdout stays parseable.
 #
@@ -30,7 +30,7 @@
 #
 # FORCE-ALL (every source `changed`, `mode=force-all`, reason logged)
 #   1. A SHARED INPUT changed — `packaging/ci/**` (which subsumes `ci/expected-packages.txt`)
-#      or `packaging/BOOKWORM-ADAPTATIONS.md`. These feed every source's build, so a change to
+#      or `packaging/SUITE-ADAPTATIONS.md`. These feed every source's build, so a change to
 #      one of them invalidates every carried artifact.
 #   2. The previous release is ABSENT, or carries no manifest asset. With no manifest there is
 #      nothing to carry forward from, so rebuilding everything is the only honest answer.
@@ -121,7 +121,7 @@ PKG_REL="${PKG_ROOT#"$REPO_ROOT"/}"
 [ "$PKG_REL" != "$PKG_ROOT" ] || die "packaging root '$PKG_ROOT' is not under repository root '$REPO_ROOT'"
 PINS_REL="$PKG_REL/upstream-pins.yaml"
 
-# ---- contract constants (mirrored from build-bookworm.sh:41,46) -----------------------------
+# ---- contract constants (mirrored from build-stack.sh:41,46) -----------------------------
 # Bootstrap order — the order a differential build must walk the selected set in.
 BUILD_ORDER=(libqrtr-glib libmbim libqmi ModemManager)
 # packaging dir -> upstream-pins.yaml source key. NON-IDENTITY: only ModemManager differs.
@@ -161,7 +161,7 @@ fi
 is_shared_input() {
 	case "$1" in
 	"$PKG_REL"/ci/*) return 0 ;;
-	"$PKG_REL"/BOOKWORM-ADAPTATIONS.md) return 0 ;;
+	"$PKG_REL"/SUITE-ADAPTATIONS.md) return 0 ;;
 	esac
 	return 1
 }
@@ -274,7 +274,7 @@ resolve() {
 	while IFS= read -r f; do
 		[ -n "$f" ] || continue
 		if is_shared_input "$f"; then
-			force "shared-input-changed — '$f' is a SHARED build input (packaging/ci/** or packaging/BOOKWORM-ADAPTATIONS.md); it feeds every source, so no source may be carried forward"
+			force "shared-input-changed — '$f' is a SHARED build input (packaging/ci/** or packaging/SUITE-ADAPTATIONS.md); it feeds every source, so no source may be carried forward"
 			return
 		fi
 	done <<<"$CHANGED_FILES"

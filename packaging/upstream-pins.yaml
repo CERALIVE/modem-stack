@@ -1,7 +1,7 @@
 # upstream-pins.yaml — provenance-verified pin manifest for the ModemManager stack.
 #
 # WHAT THIS IS
-#   The four upstream sources CeraLive rebuilds for bookworm, each pinned to an EXACT
+#   The four upstream sources CeraLive rebuilds for the target suite (trixie), each pinned to an EXACT
 #   upstream release tag and its matching Debian packaging (salsa) tag. Every field is
 #   real, resolved data — never a placeholder. `packaging/ci/verify-upstream-pins.sh`
 #   re-checks every field in an isolated GNUPGHOME and fails closed on any drift.

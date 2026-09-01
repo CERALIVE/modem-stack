@@ -187,12 +187,12 @@ b=$(sed 's/.*: *//' A6.3/slot-uid-before.txt); a=$(sed 's/.*: *//' A6.3/slot-uid
 
 Install the packaged ModemManager 1.24 stack on a clean bench device **from the release CI
 artifacts** (Phase A does no apt publication) and prove the daemon comes up at 1.24.2. This
-is the on-hardware counterpart of A5.2's daemon smoke (which runs in a `debian:bookworm`
+is the on-hardware counterpart of A5.2's daemon smoke (which runs in a `debian:trixie`
 container in CI).
 
 **Preconditions**
 
-- Clean Debian bookworm bench device (`arm64` for the shipping target; `amd64` acceptable
+- Clean Debian trixie bench device (`arm64` for the shipping target; `amd64` acceptable
   for the desk proxy). `gh` authenticated, or the artifact zip already copied to the device.
 
 **Commands**
@@ -218,7 +218,7 @@ gh release download v0.2.0 --repo CERALIVE/modem-stack --dir . --clobber
 
 ARCH=$(dpkg --print-architecture)            # arm64 on the shipping SBC
 sudo apt-get update
-# Post-bump every source outranks bookworm stock (see the note below), so installing the
+# Post-bump every source outranks the suite stock (see the note below), so installing the
 # CeraLive set over stock is a pure upgrade — no `--allow-downgrades` needed:
 sudo apt-get install -y ./*_"$ARCH".deb | tee ../A6.3/mm-install.txt
 cd ..
@@ -247,7 +247,7 @@ grep -q 'mmcli 1\.24\.2' A6.3/mm-version.txt \
   && echo "RB-3 PASS" || echo "RB-3 FAIL"
 ```
 
-> **Direction (post-bump):** all four sources now sort **above** bookworm stock —
+> **Direction (post-bump):** all four sources now sort **above** the suite stock —
 > ModemManager `1.24.2-2` > `1.20.4-1`, libmbim `1.34.0-1` > `1.28.2-1`, libqmi `1.38.0-1` >
 > `1.32.2-1`, and — newly — libqrtr-glib `1.4.0-1` > `1.2.2-1`. libqrtr-glib **flipped** from
 > below to above at this bump: pre-bump its `1.2.2-1~ceralive…` was tilde-lower than stock
@@ -487,7 +487,7 @@ grep -q aarch64 A6.3/arm64-uname.txt \
 ## RB-8 — Daemon smoke on real hardware `[PARTIAL]`
 
 The full A5.2 daemon smoke (system D-Bus + polkit + NetworkManager 1.42, `busctl`
-introspect, udev/FCC/GIR/Vala paths) re-run on a real device rather than the CI bookworm
+introspect, udev/FCC/GIR/Vala paths) re-run on a real device rather than the CI trixie
 container — the last check that the packaged stack is coherent end-to-end on hardware.
 
 **Preconditions**
@@ -658,7 +658,7 @@ a fake runner, but nothing in CI can prove a physical hub drops VBUS.
   the bench image** — the USB tree comes from the `/sys/bus/usb/devices/*` sweep (RB-9).
 - `uhubctl` installed and runnable as root. **It is NOT on the bench image and is NOT in
   the image's apt archive** (`apt-cache show uhubctl` → `E: No packages found`, verified
-  2026-08-16 on `ceralive2`), so it must be installed for the bench run — from a bookworm
+  2026-08-16 on `ceralive2`), so it must be installed for the bench run — from a Debian
   archive that carries it, or built from source. `uhubctl` needs `sudo` (or a udev
   permissions rule); the PowerHook never escalates on its own.
 - The compiled `modem-control` binary (RB-1 preconditions).
@@ -1698,5 +1698,5 @@ executed run the same directory also carries `{mmcli-list,certify,usb-devices}.t
 Every row stays `[PARTIAL]` until its evidence artifact is captured on a real bench device
 and its machine check prints `PASS`. No row may be claimed `[EXISTS]` on the strength of the
 CI proxy alone — the CI proxy is green (compiled probe smoke both arches, packaging contract
-+ daemon smoke in a bookworm container, the full `bun test` suite), but the hardware evidence
++ daemon smoke in a trixie container, the full `bun test` suite), but the hardware evidence
 is what closes each gate.

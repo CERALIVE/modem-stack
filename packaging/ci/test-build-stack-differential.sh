@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# test-build-bookworm-differential.sh — differential builder + rebuild-counter contract.
+# test-build-stack-differential.sh — differential builder + rebuild-counter contract.
 #
-# HOST-RUNNABLE, OFFLINE, NO DOCKER. The builder's BUILD_BOOKWORM_STUB_DIR seam replaces only
+# HOST-RUNNABLE, OFFLINE, NO DOCKER. The builder's BUILD_STACK_STUB_DIR seam replaces only
 # the expensive source-build body with fixture artifacts; build-set parsing, carried-deb repo
 # seeding, bootstrap-order dispatch, the unchanged check-package-sets.sh call, and the merged
 # runtime-closure assertion are the production paths. A poisoned docker stub proves the
@@ -13,7 +13,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_SCRIPT="$HERE/build-bookworm.sh"
+BUILD_SCRIPT="$HERE/build-stack.sh"
 INJECT_SCRIPT="$HERE/inject-deb-version.sh"
 EXPECTED="$HERE/expected-packages.txt"
 
@@ -256,8 +256,8 @@ EOF
 
 : >"$DCH_LOG"
 BUILD_IN_CONTAINER=1 ARCH=amd64 VERDICTS_FILE="$VERDICTS" RELEASE_VERSION=v1.2.0 \
-	PREV_MANIFEST_FILE="$M_UNIFORM" BUILD_BOOKWORM_PKG_ROOT="$FIXTURE_PKG" \
-	BUILD_BOOKWORM_OUT_DIR="$ONE_OUT" BUILD_BOOKWORM_STUB_DIR="$STUB_BUILDS" \
+	PREV_MANIFEST_FILE="$M_UNIFORM" BUILD_STACK_PKG_ROOT="$FIXTURE_PKG" \
+	BUILD_STACK_OUT_DIR="$ONE_OUT" BUILD_STACK_STUB_DIR="$STUB_BUILDS" \
 	PATH="$STUB_BIN:$PATH" DCH_LOG="$DCH_LOG" \
 	bash "$BUILD_SCRIPT" amd64 >"$TRACE" 2>&1
 rc=$?
@@ -321,5 +321,5 @@ if [ "$fail" -eq 0 ]; then
 	echo "PASS: differential builds seed carried deps, preserve bootstrap order, and enforce coherent counters + merged closure"
 	exit 0
 fi
-echo "FAIL: build-bookworm differential contract violated"
+echo "FAIL: build-stack differential contract violated"
 exit 1

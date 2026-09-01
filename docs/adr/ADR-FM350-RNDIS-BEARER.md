@@ -259,7 +259,7 @@ proceed without pretending the draft has been filed.
    lists one patch per logical change. Every DEP-3-style header names this ADR, exact BELABOX
    origin SHA(s), BELABOX authorship, rationale and the honest upstream-status verdict. This
    first non-empty source series also updates `README.md`, `packaging/README.md`,
-   `packaging/BOOKWORM-ADAPTATIONS.md`, `AGENTS.md` and `POLICY.md` in the same change under
+   `packaging/SUITE-ADAPTATIONS.md`, `AGENTS.md` and `POLICY.md` in the same change under
    Rule A.
 5. **Prove it on the board before claiming it.** The acceptance test is not "it builds." It is:
    the FM350 binds the `fm350gl` plugin instead of `generic`, the bearer connects, and

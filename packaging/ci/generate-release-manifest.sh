@@ -43,7 +43,7 @@
 # (the two-set model finalized in todo 1.4). An added, dropped, renamed, or unmapped deb is a
 # hard error — the manifest can never silently under- or over-report the release contents.
 #
-# INPUT   build-root (default: packaging/build) holding <arch>/*.deb from build-bookworm.sh.
+# INPUT   build-root (default: packaging/build) holding <arch>/*.deb from build-stack.sh.
 #         EXPECTED_PACKAGES (env, default: alongside this script) — the frozen package sets.
 # OUTPUT  a manifest at out-file (default: dist/release-manifest.txt), also echoed to stdout.
 #

@@ -1,6 +1,6 @@
 name: CI (packaging)
 
-# Paths-filtered PR lane for packaging/ — runs in a bookworm container (the .deb build
+# Paths-filtered PR lane for packaging/ — runs in a trixie container (the .deb build
 # environment). The `push:` trigger carries a positive `branches:` filter alongside
 # `paths:` so a PR-branch push does not double-fire (CI/CD standard — trigger hygiene).
 on:
@@ -23,9 +23,9 @@ concurrency:
 
 jobs:
   packaging:
-    name: Packaging contract (bookworm)
+    name: Packaging contract (trixie)
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: debian:trixie
     steps:
       # git is needed by actions/checkout; devscripts/dpkg-dev provide dch +
       # dpkg-parsechangelog for the version-injection path; ccache is the C-build cache
@@ -42,9 +42,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/ccache
-          key: ccache-${{ runner.os }}-bookworm-${{ hashFiles('packaging/**') }}
+          key: ccache-${{ runner.os }}-trixie-${{ hashFiles('packaging/**') }}
           restore-keys: |
-            ccache-${{ runner.os }}-bookworm-
+            ccache-${{ runner.os }}-trixie-
 
       - name: Run packaging contract lane
         run: bash packaging/ci/contract.sh
