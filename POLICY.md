@@ -5,8 +5,9 @@ decisions and require review.
 
 ## 1. No-fork gate (packaging)
 
-`packaging/` produces **bookworm rebuilds** of ModemManager, libmbim, libqmi, and
-libqrtr-glib. It is a **repackaging** effort, **not a source fork**.
+`packaging/` produces **trixie rebuilds** of ModemManager, libmbim, libqmi, and
+libqrtr-glib — trixie being the suite the device image runs. It is a **repackaging** effort,
+**not a source fork**.
 
 - **The first packaging release carries ZERO quilt patches.** Every source is rebuilt
   from its pinned, provenance-verified upstream release and its pinned Debian packaging

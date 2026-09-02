@@ -17,7 +17,7 @@ straight from CI artifacts; nothing is published to `apt.ceralive.tv` yet.
 |-----------|----------|------------|
 | [`control/`](control/) | **`@ceralive/modem-control`** (npm package) | The TypeScript control library: the [frozen v1.1 domain contracts](docs/DOMAIN-CONTRACTS.md), [provider registry and evidence-scored matcher](docs/PROVIDER-MATCHING.md), concrete typed-D-Bus [`ModemManagerProvider`](docs/MODEMMANAGER-PROVIDER.md) (runtime-discovered generic controls; no CLI subprocess), NetworkManager adapter, desired-state reconciler, injected mutation-admission and exclusive-ownership ports, USB composition-mode model + the [evidence-bundle ingestion seam](docs/CATALOG-INGESTION.md), data-usage sampler plus its `setUsagePolicy` write surface (`control/src/backend/usage/policy-write.ts` — a local 0600 policy file, because ModemManager exposes no data-usage API at all), and the **read-only SMS port** (`control/src/ports/sms.ts` + `control/src/sms/` — LIST/READ plus `Added`/`Deleted` observation, never a send or a delete, locked by `sms/readonly-gate.test.ts`). The USB-hub actuator is port-only here; the bench CLI owns its HIL adapter. Published to the public npm registry under the `@ceralive` scope as **built ESM + `.d.ts`** across seven entry points — see [`control/README.md`](control/README.md). |
 | [`cli/`](cli/) | **`modem-control`** (bench CLI) | The iteration surface: `probe`, `watch`, `apply`, `set-usb-mode`, `usage`, `certify`, `hil-cycle`. Compiled for `arm64` + `amd64` and run against real modems on a bench device to mature the package, capture per-SKU certification bundles, and prove hub VBUS port-cycling ([RB-10](docs/BENCH.md#rb-10--hub-vbus-verification-partial)). |
-| [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork**. libmbim, libqmi, and libqrtr-glib remain source-unmodified; ModemManager carries one owner-approved, three-patch BELABOX-derived FM350-GL series, hardware-validated on the carrier-mounted USB composition after restoring BELABOX's `ATZ0` first-enable override (see [`POLICY.md`](POLICY.md) and the [ADR](docs/adr/ADR-FM350-RNDIS-BEARER.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
+| [`packaging/`](packaging/) | **ModemManager stack `.deb`s** | Trixie rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — **packaging only, not a fork**. libmbim, libqmi, and libqrtr-glib remain source-unmodified; ModemManager carries one owner-approved, three-patch BELABOX-derived FM350-GL series, hardware-validated on the carrier-mounted USB composition after restoring BELABOX's `ATZ0` first-enable override (see [`POLICY.md`](POLICY.md) and the [ADR](docs/adr/ADR-FM350-RNDIS-BEARER.md)). Provenance-verified upstream pins; installed on the bench from CI artifacts. |
 
 The control package's existing `./hardware` entry point also exposes transport-free
 SIM-presence and Huawei/ZTE/UFI response normalization. Device I/O, sessions, retries,
@@ -87,7 +87,8 @@ modem-stack/
 ```
 
 `control/` and `cli/` form a single **Bun** workspace (Bun 1.4.0, strict TypeScript 7.0.2,
-Biome via `@ceralive/biome-config`). `packaging/` is built in a bookworm container.
+Biome via `@ceralive/biome-config`). `packaging/` is built in a trixie container — the suite
+the device image runs.
 The two AST-backed source-shape guard tests use the test-only TypeScript 6 compiler-API
 compatibility package; workspace typechecking and package emit remain TypeScript 7.
 

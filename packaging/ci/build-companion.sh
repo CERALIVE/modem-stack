@@ -11,7 +11,7 @@
 # have to absorb a CeraLive-specific asset.
 #
 # USAGE  build-companion.sh [--native]
-#   default: builds inside a `debian:bookworm` container (matches the upstream lane).
+#   default: builds inside a `debian:$TARGET_SUITE` container (matches the upstream lane).
 #   --native: builds on the host (needs debhelper + dpkg-dev); used by the local QA harness.
 #
 # ENV
@@ -25,7 +25,8 @@ PKG_ROOT="$(cd "$HERE/.." && pwd)"
 SRC_DIR="$PKG_ROOT/ceralive-modem-support"
 BUILD_ROOT="${BUILD_ROOT:-$PKG_ROOT/build}"
 OUT_DIR="$BUILD_ROOT/all"
-IMAGE="${COMPANION_BUILD_IMAGE:-debian:bookworm}"
+TARGET_SUITE="${TARGET_SUITE:-trixie}"
+IMAGE="${COMPANION_BUILD_IMAGE:-debian:$TARGET_SUITE}"
 
 NATIVE=0
 [[ "${1:-}" == "--native" ]] && NATIVE=1

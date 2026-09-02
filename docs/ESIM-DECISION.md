@@ -481,15 +481,15 @@ package first, first-party build only if that fails:
 
 1. **Stock Debian package — preferred, but currently unavailable to us.** Ruled out by
    *suite*, not by licence: 2.3.0-1 exists only in testing/unstable, and this stack's
-   packaging targets bookworm. Revisit on any suite move; this is the option that would
+   packaging targets trixie. Revisit on any suite move; this is the option that would
    cost the least.
 2. **Upstream's own `lpac_2.3.0_arm64.deb` — rejected as a shipping form.** It is not built
    by us, not covered by `packaging/upstream-pins.yaml`'s four-link provenance chain, and
    not signed by our key. Adopting it would put a binary into the device image through a
    path every other `.deb` in this repo is forbidden to use.
-3. **First-party bookworm rebuild in `modem-stack/packaging/` — the recommended form on a
+3. **First-party target-suite rebuild in `modem-stack/packaging/` — the recommended form on a
    future GO.** It is not a new model: Debian now maintains a `debian/` recipe (2.3.0-1)
-   that can be pinned and rebuilt for bookworm exactly like ModemManager, libmbim, libqmi,
+   that can be pinned and rebuilt for the target suite exactly like ModemManager, libmbim, libqmi,
    and libqrtr-glib already are — same zero-patch rule, same provenance chain, same
    two-set package model. The one genuinely new requirement is the AGPL §6(d) source
    channel from §9.3.

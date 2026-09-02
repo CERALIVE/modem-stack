@@ -284,7 +284,7 @@ pass.
 ### Patched ModemManager HIL attempt, 2026-08-23
 
 The owner-approved three-patch series was rebuilt locally for arm64 using the documented
-`packaging/ci/build-bookworm.sh arm64` bench path. No release, package publication, or apt
+`packaging/ci/build-stack.sh arm64` bench path. No release, package publication, or apt
 dispatch occurred. The board started on `modemmanager` and `libmm-glib0`
 `1.24.2-2~ceralive0.2.0`; the local dev packages were installed with `dpkg -i`, udev was
 reloaded, and ModemManager was restarted.

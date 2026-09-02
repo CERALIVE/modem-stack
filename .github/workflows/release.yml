@@ -156,8 +156,8 @@ jobs:
   build-deb:
     name: Build .deb set + contract + daemon smoke (real artifacts)
     needs: [tag-guard, test]
-    # Runs on the runner host (NOT inside a container): build-bookworm.sh and the contract /
-    # smoke scripts each launch their OWN debian:bookworm containers, so the job needs the
+    # Runs on the runner host (NOT inside a container): build-stack.sh and the contract /
+    # smoke scripts each launch their OWN debian:trixie containers, so the job needs the
     # host docker daemon, not to be a container itself.
     runs-on: ubuntu-latest
     steps:
@@ -256,10 +256,10 @@ jobs:
           echo "--- verdicts.txt ---"
           cat verdicts.txt
 
-      # STRICTLY BEFORE any build-bookworm.sh invocation. Carried debs are not merely release
-      # assets, they are a build INPUT: build-bookworm.sh seeds its Pin-Priority-1001 local apt
+      # STRICTLY BEFORE any build-stack.sh invocation. Carried debs are not merely release
+      # assets, they are a build INPUT: build-stack.sh seeds its Pin-Priority-1001 local apt
       # repo from packaging/build/<arch>/, so a changed source resolves its build-deps and gir
-      # typelibs against the carried -dev/gir1.2-* packages instead of stock bookworm. Staging
+      # typelibs against the carried -dev/gir1.2-* packages instead of the stock suite. Staging
       # after the build would silently reintroduce stock dependencies.
       - name: Stage carry-forward debs (unchanged sources, sha256-verified)
         env:
@@ -278,7 +278,7 @@ jobs:
       # all and still asserts the merged runtime closure over the carried set.
       #
       # RESIDUAL RISK, ACCEPTED BY THE PLAN: the zero-build path reaching manifest generation with
-      # staged-only debs is proven by contract fixtures (packaging/ci/test-build-bookworm-differential.sh,
+      # staged-only debs is proven by contract fixtures (packaging/ci/test-build-stack-differential.sh,
       # test-suffix-coherence-manifest.sh) and by static wiring proof (test-release-workflow-wiring.sh).
       # Full end-to-end proof lands at the FIRST REAL RELEASE RUN; it is deliberately not simulated.
       - name: Build the MM 1.24 stack (.deb) — amd64 + arm64
@@ -287,8 +287,8 @@ jobs:
           VERDICTS_FILE: verdicts.txt
           PREV_MANIFEST_FILE: ${{ steps.prev-release.outputs.prev_manifest }}
         run: |
-          packaging/ci/build-bookworm.sh amd64
-          packaging/ci/build-bookworm.sh arm64
+          packaging/ci/build-stack.sh amd64
+          packaging/ci/build-stack.sh arm64
 
       # Package contract: amd64 full (metadata / closure install / upgrade / rollback /
       # coherence / ordering / tag-guard / piuparts); arm64 metadata-level (apt-install under

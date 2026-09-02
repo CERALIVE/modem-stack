@@ -7,9 +7,9 @@
 #   WHICH sources moved; this one carries the bytes of the ones that did not. Builds are NOT
 #   reproducible, so an unchanged source can never be rebuilt at its old version — the only
 #   honest way to keep a release self-contained is to reuse the exact artifacts the release that
-#   last built them recorded. Those bytes are a build INPUT too: `build-bookworm.sh` seeds its
+#   last built them recorded. Those bytes are a build INPUT too: `build-stack.sh` seeds its
 #   temporary local apt repo from `build/<arch>/`, so a changed source resolves its build-deps
-#   against the carried `-dev`/`gir1.2-*` packages rather than stock bookworm.
+#   against the carried `-dev`/`gir1.2-*` packages rather than the stock suite.
 #
 # INPUT — the verdict lines from detect-changed-sources.sh, on STDIN by default
 #   The caller pipes that script's stdout straight in (or points `--verdicts <file>` at the file
@@ -70,7 +70,7 @@
 #
 # STAGING LAYOUT
 #   `<build-root>/<build_arch>/<canonical filename>` — the same gitignored tree
-#   `build-bookworm.sh` writes freshly built debs into and `generate-release-manifest.sh` reads.
+#   `build-stack.sh` writes freshly built debs into and `generate-release-manifest.sh` reads.
 #   `build_arch` is taken verbatim from manifest column 1, so an `all` row would land in
 #   `build/all/`. Only the companion is ever `Architecture: all`, and the companion is never
 #   carried — an upstream source's rows are always arch-dependent — so `build/all/` should never

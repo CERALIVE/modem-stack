@@ -30,7 +30,7 @@
 #
 # DEPENDENCY-FREE
 #   bash + awk only (like the verifier). No dpkg / devscripts — so it runs unchanged on the
-#   Arch dev host and inside the bookworm CI container alike.
+#   Arch dev host and inside the packaging CI container alike.
 #
 # EXIT
 #   0  value printed on stdout.

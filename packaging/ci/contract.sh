@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# contract.sh — the packaging PR lane (bookworm container, ci-packaging.yml).
+# contract.sh — the packaging PR lane (target-suite container, ci-packaging.yml).
 #
 # This is the LIGHTWEIGHT gate that runs on every packaging PR without building any .deb:
 # it needs no docker-in-docker and no built artifacts. It asserts the packaging scaffold is
@@ -8,7 +8,7 @@
 #
 # The HEAVY, deb-consuming contract — metadata / closure install / upgrade / rollback /
 # coherence / piuparts and the daemon smoke — lives in ci/test-package-contract.sh and
-# ci/daemon-smoke.sh. Those each launch their own debian:bookworm container against the
+# ci/daemon-smoke.sh. Those each launch their own target-suite container against the
 # A5.1 build output and run inside release.yml's build-deb job (which has the host docker
 # daemon), not in this container-based PR lane.
 set -euo pipefail
@@ -16,7 +16,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_ROOT="$(cd "$HERE/.." && pwd)"
 
-echo "packaging PR contract lane (bookworm)"
+echo "packaging PR contract lane ($(. /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-unknown-suite}"))"
 echo "  packaging root: $PKG_ROOT"
 
 fail=0
@@ -30,7 +30,7 @@ require() {
 }
 
 require "README.md"
-require "BOOKWORM-ADAPTATIONS.md"
+require "SUITE-ADAPTATIONS.md"
 require "ci/tag-guard.sh"
 require "ci/test-tag-guard.sh"
 require "ci/detect-changed-sources.sh"
@@ -39,8 +39,8 @@ require "ci/stage-carryforward-debs.sh"
 require "ci/test-stage-carryforward-debs.sh"
 require "ci/read-pin.sh"
 require "ci/inject-deb-version.sh"
-require "ci/build-bookworm.sh"
-require "ci/test-build-bookworm-differential.sh"
+require "ci/build-stack.sh"
+require "ci/test-build-stack-differential.sh"
 require "ci/test-package-contract.sh"
 require "ci/daemon-smoke.sh"
 require "ci/generate-release-manifest.sh"
@@ -103,7 +103,7 @@ bash "$HERE/test-stage-carryforward-debs.sh" >/dev/null
 # carry seeding, bootstrap dispatch, counter derivation, package-set checking and merged closure all
 # run through their production paths, with no docker or network.
 echo "  running differential build + rebuild-counter contract..."
-bash "$HERE/test-build-bookworm-differential.sh" >/dev/null
+bash "$HERE/test-build-stack-differential.sh" >/dev/null
 
 # The per-source suffix + mixed-version manifest contract. It stages placeholder debs and runs the
 # real generate-release-manifest.sh over them, and proves the migration-continuity ordering with
@@ -114,8 +114,8 @@ bash "$HERE/test-suffix-coherence-manifest.sh" >/dev/null
 
 # The release.yml wiring proof is STATIC — it reads the workflow text and never dispatches a run.
 # It belongs in this lane because the invariant it guards (carry-forward staged before every
-# build-bookworm.sh call) fails SILENTLY: a late stage still produces a green release, built
-# against stock bookworm dependencies instead of the carried ones.
+# build-stack.sh call) fails SILENTLY: a late stage still produces a green release, built
+# against stock suite dependencies instead of the carried ones.
 echo "  running release.yml differential wiring contract..."
 bash "$HERE/test-release-workflow-wiring.sh" >/dev/null
 
@@ -162,10 +162,10 @@ if command -v dch >/dev/null 2>&1; then
 	echo "  ok: injection wrote to the copy; committed changelogs untouched"
 else
 	# No devscripts here (e.g. a non-container run) — document instead of failing.
-	echo "  note: dch not present; skipping live injection (runs in the bookworm PR lane)"
+	echo "  note: dch not present; skipping live injection (runs in the containerized PR lane)"
 fi
 
-# Real tilde-ordering proofs (dpkg is present in the bookworm lane). These are the invariant
+# Real tilde-ordering proofs (dpkg is present in the container lane). These are the invariant
 # the encoded ~ceralive<X.Y.Z> version depends on; a broken comparator would silently invert
 # release ordering.
 if command -v dpkg >/dev/null 2>&1; then

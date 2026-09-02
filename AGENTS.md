@@ -14,9 +14,10 @@ Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE
 |-----------|----------|------|
 | `control/` | `@ceralive/modem-control` (npm) | TypeScript control library — domain model, ModemManager D-Bus backend, NetworkManager adapter, desired-state reconciler, injected admission/ownership/USB-hub ports, USB composition-mode model + evidence-bundle **ingestion seam**, data-usage sampler + the **usage-policy write surface**, capability-module **support-claim taxonomy + detection**, and the **band-lock** vocabulary + certification catalog (see §§ below). Published to public npm under `@ceralive` as **built ESM + `.d.ts`** across seven entry points (see § PUBLISHED PACKAGE SURFACE). |
 | `cli/` | `modem-control` (bench CLI) | The iteration surface: `probe`/`watch`/`apply`/`set-usb-mode`/`usage`/`certify`/`hil-cycle`, compiled `arm64`+`amd64`, run against real modems. Not published to npm. |
-| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Bookworm rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, not a fork. libmbim/libqmi/libqrtr-glib remain source-unmodified; ModemManager carries exactly three owner-approved, BELABOX-derived FM350-GL patches, hardware-validated on the carrier-mediated USB topology after restoring the original `ATZ0` first-enable override (see `POLICY.md` and `docs/adr/ADR-FM350-RNDIS-BEARER.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets. |
+| `packaging/` | ModemManager stack `.deb`s **+ the first-party companion** | Trixie rebuilds of ModemManager + libmbim + libqmi + libqrtr-glib — packaging only, not a fork. libmbim/libqmi/libqrtr-glib remain source-unmodified; ModemManager carries exactly three owner-approved, BELABOX-derived FM350-GL patches, hardware-validated on the carrier-mediated USB topology after restoring the original `ATZ0` first-enable override (see `POLICY.md` and `docs/adr/ADR-FM350-RNDIS-BEARER.md`) — PLUS `ceralive-modem-support`, the `Architecture: all` first-party companion that owns CeraLive's generic modem system assets. |
 
-`control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a bookworm container.
+`control/` + `cli/` are one **Bun** workspace. `packaging/` builds in a **trixie** container —
+the suite the device image runs; `build-stack.sh` refuses a container whose suite disagrees.
 
 ## FIRST-PARTY COMPANION — `ceralive-modem-support`
 
@@ -1549,7 +1550,7 @@ The **licensing half of the spike did complete** and binds any future adoption:
   BEFORE any lpac upload.
 - AGPL §13 attaches to **modified** versions only, so the rule is *ship unmodified or not at
   all* — the same answer `POLICY.md`'s no-fork rule already gives.
-- Shipping form on a hypothetical GO: a first-party bookworm rebuild in `packaging/`, pinned
+- Shipping form on a hypothetical GO: a first-party target-suite rebuild in `packaging/`, pinned
   like the other four sources. The stock Debian package (`lpac` 2.3.0-1) exists but is in
   testing/unstable only — **not** bookworm, **not** trixie.
 
@@ -1636,16 +1637,31 @@ bun run verify:tarball    # pack + assert the published artifact's shape
 bun run verify:consumers  # install the tarball into standalone Node 26 + Bun projects
 ```
 
-`packaging/` runs in a `debian:bookworm` container; its contract/verification scripts live
+`packaging/` runs in a `debian:$TARGET_SUITE` container (default `trixie`); its contract/verification scripts live
 under `packaging/ci/`. The four sources' `debian/` recipes are checked in at
 `packaging/<Source>/debian/` (`ModemManager`, `libmbim`, `libqmi`, `libqrtr-glib` — matching
-their pinned salsa commits except the bookworm adaptations and the approved ModemManager
-FM350-GL series documented in `packaging/BOOKWORM-ADAPTATIONS.md`).
-`packaging/ci/build-bookworm.sh <amd64|arm64>` rebuilds
+their pinned salsa commits except the suite adaptations and the approved ModemManager
+FM350-GL series documented in `packaging/SUITE-ADAPTATIONS.md`).
+`packaging/ci/build-stack.sh <amd64|arm64>` (suite-parameterized: `TARGET_SUITE`, default
+`trixie`) rebuilds
 them from source in the mandatory bootstrap order (`libqrtr-glib → libmbim → libqmi →
 modemmanager`) via a temporary local apt repo, on native amd64 or full-system-QEMU arm64
 (never cross-built), and asserts the 9-package runtime closure. `.deb` output lands in the
 gitignored `packaging/build/<arch>/`.
+
+**BUILD-SUITE PARITY IS A GATE.** The build container's own `VERSION_CODENAME` must equal
+`TARGET_SUITE` or `build-stack.sh` REFUSES the build. This is not ceremony: a stack built
+against a newer libc than the board ships fails at load with a `GLIBC_` symbol error that no
+build step can observe, so the mismatch would otherwise surface only on a device. Overriding
+`TARGET_SUITE` is for bisecting a suite-specific build break, never for cutting a release.
+
+The suite move to trixie did NOT let the `debian/` adaptations be reverted, which is the
+counter-intuitive part and is re-measured rather than assumed in
+`packaging/SUITE-ADAPTATIONS.md`: trixie moved BOTH `udev.pc` and `systemd.pc` into
+`systemd-dev`, so the `udev` build-dep supplies neither and the two meson install-dir pins
+are *more* load-bearing than they were on bookworm. The GI substitution likewise still
+resolves (`libgirepository1.0-dev` is current at `1.84.0-1`), so reverting it would re-open a
+verified deviation surface for no gain.
 
 ## CI / CD
 
@@ -1659,8 +1675,8 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
   `control/scripts/verify-consumers.ts` refuses any major but 26.
   `cancel-in-progress: true`.
 - **`.github/workflows/ci-packaging.yml`** — paths-filtered PR + push(`main`) container lane
-  for `packaging/**`: runs the packaging contract scripts in `debian:bookworm`. The four
-  `debian/` recipes and `build-bookworm.sh` now exist; the full contract suite (metadata /
+  for `packaging/**`: runs the packaging contract scripts in `debian:trixie`. The four
+  `debian/` recipes and `build-stack.sh` now exist; the full contract suite (metadata /
   closure / upgrade / rollback / daemon smoke) lands in a later task.
   `cancel-in-progress: true`.
 - **`.github/workflows/release.yml`** — the **single** release workflow, owns **both**
@@ -1686,7 +1702,7 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
      the bootstrap case, not an error) → **Detect changed sources (per-source verdicts)**
      (`packaging/ci/detect-changed-sources.sh --out verdicts.txt`) → **Stage carry-forward debs
      (unchanged sources, sha256-verified)** (`packaging/ci/stage-carryforward-debs.sh`) →
-     **Build the MM 1.24 stack (.deb) — amd64 + arm64** (`build-bookworm.sh amd64` /`arm64`,
+     **Build the MM 1.24 stack (.deb) — amd64 + arm64** (`build-stack.sh amd64` /`arm64`,
      with `VERDICTS_FILE` + the already-resolved `PREV_MANIFEST_FILE`) → **Package contract
      suite** (amd64 full, arm64 metadata) → **Daemon smoke (amd64)** → **Build the first-party
      companion .deb (Architecture: all)** (UNCONDITIONAL — the companion is never detected and
@@ -1697,10 +1713,10 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
      Three things about that order are load-bearing. The previous release is resolved and its
      manifest downloaded **exactly once**, and that one path feeds all three consumers
      (detection, carry-forward staging, per-source counter derivation). Carry-forward staging
-     runs **strictly before any `build-bookworm.sh` call**, because carried debs are a build
-     INPUT — `build-bookworm.sh` seeds its Pin-Priority-1001 local apt repo from
+     runs **strictly before any `build-stack.sh` call**, because carried debs are a build
+     INPUT — `build-stack.sh` seeds its Pin-Priority-1001 local apt repo from
      `packaging/build/<arch>/`, so a changed source resolves its build-deps and gir typelibs
-     against the carried `-dev`/`gir1.2-*` packages rather than stock bookworm; staging late
+     against the carried `-dev`/`gir1.2-*` packages rather than the stock suite; staging late
      still goes green and silently reintroduces stock dependencies, which is why
      `packaging/ci/test-release-workflow-wiring.sh` pins the ordering statically. And a
      zero-build run starts no container at all yet still asserts the merged runtime closure
@@ -1708,7 +1724,7 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
 
      Detection is **fail-SAFE toward rebuilding**: an absent previous release, a manifest with
      no `closure_version:` header (an absent header IS closure version 1), a shared-input
-     change under `packaging/ci/**` or `packaging/BOOKWORM-ADAPTATIONS.md`, or the operator's
+     change under `packaging/ci/**` or `packaging/SUITE-ADAPTATIONS.md`, or the operator's
      escape hatch all yield `mode=force-all`. That escape hatch is the `force_rebuild`
      `workflow_dispatch` boolean input (default `false`), mapped to the script's
      `FORCE_REBUILD=all` env via
