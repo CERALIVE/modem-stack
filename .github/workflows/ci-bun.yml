@@ -1,18 +1,11 @@
 name: CI (bun)
 
-# Paths-filtered PR lane for the Bun workspace (control/ + cli/). The `push:` trigger
-# carries a positive `branches:` filter alongside `paths:` so a PR-branch push does not
-# double-fire (CI/CD standard — trigger hygiene).
+# PR lane for the Bun workspace (control/ + cli/). The lane's scope is decided by the
+# `changes` job below, not by a `pull_request: paths:` filter — see that job. The `push:`
+# trigger keeps its positive `branches:` filter alongside `paths:` so a PR-branch push
+# does not double-fire (CI/CD standard — trigger hygiene).
 on:
   pull_request:
-    paths:
-      - "control/**"
-      - "cli/**"
-      - "package.json"
-      - "bun.lock"
-      - "tsconfig.json"
-      - "biome.json"
-      - ".github/workflows/ci-bun.yml"
   push:
     branches: [main]
     paths:
@@ -32,9 +25,71 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Change detection. The lane's scope used to live on the `pull_request`
+  # trigger as a `paths:` filter; it lives here now because a trigger filter
+  # stops the workflow from starting at all, and a required check that never
+  # reports blocks a merge instead of passing it. The always-run summary job at
+  # the bottom is what a branch-protection rule requires, so this workflow must
+  # always start — and then decide.
+  #
+  # TWO filter steps, and the split is load-bearing. `code` is an EXCLUSION list
+  # ("every changed file is NOT documentation") and therefore carries
+  # `predicate-quantifier: 'every'`. `scope` is the POSITIVE OR list this lane
+  # used to carry on its trigger, so it keeps the default `some`. The quantifier
+  # is a property of the STEP, not of a filter: putting both in one step under
+  # `every` would turn the positive list into an AND that no single file can
+  # satisfy, and the lane would never run.
+  changes:
+    name: Change detection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # Both filters run on pull requests only. The `push:` trigger keeps its own
+      # `branches:` + `paths:` selector, so a push that reaches this workflow is
+      # already in scope and the fallbacks keep both outputs true.
+      code: ${{ steps.filter.outputs.code || 'true' }}
+      scope: ${{ steps.scope-filter.outputs.scope || 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect non-documentation changes
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            code:
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE*'
+              - '!.github/ISSUE_TEMPLATE/**'
+              - '!.github/PULL_REQUEST_TEMPLATE.md'
+
+      - name: Detect changes inside this lane's scope
+        id: scope-filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            scope:
+              - 'control/**'
+              - 'cli/**'
+              - 'package.json'
+              - 'bun.lock'
+              - 'tsconfig.json'
+              - 'biome.json'
+              - '.github/workflows/ci-bun.yml'
+
   bun:
     name: Lint, typecheck, test (control + cli)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.scope == 'true'
     steps:
       - uses: actions/checkout@v7
 
@@ -72,3 +127,31 @@ jobs:
       - name: Standalone consumer fixtures (Node 26 + Bun) against the packed tarball
         working-directory: control
         run: bun run verify:consumers
+
+  # The one check a branch-protection rule can require. It runs on every event,
+  # including a pull request outside this lane's scope where the gate above
+  # skipped, and goes red whenever a dependency failed or was cancelled. A
+  # SKIPPED dependency is a pass — that is the whole point of the gating above.
+  ci-summary:
+    name: CI (bun) summary
+    if: always()
+    needs:
+      - changes
+      - bun
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any dependency failed or was cancelled
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "dependency results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            case "${result}" in
+              failure|cancelled)
+                echo "::error::a required job reported '${result}'"
+                exit 1
+                ;;
+            esac
+          done
+          echo "every dependency succeeded or was skipped"
