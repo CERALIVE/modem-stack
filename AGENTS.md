@@ -1609,7 +1609,7 @@ of the named revisit triggers fires. That record also carries the idea-attributi
 before proposing a rewrite or extending the telemetry surface:
 [`docs/adr/ADR-STAY-TYPESCRIPT.md`](docs/adr/ADR-STAY-TYPESCRIPT.md).
 
-- **Bun 1.4.0** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
+- **Bun 1.4.2** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
   are Bun workspace members.
 - **Strict TypeScript 7.0.2** incl. `exactOptionalPropertyTypes` — the repo-root
   `tsconfig.json` is the workspace checker (`bun run typecheck` → `tsc --noEmit`) for both
