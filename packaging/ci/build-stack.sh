@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# build-bookworm.sh <amd64|arm64> — differential ModemManager-stack rebuild for bookworm.
+# build-stack.sh <amd64|arm64> — differential ModemManager-stack rebuild.
+#
+# TARGET SUITE
+#   The build container is `debian:$TARGET_SUITE`, default `trixie` — the suite the device
+#   image actually runs. The suite is a variable rather than a literal because the build suite
+#   and the target suite must agree: a binary built against a newer libc than the board ships
+#   fails at load with a GLIBC_ symbol error the build itself never sees. Overriding it is for
+#   bisecting a suite-specific build break, not for producing a release.
 #
 # BUILD SET
 #   BUILD_SOURCES may be an explicitly set space/comma-separated list of upstream-pins.yaml
@@ -12,7 +19,7 @@
 #   Selected sources build in the mandatory bootstrap order. Before the first build, every deb
 #   belonging to each skipped source is copied from the already-staged output directory into the
 #   temporary Pin-Priority 1001 local apt repo. A selected source therefore resolves stack
-#   build-deps and gir typelibs against carried CeraLive packages, never stock bookworm merely
+#   build-deps and gir typelibs against carried CeraLive packages, never the stock suite merely
 #   because its dependency source was skipped.
 #
 # OUTPUT + ASSERTIONS
@@ -28,7 +35,7 @@
 #   script never fetches the previous manifest. Dev builds retain ~ceralive0.0.0~dev.
 #
 # TEST SEAM
-#   BUILD_BOOKWORM_STUB_DIR is used only by test-build-bookworm-differential.sh. It replaces the
+#   BUILD_STACK_STUB_DIR is used only by test-build-stack-differential.sh. It replaces the
 #   expensive build body with source-keyed fixture artifacts while exercising production build-set
 #   parsing, seeding, dispatch, check-package-sets.sh, and merged-closure logic.
 #
@@ -41,7 +48,10 @@ BUILD_ORDER=(libqrtr-glib libmbim libqmi ModemManager)
 EXPECTED_RUNTIME=(libmbim-glib4 libmbim-proxy libmbim-utils libmm-glib0 libqmi-glib5 \
 	libqmi-proxy libqmi-utils libqrtr-glib0 modemmanager)
 
-LOG_PREFIX="build-bookworm"
+TARGET_SUITE="${TARGET_SUITE:-trixie}"
+BUILD_IMAGE="${BUILD_IMAGE:-debian:$TARGET_SUITE}"
+
+LOG_PREFIX="build-stack"
 build_log() { printf '%s: %s\n' "$LOG_PREFIX" "$*" >&2; }
 die() {
 	printf '%s: %s\n' "$LOG_PREFIX" "$*" >&2
@@ -224,7 +234,7 @@ if [ "${BUILD_IN_CONTAINER:-0}" != 1 ]; then
 	case "$ARCH" in
 	amd64) PLATFORM="linux/amd64" ;;
 	arm64) PLATFORM="linux/arm64" ;;
-	*) echo "usage: build-bookworm.sh <amd64|arm64>" >&2; exit 2 ;;
+	*) echo "usage: build-stack.sh <amd64|arm64>" >&2; exit 2 ;;
 	esac
 
 	PKG_ROOT="$SCRIPT_PKG_ROOT"
@@ -232,7 +242,7 @@ if [ "${BUILD_IN_CONTAINER:-0}" != 1 ]; then
 	mkdir -p "$OUT"
 	clean_run_outputs "$OUT" "$PKG_ROOT/ci/expected-packages.txt"
 
-	build_log "arch=$ARCH platform=$PLATFORM"
+	build_log "arch=$ARCH platform=$PLATFORM suite=$TARGET_SUITE image=$BUILD_IMAGE"
 	build_log "packaging root=$PKG_ROOT"
 	build_log "output=$OUT"
 	build_log "selected sources (${#BUILD_SOURCE_KEYS[@]}): ${CANONICAL_BUILD_SOURCES:-none}"
@@ -259,6 +269,7 @@ if [ "${BUILD_IN_CONTAINER:-0}" != 1 ]; then
 		-e ARCH="$ARCH"
 		-e BUILD_SOURCES="$CANONICAL_BUILD_SOURCES"
 		-e RELEASE_VERSION="${RELEASE_VERSION:-}"
+		-e TARGET_SUITE="$TARGET_SUITE"
 	)
 	if [ -n "${PREV_MANIFEST_FILE:-}" ]; then
 		docker_args+=(
@@ -269,8 +280,8 @@ if [ "${BUILD_IN_CONTAINER:-0}" != 1 ]; then
 	docker_args+=(
 		-v "$PKG_ROOT":/pkg:ro
 		-v "$OUT":/out
-		debian:bookworm
-		bash /pkg/ci/build-bookworm.sh "$ARCH"
+		"$BUILD_IMAGE"
+		bash /pkg/ci/build-stack.sh "$ARCH"
 	)
 	docker "${docker_args[@]}"
 
@@ -281,18 +292,18 @@ fi
 # ==========================================================================================
 # CONTAINER ROLE — seed skipped sources, then build only selected sources in bootstrap order.
 # ==========================================================================================
-PKG_MOUNT="${BUILD_BOOKWORM_PKG_ROOT:-/pkg}"
-OUT_DIR="${BUILD_BOOKWORM_OUT_DIR:-/out}"
-STUB_BUILD_DIR="${BUILD_BOOKWORM_STUB_DIR:-}"
+PKG_MOUNT="${BUILD_STACK_PKG_ROOT:-/pkg}"
+OUT_DIR="${BUILD_STACK_OUT_DIR:-/out}"
+STUB_BUILD_DIR="${BUILD_STACK_STUB_DIR:-}"
 [ -d "$PKG_MOUNT" ] || die "container packaging root '$PKG_MOUNT' is not a directory"
 [ -d "$OUT_DIR" ] || die "container output '$OUT_DIR' is not a directory"
 if [ -n "$STUB_BUILD_DIR" ] && [ ! -d "$STUB_BUILD_DIR" ]; then
-	die "BUILD_BOOKWORM_STUB_DIR='$STUB_BUILD_DIR' is set but not a directory"
+	die "BUILD_STACK_STUB_DIR='$STUB_BUILD_DIR' is set but not a directory"
 fi
 
 ARCH="${ARCH:-}"
 if [ -z "$ARCH" ]; then
-	[ -z "$STUB_BUILD_DIR" ] || die "ARCH is required with BUILD_BOOKWORM_STUB_DIR"
+	[ -z "$STUB_BUILD_DIR" ] || die "ARCH is required with BUILD_STACK_STUB_DIR"
 	ARCH="$(dpkg --print-architecture)"
 fi
 
@@ -307,9 +318,16 @@ fi
 
 if [ -n "$STUB_BUILD_DIR" ]; then
 	echo "== stubbed in-container build (target=$ARCH) =="
-	log "BUILD_BOOKWORM_STUB_DIR active: real apt and dpkg-buildpackage commands are disabled"
+	log "BUILD_STACK_STUB_DIR active: real apt and dpkg-buildpackage commands are disabled"
 else
 	echo "== in-container build (arch=$(dpkg --print-architecture), target=$ARCH, $(uname -m)) =="
+	# Build-suite parity is a GATE, not a convention: a stack built against a different suite
+	# than the device runs loads with a GLIBC_ symbol error no build step can observe.
+	container_suite="$(. /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-}")"
+	[ -n "$container_suite" ] || refuse "container does not report VERSION_CODENAME; the build suite cannot be verified against TARGET_SUITE='$TARGET_SUITE'"
+	[ "$container_suite" = "$TARGET_SUITE" ] ||
+		refuse "build-suite drift: container is '$container_suite' but TARGET_SUITE is '$TARGET_SUITE'"
+	log "build-suite parity OK: container suite '$container_suite' matches TARGET_SUITE"
 fi
 
 export DEBIAN_FRONTEND=noninteractive
@@ -377,7 +395,7 @@ seed_carried_source() { # <source-key>
 		matches=("$OUT_DIR/${package}_"*.deb)
 		shopt -u nullglob
 		if [ "${#matches[@]}" -eq 0 ]; then
-			refuse "skipped source '$source_name' carried package '$package' is missing from '$OUT_DIR'; build-deps must never fall back to stock bookworm"
+			refuse "skipped source '$source_name' carried package '$package' is missing from '$OUT_DIR'; build-deps must never fall back to the stock suite"
 		fi
 		if [ "${#matches[@]}" -gt 1 ]; then
 			refuse "skipped source '$source_name' carried package '$package' has ${#matches[@]} staged debs in '$OUT_DIR'; the local repo seed requires exactly one version"

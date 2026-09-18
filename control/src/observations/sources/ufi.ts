@@ -32,7 +32,9 @@ import {
 } from '../raw';
 import {
 	type RouterProvenance,
+	routerCell,
 	routerHardware,
+	routerOperator,
 	routerSim,
 	unsupportedQualityRecent,
 	unsupportedRadioMetric,
@@ -111,6 +113,9 @@ export function normalizeUfiObservation(
 			registration: unsupportedRadioMetric(provenance),
 			accessTechnologies: unknownMetric('unsupported', provenance([])),
 			modeLabel: unknownMetric<string>('not-reported', provenance([])),
+			// `parseUfiDetails` decodes no operator field from any of the three
+			// endpoints, so neither half is claimed.
+			...routerOperator(provenance, undefined),
 		},
 		signal: {
 			quality: unknownMetric<number>('unsupported', provenance([])),
@@ -131,6 +136,12 @@ export function normalizeUfiObservation(
 			sinr: metricFromRouterSignal(signalModel.sinr, provenance([])),
 		},
 		sim: routerSim(provenance, hasRawField(raw, SIM_STATE) ? SIM_STATE : undefined),
+		cell: routerCell(
+			provenance,
+			details?.cell_id === undefined
+				? undefined
+				: { id: details.cell_id, field: rawKey(SYSINFO, 'cellid') },
+		),
 		diagnostics: createObservationDiagnostics({ source: SOURCE, raw, consumed, notes }),
 	});
 }

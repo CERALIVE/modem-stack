@@ -632,12 +632,16 @@ describe('NetworkManagerAdapter — scope boundary', () => {
 		'physicalModemId',
 	];
 
-	const sources = ['adapter.ts', 'types.ts', 'index.ts'].map((name) => ({
-		name,
-		code: stripComments(readFileSync(new URL(name, import.meta.url), 'utf8')),
-	}));
+	const sources = [...new Bun.Glob('**/*.ts').scanSync({ cwd: import.meta.dir, onlyFiles: true })]
+		.filter((name) => !name.endsWith('.test.ts'))
+		.map((name) => ({
+			name,
+			code: stripComments(readFileSync(new URL(name, import.meta.url), 'utf8')),
+		}));
 
 	test('the comment strip is non-vacuous in both directions', () => {
+		// Scanned 3 files before directory-glob widening.
+		expect(sources.length).toBeGreaterThanOrEqual(3);
 		expect(
 			stripComments('const a = 1; // setRadioModes\n/* sendPin */\nconst b = 2;'),
 		).not.toContain('setRadioModes');

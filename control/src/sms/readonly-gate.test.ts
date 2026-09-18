@@ -15,7 +15,6 @@
 // interlock design.
 
 import { describe, expect, test } from 'bun:test';
-import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const SMS_DIR = import.meta.dir;
@@ -66,8 +65,8 @@ function stripComments(source: string): string {
 }
 
 function smsSourceFiles(): string[] {
-	const files = readdirSync(SMS_DIR)
-		.filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts') && name !== SELF)
+	const files = [...new Bun.Glob('**/*.ts').scanSync({ cwd: SMS_DIR, onlyFiles: true })]
+		.filter((name) => !name.endsWith('.test.ts') && name !== SELF)
 		.map((name) => join(SMS_DIR, name));
 	return [...files, PORT_FILE];
 }
@@ -81,7 +80,8 @@ describe('the SMS surface is read-only, and stays that way', () => {
 	test('scans the whole SMS surface, port included', () => {
 		// Guards the gate itself: a moved directory would otherwise make this
 		// suite pass vacuously by scanning nothing.
-		expect(CODE.size).toBeGreaterThanOrEqual(5);
+		// Scanned 6 files before directory-glob widening.
+		expect(CODE.size).toBeGreaterThanOrEqual(6);
 		for (const expected of [
 			'ports/sms.ts',
 			'sms/normalize.ts',

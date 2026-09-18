@@ -199,6 +199,85 @@ are, so the preferred mode and the measurement-recency flag survive normalizatio
 `NormalizedSignal.qualityRecent` claims that flag, and the router sources answer
 `unsupported` for it.
 
+### Extended signal — the `Modem.Signal` per-RAT dicts
+
+`rsrp`, `rsrq`, `snr` and `sinr` are claimed for MM-managed modems from the
+`Modem.Signal` interface's own `a{sv}` properties, so a ModemManager device reports the
+same detail a Huawei or ZTE dongle always did. `rsrp` / `rsrq` / `snr` read `Nr5g` first
+and `Lte` second — on a 5G NSA attach both are populated with different measurements, so
+`MetricProvenance.rawFields` names the dict that answered (`Signal.Nr5g.rsrp`) rather than
+merging the two. `dbm` reads `rssi` across `Lte → Umts → Gsm → Evdo → Cdma`.
+
+`sinr` comes from the `Evdo` dict and from no other, because that is the only dict
+ModemManager defines it on; `Lte` and `Nr5g` publish `snr`, a different quantity that
+never populates it. An LTE/5G modem reporting no SINR therefore answers `not-reported` —
+a claim about this read — and not `unsupported`, which would be a false claim about the
+source. An exported-but-silent `Modem.Signal` yields `not-reported` for every extended
+metric and a modem without the interface yields `not-observed`; neither ever yields a
+zero. Every member the normalized model has no slot for (`error-rate`, `ecio`, `io`,
+`rscp`) stays verbatim in the diagnostics block.
+
+The `Signal.Setup` reporting rate is injectable — `signalIntervalSeconds` on
+`createModemManagerProvider`, on `createMmDbusBackend`, or `intervalSeconds` on
+`SignalSetupManager` — and defaults to `DEFAULT_SIGNAL_INTERVAL_SECONDS` (5 seconds) at
+each. `Setup` takes an unsigned integer, so a fractional or non-positive rate is refused
+at construction rather than marshalled.
+
+### Registration and cell context
+
+`NormalizedRadio` carries `operatorName` and `operatorCode`, and every observation carries
+an additive `cell` block (`cellId` + `tac`). Both operator fields come from
+`Modem3gpp` — the operator the modem is **registered with** — and never from
+`Sim.OperatorName`, which is the *home* operator written into the SIM and differs for the
+whole time a device is roaming. `operatorCode` stays text: the MNC is two or three digits
+and the width is significant, so `31001` and `310001` are different networks.
+
+`cellId` and `tac` come from the existing `3gpp-lac-ci` location source, whose value is one
+five-token string (`MCC,MNC,LAC,CI,TAC`, the last three in uppercase hex). Both fields are
+read out of that single value, so they always describe the same reported cell; a value in
+any other shape reads `malformed` for both rather than being partially decoded, and the hex
+is kept as text so an identifier matches what `mmcli` shows. This is **coarse cell context,
+not a GNSS fix** — it carries no coordinate, `3gpp-lac-ci` is not a member of
+`GNSS_SOURCES`, and nothing on this path enables a location source or sets
+`Location.Setup`'s `signal_location`.
+
+Because ModemManager masks the `Location` property unless `signal_location` is true — which
+this package never sets — nothing populates the optional `location` input today, and an MM
+observation honestly reads `not-observed` for `cell`. Cell identity that is wired comes from
+`Modem.GetCellInfo`, where `CellReading` now also reports `tac` and reads ModemManager's real
+`ci` key (with the older `cell-id` spelling kept as a fallback).
+
+**No EARFCN is claimed.** ModemManager exposes no generic ARFCN; the only occurrences are
+inside per-cell `GetCellInfo` dicts under two different keys for two different quantities —
+`earfcn` for LTE and `nrarfcn` for 5GNR. One normalized field would have to merge them or
+pick a RAT, so neither `NormalizedCell` nor `CellReading` claims one and the raw keys stay
+available.
+
+Router sources claim only what their migrated parsers already decode: ZTE reports the
+operator name and its cell id, UFI reports its cell id, HiLink reports neither. No router
+source derives an operator code from separate unpadded MCC/MNC fields, and `tac` reads
+`not-reported` rather than `unsupported` — nothing here decodes one, which says nothing
+about what the firmware could report.
+
+### Data-usage throughput — absent is not zero
+
+`SlotUsageSnapshot.rateBytesPerSecond` reports throughput over the last **measured**
+sampling interval, and the key is **omitted** rather than set to `0` whenever there was no
+interval to measure. That happens on a first sample, a rebaseline, a paused (ambiguous
+identity) slot, a remap or reboot, an interface missing from `/proc/net/dev`, a clock that
+did not advance — and, most importantly, on a **counter reset**.
+
+Interface counters restart at zero when the interface is re-created. Clamping the resulting
+negative delta to zero would show an idle link that was in fact carrying traffic, and using
+the raw post-reset value would show every byte since the interface came up as if it moved
+inside one interval. So a backwards counter reports **no rate at all**, and the baseline is
+rebased in the same pass so the *next* interval is measured correctly rather than inheriting
+the gap.
+
+Rates are never persisted. A same-boot reload resumes the counter baseline — a cumulative
+total is still true after a restart — but the rate restarts unmeasured, because this process
+did not observe the start of that interval.
+
 ### Mutation safety ports
 
 The root export includes `MutationAdmissionPort`, `ResourceOwnershipPort`,

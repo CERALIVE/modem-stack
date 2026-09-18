@@ -26,6 +26,8 @@ describe('MF79U credential fence', () => {
 		]);
 		expect(exitCode).toBe(0);
 		const files = names.split('\0').filter((name) => name.length > 0);
+		// Scanned 605 files before adding this count floor.
+		expect(files.length).toBeGreaterThanOrEqual(605);
 		const leaks: string[] = [];
 		for (const file of files) {
 			const content = await Bun.file(file).text();

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# test-package-contract.sh <amd64|arm64> — the package contract suite for the bookworm
+# test-package-contract.sh <amd64|arm64> — the package contract suite for the target-suite
 # ModemManager 1.24 stack rebuilds.
 #
 # Runs the A5.1 build output (packaging/build/<arch>/*.deb) through the contract every
 # device install must satisfy. All checks are REAL executed commands inside a throwaway
-# `debian:bookworm` container — nothing is narrated. It NEVER mutates the committed
+# `debian:$TARGET_SUITE` container (default trixie) — nothing is narrated. It NEVER mutates the committed
 # packaging tree (version-injection experiments operate on ephemeral strings / copies).
 #
 # CHECKS
 #   1  metadata/arch      — Package/Version/Architecture over the 9-package runtime closure
-#   2  closure install    — clean bookworm: `apt-get install ./*.deb` of the 9, no missing deps
-#   3  upgrade            — stock modemmanager 1.20.4 -> the tag-encoded ceralive set
+#   2  closure install    — clean target suite: `apt-get install ./*.deb` of the 9, no missing deps
+#   3  upgrade            — stock modemmanager (suite archive) -> the ceralive set
 #   4  rollback           — ceralive set -> stock, correct apt semantics (source-disable +
 #                           explicit stock versions + --allow-downgrades)
 #   5  coherence          — PER-SOURCE: every runtime deb of ONE upstream source carries the
@@ -34,10 +34,12 @@
 # EXIT  0 all checks pass. 2 usage/env (no debs, no docker). non-zero = a contract breach.
 set -euo pipefail
 
-# The 9-package runtime closure (contract constant, matches build-bookworm.sh).
+# The 9-package runtime closure (contract constant, matches build-stack.sh).
 RUNTIME_PKGS=(modemmanager libmm-glib0 libmbim-glib4 libmbim-proxy libmbim-utils \
 	libqmi-glib5 libqmi-proxy libqmi-utils libqrtr-glib0)
-STOCK_MM_UPSTREAM="1.20.4"   # bookworm's stock modemmanager upstream version
+STOCK_MM_UPSTREAM="${STOCK_MM_UPSTREAM:-1.24.0}"   # the target suite's stock modemmanager upstream version
+TARGET_SUITE="${TARGET_SUITE:-trixie}"
+CONTRACT_IMAGE="${CONTRACT_IMAGE:-debian:$TARGET_SUITE}"
 
 # ==========================================================================================
 # HOST ROLE — tag-guard preamble (no container needed), then launch the container.
@@ -57,12 +59,13 @@ if [ "${IN_CONTAINER:-0}" != "1" ]; then
 
 	command -v docker >/dev/null 2>&1 || { echo "contract: docker not found" >&2; exit 2; }
 	ls "$BUILD_DIR"/*.deb >/dev/null 2>&1 || {
-		echo "contract: no .deb in $BUILD_DIR — run ci/build-bookworm.sh $ARCH first" >&2; exit 2; }
+		echo "contract: no .deb in $BUILD_DIR — run ci/build-stack.sh $ARCH first" >&2; exit 2; }
 
 	echo "======================================================================"
 	echo "package contract suite   arch=$ARCH   mode=$MODE"
 	echo "  packaging root: $PKG_ROOT"
 	echo "  build dir:      $BUILD_DIR"
+	echo "  image:          $CONTRACT_IMAGE"
 	echo "======================================================================"
 
 	# ---- CHECK 7 (host-side, before any container/deb work) ------------------------------
@@ -92,7 +95,7 @@ if [ "${IN_CONTAINER:-0}" != "1" ]; then
 		-e STOCK_MM_UPSTREAM="$STOCK_MM_UPSTREAM" \
 		-v "$PKG_ROOT":/pkg:ro \
 		-v "$BUILD_DIR":/debs:ro \
-		debian:bookworm \
+		"$CONTRACT_IMAGE" \
 		bash /pkg/ci/test-package-contract.sh "$ARCH"
 
 	echo
@@ -103,7 +106,7 @@ if [ "${IN_CONTAINER:-0}" != "1" ]; then
 fi
 
 # ==========================================================================================
-# CONTAINER ROLE — the real dpkg/apt checks, inside debian:bookworm.
+# CONTAINER ROLE — the real dpkg/apt checks, inside the target-suite container.
 # ==========================================================================================
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
 MODE="${CONTRACT_MODE:-full}"
@@ -114,11 +117,11 @@ echo
 echo "== in-container contract (arch=$(dpkg --print-architecture), target=$ARCH, mode=$MODE) =="
 
 # apt drops to the unprivileged _apt user for acquire and cannot read a local file: repo
-# under a 0700 dir — same fix build-bookworm.sh uses.
+# under a 0700 dir — same fix build-stack.sh uses.
 echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01-no-sandbox
 apt-get update -qq
 # dpkg-scanpackages (local-repo index for the upgrade/rollback scenarios) ships in dpkg-dev;
-# base debian:bookworm has dpkg-deb/dpkg-query but not dpkg-dev.
+# the base debian image has dpkg-deb/dpkg-query but not dpkg-dev.
 apt-get install -y -qq dpkg-dev >/dev/null 2>&1
 
 # Resolve each runtime package name to its single .deb file (exact Package match — so
@@ -155,8 +158,8 @@ MBIM_BASE="$(readpin libmbim --base-version)"
 QMI_BASE="$(readpin libqmi --base-version)"
 QRTR_BASE="$(readpin libqrtr-glib --base-version)"
 
-# Expected per-package upgrade direction vs bookworm stock, EMPIRICALLY resolved for this bump
-# (real `dpkg --compare-versions` in a bookworm container, todo 1.3): every source now sorts
+# Expected per-package upgrade direction vs suite stock, EMPIRICALLY resolved for this bump
+# (real `dpkg --compare-versions` in a target-suite container): every source now sorts
 # ABOVE stock. libqrtr-glib flipped from BELOW -> ABOVE (1.2.2-1~ceralive was tilde-lower than
 # stock 1.2.2-1; the new 1.4.0 outranks stock 1.2.2-1 outright), so the upgrade no longer needs
 # --allow-downgrades. compute_direction_table asserts this holds against the real built debs.
@@ -285,7 +288,7 @@ setup_local_repo() {
 	( cd "$REPO" && dpkg-scanpackages -m . /dev/null > Packages 2>/dev/null )
 	echo "deb [trusted=yes] file:$REPO ./" > /etc/apt/sources.list.d/local-mm.list
 	# Pin the local (freshly built) stack at 1001 (> 1000) so the coherent ceralive set always
-	# wins regardless of direction. Every source now outranks bookworm-main on upstream version
+	# wins regardless of direction. Every source now outranks the suite archive on upstream version
 	# (incl. libqrtr-glib 1.4.0 > stock 1.2.2-1), so this is belt-and-suspenders, not a downgrade
 	# force — but the pin keeps the set coherent if a future stock point-release ever catches up.
 	cat > /etc/apt/preferences.d/local-mm.pref <<'EOF'
@@ -305,12 +308,12 @@ purge_stack() {
 }
 dpkg_ver() { dpkg-query -W -f='${Version}' "$1" 2>/dev/null || echo "(absent)"; }
 
-# Real per-package upgrade direction: each built ceralive deb vs bookworm-main stock, via actual
+# Real per-package upgrade direction: each built ceralive deb vs suite stock, via actual
 # `dpkg --compare-versions`. Asserts every package lands on its EXPECT_DIR side and sets
 # NEED_DOWNGRADE=1 iff any source sorts below stock (so the upgrade passes --allow-downgrades
 # only where genuinely required). Call with the local repo DISABLED so madison yields stock.
 compute_direction_table() {
-	echo "  ---- upgrade direction table (built ceralive deb vs bookworm stock, real dpkg) ----"
+	echo "  ---- upgrade direction table (built ceralive deb vs suite stock, real dpkg) ----"
 	printf '    %-16s %-30s %-12s %-7s %s\n' PACKAGE CERALIVE STOCK DIR EXPECT
 	local pkg built stock dir exp fail=0
 	NEED_DOWNGRADE=0
@@ -334,14 +337,14 @@ compute_direction_table() {
 }
 
 # ------------------------------------------------------------------------------------------
-# CHECK 2 — clean-bookworm dependency-closure install via `apt-get install ./*.deb`.
+# CHECK 2 — clean-suite dependency-closure install via `apt-get install ./*.deb`.
 # ------------------------------------------------------------------------------------------
 check_closure_install() {
-	echo; echo "==== CHECK 2: clean-bookworm dependency-closure install (apt-get install ./*.deb) ===="
+	echo; echo "==== CHECK 2: clean-suite dependency-closure install (apt-get install ./*.deb) ===="
 	purge_stack
 	local files=()
 	for pkg in "${RUNTIME_PKGS[@]}"; do files+=("${DEB_OF[$pkg]}"); done
-	echo "  installing the 9 runtime debs as local files (deps resolve from bookworm-main)..."
+	echo "  installing the 9 runtime debs as local files (deps resolve from the suite archive)..."
 	apt-get install -y -qq "${files[@]}" >/tmp/closure.log 2>&1 || { sed 's/^/    /' /tmp/closure.log; echo "  CHECK 2 FAIL: install error"; return 1; }
 	local pkg fail=0
 	for pkg in "${RUNTIME_PKGS[@]}"; do
@@ -352,7 +355,7 @@ check_closure_install() {
 	if ! apt-get check >/tmp/aptcheck.log 2>&1; then sed 's/^/    /' /tmp/aptcheck.log; echo "  CHECK 2 FAIL: apt-get check reports broken deps"; return 1; fi
 	[ "$fail" -eq 0 ] || { echo "  CHECK 2 FAIL"; return 1; }
 	echo "  ok: apt-get check clean (no missing deps)"
-	echo "  CHECK 2 PASS: the 9-package closure installs cleanly on stock bookworm."
+	echo "  CHECK 2 PASS: the 9-package closure installs cleanly on the stock target suite."
 	purge_stack
 }
 
@@ -363,14 +366,14 @@ check_upgrade() {
 	echo; echo "==== CHECK 3: upgrade (stock modemmanager ${STOCK_MM_UPSTREAM} -> ceralive set) ===="
 	purge_stack
 	disable_local_repo
-	echo "  installing stock bookworm modemmanager + utils..."
+	echo "  installing the suite's stock modemmanager + utils..."
 	apt-get install -y -qq modemmanager libmbim-utils libqmi-utils >/tmp/stock.log 2>&1 || { sed 's/^/    /' /tmp/stock.log; echo "  CHECK 3 FAIL: stock install"; return 1; }
 	local before; before="$(dpkg_ver modemmanager)"
 	echo "  stock modemmanager installed: $before"
-	case "$before" in ${STOCK_MM_UPSTREAM}*) echo "  ok: stock is ${STOCK_MM_UPSTREAM}-series" ;; *) echo "  note: bookworm stock modemmanager is $before" ;; esac
+	case "$before" in ${STOCK_MM_UPSTREAM}*) echo "  ok: stock is ${STOCK_MM_UPSTREAM}-series" ;; *) echo "  note: suite stock modemmanager is $before" ;; esac
 
 	# Compute the real upgrade direction now, while the local repo is still disabled so madison
-	# reports the true bookworm-main stock version for each package.
+	# reports the true suite-archive stock version for each package.
 	compute_direction_table || { echo "  CHECK 3 FAIL: direction table"; return 1; }
 
 	echo "  enabling local ceralive repo and upgrading the coherent set..."
@@ -410,13 +413,13 @@ check_rollback() {
 	# view) NOT `apt-cache policy` Candidate — because apt refuses to auto-downgrade to a
 	# version below priority 1000, Candidate keeps reporting the installed ceralive version.
 	# madison lists only indexed versions, so once the local repo is gone it yields the real
-	# bookworm-main version (never hardcoded — point releases like +deb12u1 shift it).
+	# suite-archive version (never hardcoded — point releases like +deb13u1 shift it).
 	echo "  disabling local repo and pinning explicit stock versions..."
 	disable_local_repo
 	local specs=() pkg stock
 	for pkg in "${RUNTIME_PKGS[@]}"; do
 		stock="$(apt-cache madison "$pkg" 2>/dev/null | awk -F'|' 'NR==1{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2; exit}')"
-		[ -n "$stock" ] || { echo "  note: $pkg has no bookworm stock version in the index — skipping"; continue; }
+		[ -n "$stock" ] || { echo "  note: $pkg has no stock version in the suite index — skipping"; continue; }
 		specs+=("${pkg}=${stock}")
 	done
 	echo "  downgrading to: ${specs[*]}"
@@ -424,7 +427,7 @@ check_rollback() {
 	local after; after="$(dpkg_ver modemmanager)"
 	echo "  modemmanager after rollback: $after"
 	case "$after" in *~ceralive*) echo "  CHECK 4 FAIL: still on ceralive after rollback"; return 1 ;; ${STOCK_MM_UPSTREAM}*) echo "  ok: back to stock ${STOCK_MM_UPSTREAM}" ;; *) echo "  ok: back to stock $after" ;; esac
-	echo "  CHECK 4 PASS: apt cleanly downgraded the stack back to stock bookworm."
+	echo "  CHECK 4 PASS: apt cleanly downgraded the stack back to the stock target suite."
 	purge_stack
 }
 
@@ -433,7 +436,7 @@ check_rollback() {
 # ------------------------------------------------------------------------------------------
 check_piuparts() {
 	echo; echo "==== CHECK 8: piuparts-style install -> purge cleanliness ===="
-	echo "  (lightweight install/purge/leftover-scan; real piuparts 1.1.7 exists in bookworm"
+	echo "  (lightweight install/purge/leftover-scan; real piuparts exists in the suite"
 	echo "   but needs a privileged debootstrap chroot not available in this container.)"
 	purge_stack
 	local files=()

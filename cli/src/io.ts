@@ -79,7 +79,10 @@ function readLine(stdin: NodeJS.ReadStream): Promise<string> {
 			}
 		};
 		stdin.on('data', onData);
-		stdin.on('end', () => resolve(buffer.replace(/\r$/, '')));
+		stdin.on('end', () => {
+			stdin.off('data', onData);
+			resolve(buffer.replace(/\r$/, ''));
+		});
 	});
 }
 

@@ -49,6 +49,10 @@ export type ManagedObject = readonly [string, readonly InterfaceEntry[]];
 /** The full `a{oa{sa{sv}}}` GetManagedObjects payload. */
 export type ManagedObjects = readonly ManagedObject[];
 
+/** The six per-RAT `a{sv}` properties of `Modem.Signal`, in introspection order. */
+export const MM_SIGNAL_RATS = ['Cdma', 'Evdo', 'Gsm', 'Umts', 'Lte', 'Nr5g'] as const;
+export type MmSignalRat = (typeof MM_SIGNAL_RATS)[number];
+
 /** A visible network row returned by `Modem3gpp.Scan` (`a{sv}`). */
 export interface ScannedNetworkEntry {
 	readonly operatorCode: string;
@@ -102,6 +106,17 @@ export interface ModemSpec {
 	readonly bearerIndex?: number;
 	/** Whether this modem exposes the `Modem.Signal` interface (default true). */
 	readonly hasSignal?: boolean;
+	/**
+	 * Extended-signal readings per RAT, as `Modem.Signal` publishes them.
+	 *
+	 * MM exports all six `a{sv}` properties on every `Modem.Signal` interface and leaves
+	 * the ones the modem is not attached on EMPTY, so a RAT omitted here is served as an
+	 * empty dict rather than as a missing property — the difference the observation layer
+	 * reads as "the modem did not say" instead of "nobody asked".
+	 */
+	readonly extendedSignal?: Readonly<
+		Partial<Record<MmSignalRat, Readonly<Record<string, number>>>>
+	>;
 	/** MMModemLock currently required (`Modem.UnlockRequired`); default NONE. */
 	readonly unlockRequired?: number;
 	/** Remaining attempts per lock (`Modem.UnlockRetries`, `a(uu)`). */
@@ -205,8 +220,20 @@ export function simProps(sim: SimSpec): readonly PropEntry[] {
 
 /** The `Modem.Signal` interface property set — its mere presence is what the
  *  Signal.Setup manager gates on (absent ⇒ `signalCadence: unsupported`). */
-export function signalProps(): readonly PropEntry[] {
-	return [['Rate', ['u', 0]]];
+export function signalProps(spec?: ModemSpec): readonly PropEntry[] {
+	const readings = spec?.extendedSignal ?? {};
+	return [
+		['Rate', ['u', 0]],
+		...MM_SIGNAL_RATS.map(
+			(rat): PropEntry => [
+				rat,
+				[
+					'a{sv}',
+					Object.entries(readings[rat] ?? {}).map(([member, value]) => [member, ['d', value]]),
+				],
+			],
+		),
+	];
 }
 
 export function locationProps(spec: ModemSpec): readonly PropEntry[] {
@@ -237,7 +264,7 @@ export function modemObject(spec: ModemSpec, shape: MmShape): ManagedObject {
 		[MODEM3GPP_IFACE, modem3gppProps(spec)],
 	];
 	if (spec.hasSignal !== false) {
-		interfaces.push([SIGNAL_IFACE, signalProps()]);
+		interfaces.push([SIGNAL_IFACE, signalProps(spec)]);
 	}
 	if (spec.location !== undefined) interfaces.push([LOCATION_IFACE, locationProps(spec)]);
 	if (spec.messaging === true) interfaces.push([MESSAGING_IFACE, []]);

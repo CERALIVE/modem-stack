@@ -2,9 +2,9 @@ import { describe, expect, it } from 'bun:test';
 
 import {
 	fccUnlockRuntimeBinary,
-	fccUnlockVendorScript,
 	isFccUnlockKey,
 	MM_FCC_UNLOCK_COVERAGE,
+	MM_FCC_UNLOCK_SOURCE,
 	MM_FCC_UNLOCK_VENDOR_SCRIPTS,
 	normalizeVidPid,
 	resolveFccUnlockCoverage,
@@ -33,9 +33,23 @@ describe('the ModemManager 1.24.2 coverage catalog', () => {
 	// The whole reason the key is <vid>:<pid>: one silicon vendor, three USB vendor
 	// ids. A vendor-keyed rule would miss the HP and Dell rebrands entirely.
 	it('Given Sierra silicon under three vendor ids, When resolved, Then all three map to the 1199 script', () => {
-		expect(fccUnlockVendorScript('1199:9079')).toBe('1199');
-		expect(fccUnlockVendorScript('03f0:4e1d')).toBe('1199');
-		expect(fccUnlockVendorScript('413c:81a3')).toBe('1199');
+		expect(
+			Object.entries(MM_FCC_UNLOCK_COVERAGE).filter(([, script]) => script === '1199'),
+		).toEqual([
+			['03f0:4e1d', '1199'],
+			['1199:9079', '1199'],
+			['413c:81a3', '1199'],
+			['413c:81a8', '1199'],
+		]);
+	});
+
+	it('Given the coverage mirror, When provenance is inspected, Then it names the pinned MM source and available-tier mapping', () => {
+		expect(MM_FCC_UNLOCK_SOURCE).toEqual({
+			version: '1.24.2',
+			commit: 'f2b9ab1ad78d322f32134a444b5b54c6e8160e19',
+			path: 'data/dispatcher-fcc-unlock/meson.build',
+			installedTier: 'fcc-unlock.available.d',
+		});
 	});
 
 	it('Given a covered key, When its interpreter is asked, Then it names the packaged binary', () => {
@@ -80,6 +94,10 @@ describe('resolveFccUnlockCoverage — three answers, none interchangeable', () 
 
 	it('Given the FM350 native PCIe identity, When coverage is resolved, Then it is present', () => {
 		expect(resolveFccUnlockCoverage('14c3', '4d75')).toBe('present');
+	});
+
+	it('Given an unlisted but well-formed Sierra PID, When coverage is resolved, Then it is absent rather than guessed present', () => {
+		expect(resolveFccUnlockCoverage('1199', '90d3')).toBe('absent');
 	});
 
 	// A statement about the READ is not a statement about the DEVICE. Folding this

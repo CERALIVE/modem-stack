@@ -28,6 +28,14 @@ export const MM_FCC_UNLOCK_VENDOR_SCRIPTS = {
 
 export type MmFccUnlockVendorScript = keyof typeof MM_FCC_UNLOCK_VENDOR_SCRIPTS;
 
+/** Provenance for the exact available-tier mapping mirrored below. */
+export const MM_FCC_UNLOCK_SOURCE = {
+	version: '1.24.2',
+	commit: 'f2b9ab1ad78d322f32134a444b5b54c6e8160e19',
+	path: 'data/dispatcher-fcc-unlock/meson.build',
+	installedTier: 'fcc-unlock.available.d',
+} as const;
+
 /** The interpreters those scripts invoke, and the packages that provide them. */
 export const MM_FCC_UNLOCK_RUNTIME_PACKAGES = {
 	qmicli: 'libqmi-utils',

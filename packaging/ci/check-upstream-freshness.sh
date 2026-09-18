@@ -287,7 +287,7 @@ render_issue_body() {
 		dispatches a build. Bumping a pin is a separate, human-reviewed change that must re-run
 		`packaging/ci/verify-upstream-pins.sh` — the four-link provenance chain (lineage, `.dsc`
 		authority, `.orig.tar` artifact, `debian/` packaging tree) — and refresh the checked-in
-		`debian/` recipes plus `packaging/BOOKWORM-ADAPTATIONS.md`.
+		`debian/` recipes plus `packaging/SUITE-ADAPTATIONS.md`.
 
 		<!-- upstream-freshness-watch -->
 	EOF

@@ -83,6 +83,33 @@ describe('normalizeCellReading — pinned key mappings', () => {
 		expect(read({ 'cell-type': 'lte-serving' }).serving).toBe(true);
 		expect(read({ 'cell-type': 'lte-neighbor' }).serving).toBe(false);
 	});
+
+	// MM 1.24.2 spells the cell identifier `ci` (`PROPERTY_CI` in both
+	// `libmm-glib/mm-cell-info-lte.c` and `mm-cell-info-nr5g.c`). `cell-id` is the
+	// flattened spelling this module read first, and it stays as the fallback so a
+	// source using it keeps decoding.
+	test('`ci` is the real MM key, and `cell-id` still decodes behind it', () => {
+		expect(read({ ci: '0A1B2C3D' }).cellId).toBe('0A1B2C3D');
+		expect(read({ 'cell-id': 'LEGACY' }).cellId).toBe('LEGACY');
+		expect(read({ ci: 'REAL', 'cell-id': 'LEGACY' }).cellId).toBe('REAL');
+	});
+
+	test('`tac` is surfaced when the RAT reports one, and never derived otherwise', () => {
+		expect(read({ ci: '0A1B2C3D', tac: '4E5F' }).tac).toBe('4E5F');
+		// A GSM/UMTS cell reports no tracking area; nothing is invented from `ci`.
+		expect(read({ ci: '0A1B2C3D' }).tac).toBeUndefined();
+	});
+
+	// EARFCN is NOT read: MM publishes `earfcn` for LTE and `nrarfcn` for 5GNR — two
+	// keys for two quantities, and no generic property anywhere. One field here would
+	// have to merge them or pick a RAT, so the reading claims neither and both stay
+	// available to a caller that needs the raw dict.
+	test('an ARFCN key is retained by the source but claimed by no field', () => {
+		const reading = read({ ci: '0A1B2C3D', earfcn: 1850, nrarfcn: 630000 });
+		expect(Object.keys(reading)).not.toContain('earfcn');
+		expect(Object.keys(reading)).not.toContain('nrarfcn');
+		expect(reading.cellId).toBe('0A1B2C3D');
+	});
 });
 
 describe('selectServingCell — TOTAL order', () => {

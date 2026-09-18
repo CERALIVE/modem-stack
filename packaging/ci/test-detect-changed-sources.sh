@@ -67,8 +67,8 @@ chmod +x "$STUB_BIN/gh"
 mkdir -p "$REPO/packaging/ci" "$REPO/packaging/ceralive-modem-support/debian" "$REPO/control/src"
 cp "$SCRIPT" "$REPO/packaging/ci/detect-changed-sources.sh"
 cp "$REAL_PINS" "$REPO/packaging/upstream-pins.yaml"
-printf 'shared build inputs live here\n' >"$REPO/packaging/BOOKWORM-ADAPTATIONS.md"
-printf '# stand-in for the real builder\n' >"$REPO/packaging/ci/build-bookworm.sh"
+printf 'shared build inputs live here\n' >"$REPO/packaging/SUITE-ADAPTATIONS.md"
+printf '# stand-in for the real builder\n' >"$REPO/packaging/ci/build-stack.sh"
 printf '[libqmi all-artifact]\nlibqmi-glib5\n' >"$REPO/packaging/ci/expected-packages.txt"
 printf 'Source: ceralive-modem-support\n' >"$REPO/packaging/ceralive-modem-support/debian/control"
 printf 'export const x = 1;\n' >"$REPO/control/src/index.ts"
@@ -176,7 +176,7 @@ if printf '%s\n' "$out" | grep -q '^ModemManager='; then bad "the directory name
 assert_has "libqmi=unchanged" "$out" "libqmi=unchanged"
 
 echo "== (c) a shared build input forces every source =="
-for shared in packaging/ci/build-bookworm.sh packaging/ci/expected-packages.txt packaging/BOOKWORM-ADAPTATIONS.md; do
+for shared in packaging/ci/build-stack.sh packaging/ci/expected-packages.txt packaging/SUITE-ADAPTATIONS.md; do
 	reset_repo
 	printf '\n# shared input edit\n' >>"$REPO/$shared"
 	commit_all "touch $shared"

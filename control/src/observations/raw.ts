@@ -102,6 +102,44 @@ export function rawBooleanAt(
 	return typeof member === 'boolean' ? member : undefined;
 }
 
+/**
+ * One member of a D-Bus DICT (`a{sv}`) retained verbatim.
+ *
+ * A dict decodes to `[key, value][]`, so a retained `Modem.Signal.Lte` is a nested pair
+ * array rather than a flat scalar. Reading it by member name here — instead of flattening
+ * it at retention time — is what keeps `error-rate` and every future MM key in the
+ * diagnostics block while a metric claims only the member it names.
+ */
+export function rawDictMember(
+	record: RawFieldRecord,
+	key: string,
+	member: string,
+): RawFieldValue | undefined {
+	const dict = record[key];
+	if (!Array.isArray(dict)) return undefined;
+	for (const entry of dict) {
+		if (Array.isArray(entry) && entry.length >= 2 && entry[0] === member) return entry[1];
+	}
+	return undefined;
+}
+
+/** Whether a retained dict CARRIES a member — absent and undecodable stay separable. */
+export function hasRawDictMember(record: RawFieldRecord, key: string, member: string): boolean {
+	return rawDictMember(record, key, member) !== undefined;
+}
+
+export function rawDictNumber(
+	record: RawFieldRecord,
+	key: string,
+	member: string,
+): number | undefined {
+	const value = rawDictMember(record, key, member);
+	if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+	if (typeof value !== 'string' || value.trim() === '') return undefined;
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 const XML_LEAF = /<([A-Za-z_][\w.-]*)>([^<]*)<\/\1>/g;
 
 /**

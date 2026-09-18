@@ -7,7 +7,9 @@ import {
 	fixtureContext,
 	HILINK_AUTH_EXPIRED_FIXTURE,
 	HILINK_FIXTURE,
+	MM_EVDO_SIGNAL_FIXTURE,
 	MM_FIXTURE,
+	MM_SIGNAL_SILENT_FIXTURE,
 	UFI_AUTH_EXPIRED_FIXTURE,
 	UFI_FIXTURE,
 	ZTE_FIXTURE,
@@ -15,7 +17,7 @@ import {
 } from '../../test-support/observation-fixtures';
 import { REDACTED } from '../redact';
 import { viewEnvelope } from './envelope';
-import type { NormalizedMetric } from './metric';
+import { metricUnknownClass, type NormalizedMetric } from './metric';
 import type { NormalizedModemObservation } from './model';
 import { redactObservationDiagnostics } from './provenance';
 import { normalizeHilinkObservation } from './sources/hilink';
@@ -107,14 +109,62 @@ describe('ModemManager normalization', () => {
 			sourceEpoch: FIXTURE_SOURCE_EPOCH,
 			observedAt: FIXTURE_OBSERVED_AT,
 			authority: 'authoritative',
-			rawFields: ['Signal.rsrp'],
+			rawFields: ['Signal.Nr5g.rsrp'],
 		});
+	});
+
+	const EVDO = observation(normalizeModemManagerObservation(MM_EVDO_SIGNAL_FIXTURE, CONTEXT));
+	const extended = [
+		['rsrp', MM.signal.rsrp, -98.5, 'Signal.Nr5g.rsrp'],
+		['rsrq', MM.signal.rsrq, -11, 'Signal.Nr5g.rsrq'],
+		['snr', MM.signal.snr, 6.5, 'Signal.Nr5g.snr'],
+		['sinr', EVDO.signal.sinr, 9.5, 'Signal.Evdo.sinr'],
+	] as const;
+
+	test.each(extended.map(([name]) => name))(
+		'Given a Signal RAT dict carrying %s, when normalized, then it is fresh, authoritative and field-attributed',
+		(name) => {
+			const entry = extended.find(([id]) => id === name);
+			if (entry === undefined) {
+				throw new Error(`missing extended metric ${name}`);
+			}
+			const [, metric, value, rawField] = entry;
+
+			expect(metric).toMatchObject({ state: 'known', value });
+			expect(metric.provenance.authority).toBe('authoritative');
+			expect(metric.provenance.rawFields).toEqual([rawField]);
+			expect(metric.provenance.observedAt).toBe(FIXTURE_OBSERVED_AT);
+		},
+	);
+
+	test('Given an NSA attach, when normalized, then the LTE anchor is retained rather than merged', () => {
+		expect(MM.diagnostics.raw['Signal.Lte']).toContainEqual(['rsrp', -104]);
+		expect(MM.diagnostics.consumed).toContain('Signal.Nr5g');
+	});
+
+	test('Given every RAT dict empty, when normalized, then each metric is a READ-class unknown and never a zero', () => {
+		const silent = observation(normalizeModemManagerObservation(MM_SIGNAL_SILENT_FIXTURE, CONTEXT));
+
+		for (const metric of [
+			silent.signal.dbm,
+			silent.signal.rsrp,
+			silent.signal.rsrq,
+			silent.signal.snr,
+			silent.signal.sinr,
+		]) {
+			expect(metric).toMatchObject({ state: 'unknown', reason: 'not-reported' });
+			expect(metric).not.toHaveProperty('value');
+		}
+	});
+
+	test('Given an LTE/NR modem reporting no SINR, when normalized, then it is not-reported and NOT unsupported', () => {
+		expect(reason(MM.signal.sinr)).toBe('not-reported');
+		expect(metricUnknownClass('not-reported')).toBe('read');
 	});
 
 	test('Given a metric ModemManager cannot express, when normalized, then it is a capability claim', () => {
 		expect(reason(MM.signal.bars)).toBe('unsupported');
 		expect(reason(MM.signal.maxBars)).toBe('unsupported');
-		expect(reason(MM.signal.sinr)).toBe('unsupported');
 	});
 
 	test('Given a field present but undecodable, when normalized, then it is malformed and noted', () => {
@@ -252,7 +302,7 @@ describe('no raw vendor field is dropped during normalization', () => {
 		['modemmanager', MM, 'Modem.Ports', ['ttyUSB0', 'wwan0']],
 		['modemmanager', MM, 'Modem3gpp.Pco', 'dns-primary=10.0.0.1'],
 		['modemmanager', MM, 'Sim.OperatorName', 'CLARO COL'],
-		['modemmanager', MM, 'Signal.refresh_rate', 5],
+		['modemmanager', MM, 'Signal.Rate', 5],
 		['huawei-hilink', HILINK, 'monitoring-status.CurrentNetworkTypeEx', '101'],
 		['huawei-hilink', HILINK, 'device-signal.TotalDownload', '987654321'],
 		['huawei-hilink', HILINK, 'monitoring-status.ConnectionStatus', '901'],

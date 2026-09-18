@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { parseJsonWith } from '../../json-boundary';
 import type { AuthenticatedProfileResult, ProviderMatchRequest } from '../contracts';
 import {
 	ZTE_EVIDENCE_CMD,
@@ -25,20 +26,7 @@ const flatRecordSchema = z.record(z.string(), z.union([z.string(), z.number()]))
 export function parseZteRecord(
 	body: string,
 ): Readonly<Record<string, string | number>> | undefined {
-	const result = z
-		.string()
-		.transform((value, context) => {
-			try {
-				return JSON.parse(value);
-			} catch (error) {
-				if (!(error instanceof SyntaxError)) throw error;
-				context.addIssue({ code: 'custom', message: 'invalid JSON' });
-				return z.NEVER;
-			}
-		})
-		.pipe(flatRecordSchema)
-		.safeParse(body);
-	return result.success ? result.data : undefined;
+	return parseJsonWith(flatRecordSchema, body);
 }
 
 function stokCookie(response: ZteHttpResponse): string | undefined {

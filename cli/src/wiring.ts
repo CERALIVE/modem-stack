@@ -6,8 +6,6 @@
 // error rather than pretending — full wiring lands with the Phase-B composition root.
 
 import {
-	type AtCommandSender,
-	type AtResponse,
 	createUsageFileStore,
 	createUsageSampler,
 	fetchManagedObjects,
@@ -23,6 +21,7 @@ import {
 	type UsageSampler,
 	UsbModeTransition,
 } from '@ceralive/modem-control';
+import { benchAtSender } from './bench-at-sender';
 import type { RequestResolver, UsbModeArgs } from './commands/set-usb-mode';
 import type { StackContext } from './context';
 import { selectModem } from './select';
@@ -31,15 +30,6 @@ import { matchUsbDevice } from './usb-device-match';
 /** Where per-slot usage state is persisted on device. */
 const USAGE_STORE_PATH =
 	process.env.MODEM_CONTROL_USAGE_STORE ?? '/var/lib/modem-control/usage.json';
-
-/** A bench AT sender: there is no raw serial port here, so any send is a clear error. */
-const benchAtSender: AtCommandSender = {
-	send(command: string): Promise<AtResponse> {
-		return Promise.reject(
-			new Error(`no AT serial transport on the bench (hardware-gated): '${command}'`),
-		);
-	},
-};
 
 /** Build the real USB-mode transaction over the live NM + MM ports. */
 export function buildUsbModeTransition(ctx: StackContext): UsbModeTransition {

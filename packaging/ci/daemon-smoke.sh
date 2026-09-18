@@ -2,8 +2,8 @@
 # daemon-smoke.sh <amd64|arm64> — start the rebuilt ModemManager on a real system bus
 # and prove it is a working daemon, not just an installable file set.
 #
-# Inside a throwaway `debian:bookworm` container it installs system D-Bus + polkit +
-# NetworkManager (bookworm ships 1.42.4 — the plan's "NM 1.42") and the A5.1 build output,
+# Inside a throwaway `debian:$TARGET_SUITE` container (default trixie) it installs system
+# D-Bus + polkit + NetworkManager (trixie ships 1.52.1) and the A5.1 build output,
 # then:
 #   * starts a system dbus-daemon and the ModemManager daemon on it;
 #   * `busctl introspect` the MM service at its root path -> the ObjectManager interface;
@@ -34,13 +34,17 @@ if [ "${IN_CONTAINER:-0}" != "1" ]; then
 	PKG_ROOT="$(cd "$HERE/.." && pwd)"
 	BUILD_DIR="${BUILD_DIR:-$PKG_ROOT/build/$ARCH}"
 
+	TARGET_SUITE="${TARGET_SUITE:-trixie}"
+	SMOKE_IMAGE="${SMOKE_IMAGE:-debian:$TARGET_SUITE}"
+
 	command -v docker >/dev/null 2>&1 || { echo "smoke: docker not found" >&2; exit 2; }
 	ls "$BUILD_DIR"/*.deb >/dev/null 2>&1 || {
-		echo "smoke: no .deb in $BUILD_DIR — run ci/build-bookworm.sh $ARCH first" >&2; exit 2; }
+		echo "smoke: no .deb in $BUILD_DIR — run ci/build-stack.sh $ARCH first" >&2; exit 2; }
 
 	echo "======================================================================"
 	echo "daemon smoke   arch=$ARCH"
 	echo "  build dir: $BUILD_DIR"
+	echo "  image:     $SMOKE_IMAGE"
 	echo "======================================================================"
 
 	# --privileged is NOT required: a plain container can run its own dbus-daemon + MM.
@@ -48,7 +52,7 @@ if [ "${IN_CONTAINER:-0}" != "1" ]; then
 		-e IN_CONTAINER=1 -e ARCH="$ARCH" \
 		-v "$PKG_ROOT":/pkg:ro \
 		-v "$BUILD_DIR":/debs:ro \
-		debian:bookworm \
+		"$SMOKE_IMAGE" \
 		bash /pkg/ci/daemon-smoke.sh "$ARCH"
 
 	echo
@@ -71,18 +75,18 @@ echo "== in-container daemon smoke (arch=$(dpkg --print-architecture), multiarch
 echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/01-no-sandbox
 apt-get update -qq
 
-# System bus (dbus), busctl (systemd), polkit, NetworkManager 1.42, mmcli deps, and dpkg-dev
+# System bus (dbus), busctl (systemd), polkit, NetworkManager, mmcli deps, and dpkg-dev
 # (dpkg-scanpackages for the local repo). --no-install-recommends keeps NM from pulling stock
 # modemmanager back in as a recommend.
-echo "-- installing system D-Bus + polkit + NetworkManager (bookworm 1.42) + tooling --"
+echo "-- installing system D-Bus + polkit + NetworkManager + tooling --"
 apt-get install -y -qq --no-install-recommends \
-	dbus systemd policykit-1 network-manager \
+	dbus systemd polkitd network-manager \
 	dpkg-dev iproute2 udev ca-certificates >/tmp/base.log 2>&1 || { sed 's/^/    /' /tmp/base.log; echo "FAIL: base install"; exit 1; }
 
 NM_VER="$(dpkg-query -W -f='${Version}' network-manager 2>/dev/null || echo '?')"
 echo "-- NetworkManager installed: $NM_VER"
 
-# Local repo of the built stack, pinned above bookworm-main (coherent ceralive set wins).
+# Local repo of the built stack, pinned above the suite archive (coherent ceralive set wins).
 REPO=/tmp/localrepo
 rm -rf "$REPO"; mkdir -p "$REPO"; cp /debs/*.deb "$REPO/"
 ( cd "$REPO" && dpkg-scanpackages -m . /dev/null > Packages 2>/dev/null )
@@ -149,7 +153,7 @@ ls /usr/lib/udev/rules.d/77-mm-*.rules >/dev/null 2>&1 && ok "udev rules present
 [ -d /usr/share/ModemManager/fcc-unlock.available.d ] && ok "FCC-unlock available dir (/usr/share/ModemManager/fcc-unlock.available.d)" || bad "FCC-unlock available dir missing"
 
 # ---- ASSERTION 4: GIR typelib + Vala .vapi are FUNCTIONAL, not merely present -------------
-# A presence-only stat of the .typelib / .gir / .vapi would still pass if the GI-1.74 bookworm
+# A presence-only stat of the .typelib / .gir / .vapi would still pass if the GI
 # adaptation emitted a typelib PyGObject cannot load or a .vapi valac cannot compile against.
 # Exercise both for real instead — either failure invalidates the GI-1.74 adaptation.
 echo

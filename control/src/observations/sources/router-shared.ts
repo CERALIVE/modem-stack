@@ -20,7 +20,7 @@ import {
 	type ObservationAuthority,
 } from '../../domain';
 import { knownMetric, type NormalizedMetric, unknownMetric } from '../metric';
-import type { NormalizedHardware, NormalizedSim, SimPresenceValue } from '../model';
+import type { NormalizedCell, NormalizedHardware, NormalizedSim, SimPresenceValue } from '../model';
 import type { MetricProvenance } from '../provenance';
 
 export type RouterProvenance = (
@@ -57,6 +57,58 @@ export function routerSim(
 		lockRequired: unknownMetric<string>('unsupported', provenance([])),
 		kind: unknownMetric<'physical' | 'esim'>('unsupported', provenance([])),
 		esimStatus: unknownMetric<'no-profiles' | 'with-profiles'>('unsupported', provenance([])),
+	};
+}
+
+/**
+ * The cell block a router source produces.
+ *
+ * `cellId` is claimed only when a MIGRATED parser decoded one — `parseZteDetails` and
+ * `parseUfiDetails` both do — and the raw vendor key is named in provenance. HiLink
+ * ships a `<cell_id>` tag that no migrated parser reads, so it stays verbatim in the
+ * diagnostics block rather than being lifted here: the same rule that keeps `SimStatus`
+ * out of `sim.presence`.
+ *
+ * `tac` is always `not-reported`, never `unsupported`. None of the three migrated
+ * parsers decodes a tracking-area code, but that is a fact about what THIS package
+ * reads, not a claim that the vendor's firmware cannot report one — and `unsupported`
+ * would be the second kind of statement.
+ */
+export function routerCell(
+	provenance: RouterProvenance,
+	cell: { readonly id: string; readonly field: string } | undefined,
+): NormalizedCell {
+	return {
+		cellId:
+			cell === undefined
+				? unknownMetric<string>('not-reported', provenance([]))
+				: knownMetric(cell.id, provenance([cell.field])),
+		tac: unknownMetric<string>('not-reported', provenance([])),
+	};
+}
+
+/**
+ * A registered-operator NAME a migrated parser decoded, or an honest silence.
+ *
+ * The matching CODE is deliberately never derived. `parseZteDetails` reports `mcc` and
+ * `mnc` as separate unpadded vendor fields, while `Modem3gpp.OperatorCode` is a
+ * fixed-width concatenation that MM itself splits back apart at exactly three
+ * characters — joining an unpadded 2-vs-3-digit MNC would name a different network
+ * roughly whenever the leading zero matters. So it reads `not-reported`.
+ */
+export function routerOperator(
+	provenance: RouterProvenance,
+	operator: { readonly name: string; readonly field: string } | undefined,
+): {
+	readonly operatorName: NormalizedMetric<string>;
+	readonly operatorCode: NormalizedMetric<string>;
+} {
+	return {
+		operatorName:
+			operator === undefined
+				? unknownMetric<string>('not-reported', provenance([]))
+				: knownMetric(operator.name, provenance([operator.field])),
+		operatorCode: unknownMetric<string>('not-reported', provenance([])),
 	};
 }
 

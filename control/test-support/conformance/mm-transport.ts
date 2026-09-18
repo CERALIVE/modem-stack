@@ -48,8 +48,18 @@ export type RecordedCall = {
 	readonly member: string;
 };
 
+/**
+ * An `a{sv}` member is ITSELF a variant on the wire, so its decode form is
+ * `[key, {signature, value}][]` — not `[key, [signature, value]][]`. Recursing here is
+ * what keeps this transport symmetric with the real codec; without it a `Modem.Signal`
+ * RAT dict decodes into a shape no daemon ever sends and the suite proves nothing.
+ */
 function decodeVariant(variant: EncodeVariant): DbusValue {
-	return { signature: variant[0], value: variant[1] as DbusValue };
+	const [signature, value] = variant;
+	if (signature.startsWith('a{s') && Array.isArray(value)) {
+		return { signature, value: decodeProps(value as readonly PropEntry[]) };
+	}
+	return { signature, value: value as DbusValue };
 }
 
 function decodeProps(props: readonly PropEntry[]): DbusValue {

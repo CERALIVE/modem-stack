@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST="${ROOT}/cli/dist"
-ARM64_IMAGE="${SMOKE_ARM64_IMAGE:-debian:bookworm-slim}"
+ARM64_IMAGE="${SMOKE_ARM64_IMAGE:-debian:trixie-slim}"
 
 "${ROOT}/cli/smoke/build-binaries.sh"
 

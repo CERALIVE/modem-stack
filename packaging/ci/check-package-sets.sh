@@ -14,7 +14,7 @@
 #   names the exact offending package.
 #
 # USED BY
-#   build-bookworm.sh (in-container, after the runtime-closure check — fail-closed on drift)
+#   build-stack.sh (in-container, after the runtime-closure check — fail-closed on drift)
 #   and standalone on the host against build/<arch>/ for per-arch equality evidence + the
 #   set-equality negative drill.
 #

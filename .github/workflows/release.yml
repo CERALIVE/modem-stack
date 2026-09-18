@@ -124,7 +124,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - uses: actions/setup-node@v7
         with:
@@ -156,8 +156,8 @@ jobs:
   build-deb:
     name: Build .deb set + contract + daemon smoke (real artifacts)
     needs: [tag-guard, test]
-    # Runs on the runner host (NOT inside a container): build-bookworm.sh and the contract /
-    # smoke scripts each launch their OWN debian:bookworm containers, so the job needs the
+    # Runs on the runner host (NOT inside a container): build-stack.sh and the contract /
+    # smoke scripts each launch their OWN debian:trixie containers, so the job needs the
     # host docker daemon, not to be a container itself.
     runs-on: ubuntu-latest
     steps:
@@ -256,10 +256,10 @@ jobs:
           echo "--- verdicts.txt ---"
           cat verdicts.txt
 
-      # STRICTLY BEFORE any build-bookworm.sh invocation. Carried debs are not merely release
-      # assets, they are a build INPUT: build-bookworm.sh seeds its Pin-Priority-1001 local apt
+      # STRICTLY BEFORE any build-stack.sh invocation. Carried debs are not merely release
+      # assets, they are a build INPUT: build-stack.sh seeds its Pin-Priority-1001 local apt
       # repo from packaging/build/<arch>/, so a changed source resolves its build-deps and gir
-      # typelibs against the carried -dev/gir1.2-* packages instead of stock bookworm. Staging
+      # typelibs against the carried -dev/gir1.2-* packages instead of the stock suite. Staging
       # after the build would silently reintroduce stock dependencies.
       - name: Stage carry-forward debs (unchanged sources, sha256-verified)
         env:
@@ -278,7 +278,7 @@ jobs:
       # all and still asserts the merged runtime closure over the carried set.
       #
       # RESIDUAL RISK, ACCEPTED BY THE PLAN: the zero-build path reaching manifest generation with
-      # staged-only debs is proven by contract fixtures (packaging/ci/test-build-bookworm-differential.sh,
+      # staged-only debs is proven by contract fixtures (packaging/ci/test-build-stack-differential.sh,
       # test-suffix-coherence-manifest.sh) and by static wiring proof (test-release-workflow-wiring.sh).
       # Full end-to-end proof lands at the FIRST REAL RELEASE RUN; it is deliberately not simulated.
       - name: Build the MM 1.24 stack (.deb) — amd64 + arm64
@@ -287,8 +287,8 @@ jobs:
           VERDICTS_FILE: verdicts.txt
           PREV_MANIFEST_FILE: ${{ steps.prev-release.outputs.prev_manifest }}
         run: |
-          packaging/ci/build-bookworm.sh amd64
-          packaging/ci/build-bookworm.sh arm64
+          packaging/ci/build-stack.sh amd64
+          packaging/ci/build-stack.sh arm64
 
       # Package contract: amd64 full (metadata / closure install / upgrade / rollback /
       # coherence / ordering / tag-guard / piuparts); arm64 metadata-level (apt-install under
@@ -310,7 +310,13 @@ jobs:
       - name: "Build the first-party companion .deb (Architecture: all)"
         env:
           RELEASE_VERSION: ${{ github.event.inputs.tag }}
-        run: packaging/ci/build-companion.sh
+          EXPECTED_VERSION: ${{ needs.tag-guard.outputs.version }}
+        run: |
+          if [ "${RELEASE_VERSION#v}" != "$EXPECTED_VERSION" ]; then
+            echo "::error::packaging/ci/build-companion.sh RELEASE_VERSION ($RELEASE_VERSION) != release tag version ($EXPECTED_VERSION)"
+            exit 1
+          fi
+          packaging/ci/build-companion.sh
 
       # Chroot-stage packaging contract for the companion: install / upgrade / downgrade /
       # purge, /etc override precedence, the chroot guard, both /etc-override maintscript
@@ -365,7 +371,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       - uses: actions/setup-node@v7
         with:
@@ -376,19 +382,20 @@ jobs:
       - name: Install pinned trusted-publishing npm
         run: npm install -g npm@11.18.0
 
-      # npm side is VERIFIED (not injected): control/package.json version must equal the release
-      # tag's X.Y.Z, else fail closed before publish.
-      - name: Verify package version matches the release tag
-        working-directory: control
+      # First-party package versions are VERIFIED (not injected): all workspace package manifests
+      # must equal the release tag's X.Y.Z, else fail closed before publish.
+      - name: Verify first-party package versions match the release tag
         env:
           EXPECTED_VERSION: ${{ needs.tag-guard.outputs.version }}
         run: |
-          pkg="$(node -p "require('./package.json').version")"
-          if [ "$pkg" != "$EXPECTED_VERSION" ]; then
-            echo "::error::control/package.json version ($pkg) != release tag ($EXPECTED_VERSION)"
-            exit 1
-          fi
-          echo "npm version provenance OK: $pkg"
+          for package_file in package.json control/package.json cli/package.json; do
+            pkg="$(node -p "require('./${package_file}').version")"
+            if [ "$pkg" != "$EXPECTED_VERSION" ]; then
+              echo "::error::${package_file} version ($pkg) != release tag ($EXPECTED_VERSION)"
+              exit 1
+            fi
+          done
+          echo "first-party version provenance OK: $EXPECTED_VERSION"
 
       - name: Install workspace (frozen lockfile)
         run: bun install --frozen-lockfile

@@ -27,7 +27,8 @@ describe('ModemManagerProvider subprocess fence', () => {
 
 	test('no provider production source shells out to a modem diagnostic CLI', () => {
 		const files = productionSources(import.meta.dir);
-		expect(files.length).toBeGreaterThan(0);
+		// Scanned 8 files before adding this count floor.
+		expect(files.length).toBeGreaterThanOrEqual(8);
 		const violations = files.filter((path) => FORBIDDEN.test(readFileSync(path, 'utf8')));
 		expect(violations).toEqual([]);
 	});

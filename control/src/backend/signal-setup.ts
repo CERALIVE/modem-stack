@@ -27,15 +27,43 @@ export type SignalCadence = 'active' | 'unsupported' | 'unknown';
 /** The `Modem.Signal` interface — absent means signal cadence is unsupported. */
 const SIGNAL_IFACE = 'org.freedesktop.ModemManager1.Modem.Signal';
 
-/** MM's default reporting rate is seconds; callers pass whole seconds. */
+/**
+ * MM's default reporting rate is seconds; callers pass whole seconds.
+ *
+ * It is a DEFAULT and not a constant: extended signal costs a modem-side poll per tick,
+ * so an embedding process running a bonded uplink may want it faster than a bench tool
+ * does. The rate is therefore injectable end to end — `SignalSetupManagerOptions`,
+ * `MmDbusBackendOptions.signalIntervalSeconds` and
+ * `ModemManagerProviderOptions.signalIntervalSeconds` are the same seam at three levels
+ * — and this value is what an absent injection resolves to, at every one of them.
+ */
 export const DEFAULT_SIGNAL_INTERVAL_SECONDS = 5;
 
 export interface SignalSetupManagerOptions {
 	readonly transport: DbusTransport;
 	/** MM bus name override (defaults to `org.freedesktop.ModemManager1`). */
 	readonly destination?: string;
-	/** Reporting interval in seconds passed to `Signal.Setup`. */
+	/**
+	 * Reporting interval in seconds passed to `Signal.Setup`.
+	 *
+	 * `Setup` takes a `u`, so a fractional or negative rate has no wire representation
+	 * and is refused HERE rather than marshalled into whatever the codec makes of it —
+	 * a modem silently polling at the wrong cadence is a defect nothing downstream can
+	 * see. An absent value is not a refusal; it takes the default.
+	 */
 	readonly intervalSeconds?: number;
+}
+
+export function resolveSignalInterval(intervalSeconds: number | undefined): number {
+	if (intervalSeconds === undefined) {
+		return DEFAULT_SIGNAL_INTERVAL_SECONDS;
+	}
+	if (!Number.isInteger(intervalSeconds) || intervalSeconds <= 0) {
+		throw new RangeError(
+			`Signal.Setup interval must be a positive whole number of seconds, got ${intervalSeconds}`,
+		);
+	}
+	return intervalSeconds;
 }
 
 /**
@@ -55,7 +83,12 @@ export class SignalSetupManager {
 	constructor(options: SignalSetupManagerOptions) {
 		this.#transport = options.transport;
 		this.#destination = options.destination ?? MM_BUS_NAME;
-		this.#interval = options.intervalSeconds ?? DEFAULT_SIGNAL_INTERVAL_SECONDS;
+		this.#interval = resolveSignalInterval(options.intervalSeconds);
+	}
+
+	/** The rate every `Signal.Setup` on this manager carries — injected, or the default. */
+	get intervalSeconds(): number {
+		return this.#interval;
 	}
 
 	/** The last-known cadence for a modem path (`'unknown'` until first applied). */

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseJsonWith } from '../../json-boundary';
 import type { ProviderMatchRequest } from '../contracts';
 import {
 	UFI_API_PATH,
@@ -32,20 +33,7 @@ const ufiReplySchema = z.object({
 export type UfiReply = z.infer<typeof ufiReplySchema>;
 
 export function parseUfiReply(body: string): UfiReply | undefined {
-	const parsed = z
-		.string()
-		.transform((value, context) => {
-			try {
-				return JSON.parse(value);
-			} catch (error) {
-				if (!(error instanceof SyntaxError)) throw error;
-				context.addIssue({ code: 'custom', message: 'invalid JSON' });
-				return z.NEVER;
-			}
-		})
-		.pipe(ufiReplySchema)
-		.safeParse(body);
-	return parsed.success ? parsed.data : undefined;
+	return parseJsonWith(ufiReplySchema, body);
 }
 
 /**

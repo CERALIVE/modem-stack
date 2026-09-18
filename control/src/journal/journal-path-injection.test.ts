@@ -12,7 +12,7 @@
 // count-literal gate and CeraUI's link-id authority gate.)
 
 import { describe, expect, test } from 'bun:test';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,9 +40,9 @@ const ABSOLUTE_PATH_LITERAL = /(['"`])\/[A-Za-z][\w./${}-]*\1/g;
 const CERAUI_PATH_TOKENS = /\/data\b|ceralive\/modem-mutations|CERALIVE_MODEM_MUTATION_DIR/;
 
 async function shippedSources(): Promise<readonly (readonly [string, string])[]> {
-	const names = (await readdir(JOURNAL_DIR)).filter(
-		(name) => name.endsWith('.ts') && !name.endsWith('.test.ts'),
-	);
+	const names = (
+		await Array.fromAsync(new Bun.Glob('**/*.ts').scan({ cwd: JOURNAL_DIR, onlyFiles: true }))
+	).filter((name) => !name.endsWith('.test.ts'));
 	return Promise.all(
 		names.map(async (name) => [name, await readFile(join(JOURNAL_DIR, name), 'utf8')] as const),
 	);
@@ -51,7 +51,8 @@ async function shippedSources(): Promise<readonly (readonly [string, string])[]>
 describe('no journal source hardcodes a path', () => {
 	test('the gate actually has files to scan', async () => {
 		const sources = await shippedSources();
-		expect(sources.length).toBeGreaterThanOrEqual(5);
+		// Scanned 7 files before directory-glob widening.
+		expect(sources.length).toBeGreaterThanOrEqual(7);
 		expect(sources.map(([name]) => name)).toContain('store.ts');
 		expect(sources.map(([name]) => name)).toContain('legacy-ceraui.ts');
 	});
