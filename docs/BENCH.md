@@ -1700,3 +1700,31 @@ and its machine check prints `PASS`. No row may be claimed `[EXISTS]` on the str
 CI proxy alone — the CI proxy is green (compiled probe smoke both arches, packaging contract
 + daemon smoke in a trixie container, the full `bun test` suite), but the hardware evidence
 is what closes each gate.
+
+## Owner field verification — 2026-10-05
+
+Recorded on 2026-10-05 at the owner's direction. The owner confirmed that each model below carried a completed modem-carried CeraLive stream in field use. Owner attestation; no logs attached.
+
+| Vendor | Model | Connection | Result |
+|--------|-------|------------|--------|
+| Quectel | RM530N-GL | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
+| Quectel | other USB and M.2 models | USB | completed modem-carried CeraLive stream (owner field use) |
+| SIMCom | SIM7600G-H | USB | completed modem-carried CeraLive stream (owner field use) |
+| Fibocom | FM350-GL on a USB adapter board | USB | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM74xx | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM75xx | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM7595 | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM919x | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
+| Telit | LE910, LE920, LE922, LN920, ME910, FN980, FN990, FE990 and FN920 families | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
+| u-blox | LARA-R6 | USB | completed modem-carried CeraLive stream (owner field use) |
+| u-blox | LARA-L6 | USB | completed modem-carried CeraLive stream (owner field use) |
+| Huawei | USB modems in stick mode | USB | completed modem-carried CeraLive stream (owner field use) |
+| ZTE | USB modems in stick mode | USB | completed modem-carried CeraLive stream (owner field use) |
+| Huawei | E3372H (HiLink) | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| ZTE | MF79U | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| ZTE | MF266 | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| ZTE | other router-mode dongles | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| Generic | Qualcomm-based UFI sticks in router mode | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| Generic | HIMI U01 in QMI mode | USB | completed modem-carried CeraLive stream (owner field use) |
+| NETGEAR | LB1120 | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| Any phone | USB tethering | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
