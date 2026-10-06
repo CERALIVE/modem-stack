@@ -6,7 +6,7 @@
 // todo (29's CeraUI migration, 42's hardware bench certification) can diff against.
 //
 // It lands in the repo-local, gitignored `test-results/` — evidence, never a tracked
-// file, and never a path above this checkout root (AGENTS.md § Rule D).
+// file, and never a path above this checkout root (docs/agents/rule-d-self-contained-load-bearing.md).
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
