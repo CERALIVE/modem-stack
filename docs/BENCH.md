@@ -600,17 +600,17 @@ grep -Eq '^[0-9]+-[0-9.]+: [0-9a-f]{4}:[0-9a-f]{4} ' A6.3/usb-tree.txt \
 
 **Per-unit capture status (this bench, `ceralive2` 192.168.78.132)**
 
-| Unit | VID:PID | Personality | MM status | Evidence |
-|------|---------|-------------|-----------|----------|
-| ZTE Mobile Broadband | `19d2:1405` | router-hilink | not MM-managed | `test-results/modem-phase-b/05/zte-mf79u/` |
-| Huawei HiLink #1 | `12d1:14dc` | router-hilink | not MM-managed | `test-results/modem-phase-b/05/huawei-hilink-1/` |
-| Huawei HiLink #2 | `12d1:14dc` | router-hilink | not MM-managed | `test-results/modem-phase-b/05/huawei-hilink-2/` |
-| Quectel RM530N-GL | `2c7c:0801` | MM-managed stick | enabled, sim-pin2, not registered | `test-results/modem-phase-b/05/quectel-rm530n-gl/` |
-| SIMCom SIM7600G-H R2 | `1e0e:9001` | MM-managed stick | failed, sim-missing | `test-results/modem-phase-b/05/simcom-sim7600g-h/` |
-| Generic AliExpress stick #1 | `05c6:9024` | generic router-class, QMI passthrough not supported by design | not MM-managed | `test-results/modem-phase-b/05/aliexpress-stick-1/` |
-| Generic AliExpress stick #2 | `05c6:9024` | generic router-class, QMI passthrough not supported by design | not MM-managed | `test-results/modem-phase-b/05/aliexpress-stick-2/` |
-| Sierra EM75xx | `1199:*` (expected) | — | — | `[PARTIAL]` — not physically connected to this bench yet; capture commands above are documented and ready, no capture run |
-| Fibocom FM350 | `0e8d:7126` / `14c3:4d75` (expected) | — | — | `[PARTIAL]` — not physically connected to this bench yet (also see `docs/FM350-DECISION.md` — this SKU is documented-deferred for support, not just uncaptured); capture commands above are documented and ready, no capture run |
+| Unit                        | VID:PID                              | Personality                                                   | MM status                         | Evidence                                                                                                                                                                                                                         |
+| --------------------------- | ------------------------------------ | ------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ZTE Mobile Broadband        | `19d2:1405`                          | router-hilink                                                 | not MM-managed                    | `test-results/modem-phase-b/05/zte-mf79u/`                                                                                                                                                                                       |
+| Huawei HiLink #1            | `12d1:14dc`                          | router-hilink                                                 | not MM-managed                    | `test-results/modem-phase-b/05/huawei-hilink-1/`                                                                                                                                                                                 |
+| Huawei HiLink #2            | `12d1:14dc`                          | router-hilink                                                 | not MM-managed                    | `test-results/modem-phase-b/05/huawei-hilink-2/`                                                                                                                                                                                 |
+| Quectel RM530N-GL           | `2c7c:0801`                          | MM-managed stick                                              | enabled, sim-pin2, not registered | `test-results/modem-phase-b/05/quectel-rm530n-gl/`                                                                                                                                                                               |
+| SIMCom SIM7600G-H R2        | `1e0e:9001`                          | MM-managed stick                                              | failed, sim-missing               | `test-results/modem-phase-b/05/simcom-sim7600g-h/`                                                                                                                                                                               |
+| Generic AliExpress stick #1 | `05c6:9024`                          | generic router-class, QMI passthrough not supported by design | not MM-managed                    | `test-results/modem-phase-b/05/aliexpress-stick-1/`                                                                                                                                                                              |
+| Generic AliExpress stick #2 | `05c6:9024`                          | generic router-class, QMI passthrough not supported by design | not MM-managed                    | `test-results/modem-phase-b/05/aliexpress-stick-2/`                                                                                                                                                                              |
+| Sierra EM75xx               | `1199:*` (expected)                  | —                                                             | —                                 | `[PARTIAL]` — not physically connected to this bench yet; capture commands above are documented and ready, no capture run                                                                                                        |
+| Fibocom FM350               | `0e8d:7126` / `14c3:4d75` (expected) | —                                                             | —                                 | `[PARTIAL]` — not physically connected to this bench yet (also see `docs/FM350-DECISION.md` — this SKU is documented-deferred for support, not just uncaptured); capture commands above are documented and ready, no capture run |
 
 The Huawei HiLink pair ships from the factory with an **identical MAC address**
 (`0c:5b:8f:27:9a:64`) on both physically distinct units. Both units independently DHCP-serve
@@ -634,7 +634,7 @@ port's power actually recovers a modem. This is the hardware half of the
 a fake runner, but nothing in CI can prove a physical hub drops VBUS.
 
 > **A zero exit code from `uhubctl` does NOT prove power was cut — and it is not this
-> runbook's gate.** `uhubctl -a cycle` exits 0 whenever the hub *accepts* the control
+> runbook's gate.** `uhubctl -a cycle` exits 0 whenever the hub _accepts_ the control
 > request. A hub whose per-port power switching is absent, ganged, or simply not wired to
 > the VBUS rail accepts the request and cuts nothing, exiting 0 every time. **The only
 > honest observable is the modem DISAPPEARING from the USB bus and coming back at the same
@@ -644,7 +644,7 @@ a fake runner, but nothing in CI can prove a physical hub drops VBUS.
 
 > **Second honesty caveat — `uhubctl` may disable the port instead of cutting VBUS.**
 > `uhubctl --help` (2.6.0) documents `--nosysfs, -S — do not use the Linux sysfs port
-> disable interface`, i.e. by default it *prefers* the kernel's port-disable path where
+> disable interface`, i.e. by default it _prefers_ the kernel's port-disable path where
 > one exists. Port-disable makes the device vanish from the bus exactly like a power cut,
 > so it satisfies steps 3 and 4 — but it does **not** electrically de-power a wedged
 > modem, which is the whole reason rung 4 exists. Run step 3 **both ways** (default and
@@ -760,11 +760,11 @@ grep -Eq 'Current status for hub .*, ppps\]' "$OUT/uhubctl-discovery.txt" \
 
 **Per-hub capability status (this bench, `ceralive2` 192.168.78.132)**
 
-| Hub location | VID:PID | uhubctl compatible-hub list | Modems behind it | Status |
-|---|---|---|---|---|
-| `4-1`, `4-1.3`, `4-1.4` | `0bda:0411` | **yes** — listed for the Rosonway RSH-A10 / RSH-A16 | Quectel RM530N-GL at `4-1.4.4` (hub `4-1.4`, port 4) | `[PARTIAL]` — `uhubctl` not installed on the board and not in its apt archive; no discovery, no VBUS proof, no harness run |
+| Hub location            | VID:PID     | uhubctl compatible-hub list                                               | Modems behind it                                                             | Status                                                                                                                      |
+| ----------------------- | ----------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `4-1`, `4-1.3`, `4-1.4` | `0bda:0411` | **yes** — listed for the Rosonway RSH-A10 / RSH-A16                       | Quectel RM530N-GL at `4-1.4.4` (hub `4-1.4`, port 4)                         | `[PARTIAL]` — `uhubctl` not installed on the board and not in its apt archive; no discovery, no VBUS proof, no harness run  |
 | `1-1`, `1-1.3`, `1-1.4` | `0bda:5411` | **no** — not on the list; may need `-f`, which the PowerHook never passes | SIMCom SIM7600G-H at `1-1.3.4`; ZTE, both Huawei HiLink, both generic sticks | `[PARTIAL]` — untested; if it reports no `ppps` it is not mappable and rung 4 stays `unsupported` for every modem behind it |
-| `3-1` | `1a40:0101` | not evaluated | none (Bluetooth radio only) | `[PARTIAL]` — out of scope, no modem behind it |
+| `3-1`                   | `1a40:0101` | not evaluated                                                             | none (Bluetooth radio only)                                                  | `[PARTIAL]` — out of scope, no modem behind it                                                                              |
 
 The two hub families matter: only the `0bda:0411` tree is a documented per-port-power
 switcher, and on this bench that tree carries exactly **one** modem (the Quectel). Every
@@ -778,10 +778,10 @@ a wrong entry and blacking out an unrelated device.
 and has seen port positions move when devices were reordered on the hub (RB-9), so those
 are all disqualified as identity. Current values, captured 2026-08-16:
 
-| Unit | Sysfs node | `ID_PATH` (hub-map key) | `modem.generic.device` (`--mm-slot 2` / `4`) |
-|---|---|---|---|
-| Quectel RM530N-GL | `4-1.4.4` | `platform-xhci-hcd.0.auto-usb-0:1.4.4` | `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb4/4-1/4-1.4/4-1.4.4` |
-| SIMCom SIM7600G-H | `1-1.3.4` | `platform-xhci-hcd.0.auto-usb-0:1.3.4` | `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb1/1-1/1-1.3/1-1.3.4` |
+| Unit              | Sysfs node | `ID_PATH` (hub-map key)                | `modem.generic.device` (`--mm-slot 2` / `4`)                                |
+| ----------------- | ---------- | -------------------------------------- | --------------------------------------------------------------------------- |
+| Quectel RM530N-GL | `4-1.4.4`  | `platform-xhci-hcd.0.auto-usb-0:1.4.4` | `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb4/4-1/4-1.4/4-1.4.4` |
+| SIMCom SIM7600G-H | `1-1.3.4`  | `platform-xhci-hcd.0.auto-usb-0:1.3.4` | `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb1/1-1/1-1.3/1-1.3.4` |
 
 **Evidence:** `test-results/modem-phase-b/07/{uhubctl-discovery,uhubctl-ppps,vbus-drop-proof,vbus-drop-proof-nosysfs}.txt`
 plus one `test-results/modem-phase-b/07/hil-cycle-<slot>.txt` per cycled unit (repo-local,
@@ -802,10 +802,10 @@ A catalog entry cannot be authored in one pass, because `certify --transition` *
 a SKU that is not already in the catalog (`cli/src/certify/transition-evidence.ts`, the
 `no certified catalog entry for SKU …` throw). The order is therefore:
 
-| Stage | Command | Produces | Lands as |
-|-------|---------|----------|----------|
-| **1 — base** | `./modem-control certify <slot> --output <bundle>.json` | a base bundle: `lsusb -v`, `usb-devices`, the slot's udev properties, `mmcli -K`, redacted `GetManagedObjects`, a bounded signal window | a candidate entry with `permittedTransitions: []`, reviewed and committed by a human |
-| **2 — transition** | `./modem-control certify <slot> --transition <mode> --output <bundle>.json` | stage-1 evidence **plus** before/after descriptors, the executed AT command, and the port-drop / re-enumeration timeline | ONE `permittedTransitions[]` element on the entry from stage 1, carrying that bundle's `evidenceBundleSha256` |
+| Stage              | Command                                                                     | Produces                                                                                                                                | Lands as                                                                                                      |
+| ------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **1 — base**       | `./modem-control certify <slot> --output <bundle>.json`                     | a base bundle: `lsusb -v`, `usb-devices`, the slot's udev properties, `mmcli -K`, redacted `GetManagedObjects`, a bounded signal window | a candidate entry with `permittedTransitions: []`, reviewed and committed by a human                          |
+| **2 — transition** | `./modem-control certify <slot> --transition <mode> --output <bundle>.json` | stage-1 evidence **plus** before/after descriptors, the executed AT command, and the port-drop / re-enumeration timeline                | ONE `permittedTransitions[]` element on the entry from stage 1, carrying that bundle's `evidenceBundleSha256` |
 
 Stage 2 is only reachable for a SKU whose stage-1 entry is already merged. Both stages feed
 the same reviewed ingestion path: [`CATALOG-INGESTION.md`](CATALOG-INGESTION.md).
@@ -819,14 +819,14 @@ B5/B6. B2, B5, and B6 were fixed in software on 2026-08-20 with realistic RM530N
 the fixed build has **not** been rerun on the board, so this ledger does not claim hardware
 closure.
 
-| # | Blocker | State | Verified how | Consequence |
-|---|---------|-------|--------------|-------------|
-| **B1** | `usbutils` absent from the board and its apt archive | **CLEARED (2026-08-18)** | live `command -v` sweep: `/usr/bin/lsusb`, `/usr/bin/usb-devices` both present | `certify` now completes its base capture; two real `CERTIFY OK … synthetic=false` bundles were captured on 2026-08-18 |
-| **B2** | Historical defect: the enumerator discarded the USB-device sysfs path while `certify` tried to match a USB device by `ifname` | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 live failure plus `usb-enumerator.test.ts` and realistic `usb-device-match.test.ts` regressions | snapshots now retain the udev `P:` path under `/sys`, and `certify` correlates MM `Device`/`Physdev` to the most-specific USB parent without `ifname`. A new real bundle must still prove populated `sku` and `udevProperties` |
-| **B3** | No AT transport | **PARTIALLY CLEARED (2026-08-18)** | live: `socat` **is** present at `/usr/bin/socat`; a query-only AT session over `/dev/ttyUSB2` (SIMCom) and `/dev/ttyUSB12` (FM350) succeeded | a **manual** AT session is now possible on the bench. The CLI half is unchanged: `benchAtSender` still rejects every send, so `certify --transition` still cannot execute an AT command. `picocom` / `minicom` remain absent; ModemManager's `--command` passthrough remains unavailable (MM is not run with `--debug`, so `mmcli --command` answers `Operation only allowed in debug mode`) |
-| **B4** | The shipped `certified-catalog.json` holds exactly one entry, `CERALIVE-SYNTHETIC-TEST-SKU` | OPEN | repo read | stage 2 is unreachable for every real SKU until that SKU's stage-1 entry is merged |
-| **B5** | Historical defect: the shared redactor omitted `imei` and `EquipmentIdentifier` spellings used by MM and `mmcli -K` | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 unsafe bundles plus shared-redactor and realistic bundle regressions | MM `EquipmentIdentifier`, bare/camel/separator IMEI keys, and dotted `equipment-identifier` / `imei` keyfile fields are masked while model/vendor/SKU facts remain visible. The destroyed pre-fix bundles remain unsafe and must not be restored |
-| **B6** | Historical defect: `skuOf` derived `firmwarePrefix` from udev `ID_REVISION`, the USB **bcdDevice** | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 udev/MM comparison plus an RM530N regression (`0504` versus `RM530NGLAAR05A01M4G`) | `captureBase` now derives the discriminator from MM `Modem.Revision` in the same managed-object snapshot used for target correlation. A new real bundle must still prove the value on hardware |
+| #      | Blocker                                                                                                                       | State                                                     | Verified how                                                                                                                                 | Consequence                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **B1** | `usbutils` absent from the board and its apt archive                                                                          | **CLEARED (2026-08-18)**                                  | live `command -v` sweep: `/usr/bin/lsusb`, `/usr/bin/usb-devices` both present                                                               | `certify` now completes its base capture; two real `CERTIFY OK … synthetic=false` bundles were captured on 2026-08-18                                                                                                                                                                                                                                                                        |
+| **B2** | Historical defect: the enumerator discarded the USB-device sysfs path while `certify` tried to match a USB device by `ifname` | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 live failure plus `usb-enumerator.test.ts` and realistic `usb-device-match.test.ts` regressions                               | snapshots now retain the udev `P:` path under `/sys`, and `certify` correlates MM `Device`/`Physdev` to the most-specific USB parent without `ifname`. A new real bundle must still prove populated `sku` and `udevProperties`                                                                                                                                                               |
+| **B3** | No AT transport                                                                                                               | **PARTIALLY CLEARED (2026-08-18)**                        | live: `socat` **is** present at `/usr/bin/socat`; a query-only AT session over `/dev/ttyUSB2` (SIMCom) and `/dev/ttyUSB12` (FM350) succeeded | a **manual** AT session is now possible on the bench. The CLI half is unchanged: `benchAtSender` still rejects every send, so `certify --transition` still cannot execute an AT command. `picocom` / `minicom` remain absent; ModemManager's `--command` passthrough remains unavailable (MM is not run with `--debug`, so `mmcli --command` answers `Operation only allowed in debug mode`) |
+| **B4** | The shipped `certified-catalog.json` holds exactly one entry, `CERALIVE-SYNTHETIC-TEST-SKU`                                   | OPEN                                                      | repo read                                                                                                                                    | stage 2 is unreachable for every real SKU until that SKU's stage-1 entry is merged                                                                                                                                                                                                                                                                                                           |
+| **B5** | Historical defect: the shared redactor omitted `imei` and `EquipmentIdentifier` spellings used by MM and `mmcli -K`           | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 unsafe bundles plus shared-redactor and realistic bundle regressions                                                          | MM `EquipmentIdentifier`, bare/camel/separator IMEI keys, and dotted `equipment-identifier` / `imei` keyfile fields are masked while model/vendor/SKU facts remain visible. The destroyed pre-fix bundles remain unsafe and must not be restored                                                                                                                                             |
+| **B6** | Historical defect: `skuOf` derived `firmwarePrefix` from udev `ID_REVISION`, the USB **bcdDevice**                            | **SOFTWARE FIXED (2026-08-20); BOARD RE-CAPTURE PENDING** | the 2026-08-18 udev/MM comparison plus an RM530N regression (`0504` versus `RM530NGLAAR05A01M4G`)                                            | `captureBase` now derives the discriminator from MM `Modem.Revision` in the same managed-object snapshot used for target correlation. A new real bundle must still prove the value on hardware                                                                                                                                                                                               |
 
 **B2, B5, and B6 are no longer software blockers, but their post-fix board proof is still
 outstanding. B3 and B4 gate stage 2.** A run that reports a `CERTIFY OK` line with
@@ -862,7 +862,7 @@ grep -Eq '^CERTIFY OK: sha256=[0-9a-f]{64} synthetic=false transition=none slot=
 ```
 
 > **`<slot>` is a ModemManager selector, and MM indices renumber.** `Modem/2` is the
-> Quectel *today*; a replug or an MM restart can move it. Re-read `mmcli -L` immediately
+> Quectel _today_; a replug or an MM restart can move it. Re-read `mmcli -L` immediately
 > before each run (RB-9 step 2) and never reuse a recorded index across sessions. The
 > stable key is the udev `ID_PATH`, which is what the bundle carries.
 
@@ -976,8 +976,8 @@ Capture the certification bundle for a Sierra Wireless EM75xx-class module, and 
 
 - The shared contract above, including blockers **B1–B4**.
 - **A Sierra EM75xx module physically connected. There is none on this bench** — the
-  2026-08-16 USB sweep shows no `1199:*` device. Every value below is the *documented
-  expectation*, captured from no hardware, and is marked as such.
+  2026-08-16 USB sweep shows no `1199:*` device. Every value below is the _documented
+  expectation_, captured from no hardware, and is marked as such.
 - Expected identity when one is connected: VID `1199` (Sierra Wireless), MBIM composition
   binding `cdc_mbim` (`0x02/0x0e` control + `0x0a` data), QMI composition binding
   `qmi_wwan`; MM plugin `sierra`.
@@ -1043,7 +1043,7 @@ flag state** explicitly, and record the `AT+CUSBPIDSWITCH` RNDIS personality as 
 > independent reasons: (a) RNDIS is not a ModemManager-manageable mode, so the transition is
 > **schema-invalid** in `catalog-schema.ts` and cannot be written down as a permitted
 > transition; (b) a PID switch changes the device's VID:PID, i.e. its catalog
-> **discriminator**, so the post-switch device is a *different* catalog subject, not a mode
+> **discriminator**, so the post-switch device is a _different_ catalog subject, not a mode
 > of this one. Observation only. Do not run it as part of a certification capture.
 
 **Preconditions**
@@ -1116,8 +1116,8 @@ transport facts above are RB-9-class live observations, not a certification bund
 
 ## RB-14 — Huawei personality capture (Stick vs HiLink) `[PARTIAL]`
 
-Capture which **personality** a Huawei dongle is presenting — *Stick* (an MM-managed modem
-with AT/QMI control ports) or *HiLink* (a self-contained router that presents only a
+Capture which **personality** a Huawei dongle is presenting — _Stick_ (an MM-managed modem
+with AT/QMI control ports) or _HiLink_ (a self-contained router that presents only a
 CDC-Ethernet tether) — and record the class evidence for each. The two personalities are
 different device classes to this stack, not different settings of one device.
 
@@ -1132,7 +1132,7 @@ different device classes to this stack, not different settings of one device.
 **Preconditions**
 
 - The shared contract above, including blockers **B1–B4**. Note a HiLink unit is **not**
-  MM-managed, so `certify <slot>` — which selects a *ModemManager* slot — cannot be run
+  MM-managed, so `certify <slot>` — which selects a _ModemManager_ slot — cannot be run
   against one at all; RB-14's HiLink half is a udev/network capture, and only its Stick half
   is a certify capture.
 - Live values on this bench (2026-08-16): **two** HiLink units, both `12d1:14dc`, at USB
@@ -1230,7 +1230,7 @@ never manages.
 
 > **A router dongle's catalog entry can only ever be `canonicalMode: "router-ethernet"` with
 > `permittedTransitions: []`.** There is no AT channel, no QMI channel, and no MM slot. The
-> entry records *what it is*, so the stack can recognise it and hand it to the netns layer —
+> entry records _what it is_, so the stack can recognise it and hand it to the netns layer —
 > it never records a switch. Nothing in RB-15 produces a `certify` bundle, because `certify`
 > selects a ModemManager slot and this device has none.
 
@@ -1280,7 +1280,7 @@ curl -sS -m 8 -o /dev/null -w "gw=$GW http_code=%{http_code} redirect=%{redirect
 
 Step 1 prints `vidpid: 19d2:1405`, CDC-Ethernet interface triples bound to `cdc_ether`, and
 **three zeros** — no tty child, no `cdc-wdm` child, not in `mmcli -L`. Those three zeros
-*are* the router-mode classification. Step 2 prints the live lease and gateway:
+_are_ the router-mode classification. Step 2 prints the live lease and gateway:
 
 ```
 enx344b50000000  UP   192.168.0.169/24 fe80::a408:7435:436b:94db/64
@@ -1674,57 +1674,58 @@ executed run the same directory also carries `{mmcli-list,certify,usb-devices}.t
 
 ## Evidence index
 
-| Runbook | Item | Status | Evidence path (`test-results/modem-control/…`) |
-|---------|------|--------|-----------------------------------------------|
-| RB-1 | System-bus probe | `[PARTIAL]` | `A6.1/hil-system-bus.txt` |
-| RB-2 | Slot-UID stability across replug | `[PARTIAL]` | `A6.3/slot-uid-{before,after,probe}.txt` |
-| RB-3 | MM-1.24-from-artifacts install | `[PARTIAL]` | `A6.3/{mm-install,mm-version}.txt` |
-| RB-4 | PIN/PUK on a real SIM | `[PARTIAL]` | `A6.3/unlock-{pin,puk}.txt` |
-| RB-5 | Certified USB-mode transition | `[PARTIAL]` | `A6.3/{set-usb-mode,certify-transition}.txt`, `transition-bundle.json` |
-| RB-6 | Usage-meter accuracy (machine-checkable) | `[PARTIAL]` | `A6.3/usage-accuracy.txt` |
-| RB-7 | arm64-on-real-hardware validation | `[PARTIAL]` | `A6.3/arm64-{uname,probe}.txt` |
-| RB-8 | Daemon smoke on real hardware | `[PARTIAL]` | `A6.3/daemon-smoke.txt` |
-| RB-9 | Fleet inventory capture | `[PARTIAL]` | `A6.3/{usb-tree,mmcli-list,mmcli-dump,id-path-per-iface,ip-addr}.txt` + `test-results/modem-phase-b/05/<unit>/` |
-| RB-10 | Hub VBUS verification | `[PARTIAL]` | `test-results/modem-phase-b/07/{uhubctl-discovery,uhubctl-ppps,vbus-drop-proof,vbus-drop-proof-nosysfs}.txt` + `hil-cycle-<slot>.txt` |
-| RB-11 | Quectel RM530N-GL certification capture (QMI) | `[PARTIAL]` | `test-results/modem-phase-b/08/quectel-rm530n-gl/{certify.txt,bundle.json,qmi-facts.txt,transition-candidate.txt}` |
-| RB-12 | Sierra EM75xx certification capture (MBIM/QMI, FCC-locked) | `[PARTIAL]` | `test-results/modem-phase-b/08/sierra-em75xx/{certify.txt,bundle.json,fcc-locked-state.txt,fcc-policy.txt}` |
-| RB-13 | SIMCom SIM7600G-H certification capture (QMI raw-IP) | `[PARTIAL]` | `test-results/modem-phase-b/08/simcom-sim7600g-h/{certify.txt,bundle.json,raw-ip-state.txt,rndis-observation.txt}` |
-| RB-14 | Huawei personality capture (Stick vs HiLink) | `[PARTIAL]` | `test-results/modem-phase-b/08/huawei/{personality-sweep.txt,id-path-fallback.txt,personality-switch-observation.txt}` |
-| RB-15 | ZTE MF79U router-mode capture | `[PARTIAL]` | `test-results/modem-phase-b/08/zte-mf79u/{class-evidence.txt,lan-dhcp.txt,web-ui.txt}` |
-| RB-16 | Fibocom FM350 USB-vs-PCIe probe | `[PARTIAL]` | `test-results/modem-phase-b/09/{usb-sweep,driver-binding,pcie-sweep,mmcli-list,mm-version,bearer-connect,hil-cycle-fm350}.txt` |
-| RB-17 | Modem-flap resilience under a live bonded stream | `[PARTIAL]` | `test-results/modem-phase-b/08/flap/{baseline.txt,flap-x5.txt,final-groups.txt,hub-map.json}` |
-| RB-18 | Sierra identity + composition capture | `[PARTIAL]` — `SKIP: device-not-present` | `RB-18/status.txt` (+ `{mmcli-list,certify,usb-devices}.txt`, `bundle.json` when executed) |
+| Runbook | Item                                                       | Status                                   | Evidence path (`test-results/modem-control/…`)                                                                                        |
+| ------- | ---------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| RB-1    | System-bus probe                                           | `[PARTIAL]`                              | `A6.1/hil-system-bus.txt`                                                                                                             |
+| RB-2    | Slot-UID stability across replug                           | `[PARTIAL]`                              | `A6.3/slot-uid-{before,after,probe}.txt`                                                                                              |
+| RB-3    | MM-1.24-from-artifacts install                             | `[PARTIAL]`                              | `A6.3/{mm-install,mm-version}.txt`                                                                                                    |
+| RB-4    | PIN/PUK on a real SIM                                      | `[PARTIAL]`                              | `A6.3/unlock-{pin,puk}.txt`                                                                                                           |
+| RB-5    | Certified USB-mode transition                              | `[PARTIAL]`                              | `A6.3/{set-usb-mode,certify-transition}.txt`, `transition-bundle.json`                                                                |
+| RB-6    | Usage-meter accuracy (machine-checkable)                   | `[PARTIAL]`                              | `A6.3/usage-accuracy.txt`                                                                                                             |
+| RB-7    | arm64-on-real-hardware validation                          | `[PARTIAL]`                              | `A6.3/arm64-{uname,probe}.txt`                                                                                                        |
+| RB-8    | Daemon smoke on real hardware                              | `[PARTIAL]`                              | `A6.3/daemon-smoke.txt`                                                                                                               |
+| RB-9    | Fleet inventory capture                                    | `[PARTIAL]`                              | `A6.3/{usb-tree,mmcli-list,mmcli-dump,id-path-per-iface,ip-addr}.txt` + `test-results/modem-phase-b/05/<unit>/`                       |
+| RB-10   | Hub VBUS verification                                      | `[PARTIAL]`                              | `test-results/modem-phase-b/07/{uhubctl-discovery,uhubctl-ppps,vbus-drop-proof,vbus-drop-proof-nosysfs}.txt` + `hil-cycle-<slot>.txt` |
+| RB-11   | Quectel RM530N-GL certification capture (QMI)              | `[PARTIAL]`                              | `test-results/modem-phase-b/08/quectel-rm530n-gl/{certify.txt,bundle.json,qmi-facts.txt,transition-candidate.txt}`                    |
+| RB-12   | Sierra EM75xx certification capture (MBIM/QMI, FCC-locked) | `[PARTIAL]`                              | `test-results/modem-phase-b/08/sierra-em75xx/{certify.txt,bundle.json,fcc-locked-state.txt,fcc-policy.txt}`                           |
+| RB-13   | SIMCom SIM7600G-H certification capture (QMI raw-IP)       | `[PARTIAL]`                              | `test-results/modem-phase-b/08/simcom-sim7600g-h/{certify.txt,bundle.json,raw-ip-state.txt,rndis-observation.txt}`                    |
+| RB-14   | Huawei personality capture (Stick vs HiLink)               | `[PARTIAL]`                              | `test-results/modem-phase-b/08/huawei/{personality-sweep.txt,id-path-fallback.txt,personality-switch-observation.txt}`                |
+| RB-15   | ZTE MF79U router-mode capture                              | `[PARTIAL]`                              | `test-results/modem-phase-b/08/zte-mf79u/{class-evidence.txt,lan-dhcp.txt,web-ui.txt}`                                                |
+| RB-16   | Fibocom FM350 USB-vs-PCIe probe                            | `[PARTIAL]`                              | `test-results/modem-phase-b/09/{usb-sweep,driver-binding,pcie-sweep,mmcli-list,mm-version,bearer-connect,hil-cycle-fm350}.txt`        |
+| RB-17   | Modem-flap resilience under a live bonded stream           | `[PARTIAL]`                              | `test-results/modem-phase-b/08/flap/{baseline.txt,flap-x5.txt,final-groups.txt,hub-map.json}`                                         |
+| RB-18   | Sierra identity + composition capture                      | `[PARTIAL]` — `SKIP: device-not-present` | `RB-18/status.txt` (+ `{mmcli-list,certify,usb-devices}.txt`, `bundle.json` when executed)                                            |
 
 Every row stays `[PARTIAL]` until its evidence artifact is captured on a real bench device
 and its machine check prints `PASS`. No row may be claimed `[EXISTS]` on the strength of the
 CI proxy alone — the CI proxy is green (compiled probe smoke both arches, packaging contract
-+ daemon smoke in a trixie container, the full `bun test` suite), but the hardware evidence
-is what closes each gate.
+
+- daemon smoke in a trixie container, the full `bun test` suite), but the hardware evidence
+  is what closes each gate.
 
 ## Owner field verification — 2026-10-05
 
 Recorded on 2026-10-05 at the owner's direction. The owner confirmed that each model below carried a completed modem-carried CeraLive stream in field use. Owner attestation; no logs attached.
 
-| Vendor | Model | Connection | Result |
-|--------|-------|------------|--------|
-| Quectel | RM530N-GL | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
-| Quectel | other USB and M.2 models | USB | completed modem-carried CeraLive stream (owner field use) |
-| SIMCom | SIM7600G-H | USB | completed modem-carried CeraLive stream (owner field use) |
-| Fibocom | FM350-GL on a USB adapter board | USB | completed modem-carried CeraLive stream (owner field use) |
-| Sierra Wireless | EM74xx | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
-| Sierra Wireless | EM75xx | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
-| Sierra Wireless | EM7595 | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
-| Sierra Wireless | EM919x | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
-| Telit | LE910, LE920, LE922, LN920, ME910, FN980, FN990, FE990 and FN920 families | M.2 (USB) | completed modem-carried CeraLive stream (owner field use) |
-| u-blox | LARA-R6 | USB | completed modem-carried CeraLive stream (owner field use) |
-| u-blox | LARA-L6 | USB | completed modem-carried CeraLive stream (owner field use) |
-| Huawei | USB modems in stick mode | USB | completed modem-carried CeraLive stream (owner field use) |
-| ZTE | USB modems in stick mode | USB | completed modem-carried CeraLive stream (owner field use) |
-| Huawei | E3372H (HiLink) | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
-| ZTE | MF79U | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
-| ZTE | MF266 | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
-| ZTE | other router-mode dongles | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
-| Generic | Qualcomm-based UFI sticks in router mode | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
-| Generic | HIMI U01 in QMI mode | USB | completed modem-carried CeraLive stream (owner field use) |
-| NETGEAR | LB1120 | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
-| Any phone | USB tethering | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| Vendor          | Model                                                                     | Connection           | Result                                                    |
+| --------------- | ------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------- |
+| Quectel         | RM530N-GL                                                                 | M.2 (USB)            | completed modem-carried CeraLive stream (owner field use) |
+| Quectel         | other USB and M.2 models                                                  | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| SIMCom          | SIM7600G-H                                                                | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| Fibocom         | FM350-GL on a USB adapter board                                           | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM74xx                                                                    | M.2 (USB)            | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM75xx                                                                    | M.2 (USB)            | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM7595                                                                    | M.2 (USB)            | completed modem-carried CeraLive stream (owner field use) |
+| Sierra Wireless | EM919x                                                                    | M.2 (USB)            | completed modem-carried CeraLive stream (owner field use) |
+| Telit           | LE910, LE920, LE922, LN920, ME910, FN980, FN990, FE990 and FN920 families | M.2 (USB)            | completed modem-carried CeraLive stream (owner field use) |
+| u-blox          | LARA-R6                                                                   | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| u-blox          | LARA-L6                                                                   | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| Huawei          | USB modems in stick mode                                                  | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| ZTE             | USB modems in stick mode                                                  | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| Huawei          | E3372H (HiLink)                                                           | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| ZTE             | MF79U                                                                     | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| ZTE             | MF266                                                                     | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| ZTE             | other router-mode dongles                                                 | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| Generic         | Qualcomm-based UFI sticks in router mode                                  | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| Generic         | HIMI U01 in QMI mode                                                      | USB                  | completed modem-carried CeraLive stream (owner field use) |
+| NETGEAR         | LB1120                                                                    | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+| Any phone       | USB tethering                                                             | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |

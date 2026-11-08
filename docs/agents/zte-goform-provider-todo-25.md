@@ -18,4 +18,3 @@ The bench-only harness `control/scripts/mf79u-diagnose.sh` requires
 `MF79U_BENCH_PASSWORD` and one redacted browser request-shape manifest. It performs at most
 one login request and emits only `auth-accepted`, `protocol-mismatch`, `auth-rejection`, or
 `lockout`; see `docs/MF79U-DIAGNOSIS.md`.
-

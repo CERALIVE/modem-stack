@@ -55,14 +55,14 @@ NDJSON probe CLI.
 It is a metrics project, and it is measurably narrower than this one on every axis that makes
 modem control dangerous:
 
-| Property | `irlserver/modem-metrics` | `modem-stack` |
-|---|---|---|
-| Control operations | none; it reads and reports | descriptor-gated read and write surface |
-| Safety model | none | mutation admission, exclusive ownership, durable journal, armed rollback, required readback |
-| Refusal vocabulary | none; errors are strings | typed refusal reasons across every provider |
-| Redaction | none | key-based redaction classes for PII, credentials, SMS bodies, coordinates, USSD text |
-| Hardware-integration tests | none | bench runbooks RB-1..RB-17 plus a private-session-bus integration suite |
-| Test surface | none found | ~190 test files, including grep gates that fail the build on forbidden constructs |
+| Property                   | `irlserver/modem-metrics`  | `modem-stack`                                                                               |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
+| Control operations         | none; it reads and reports | descriptor-gated read and write surface                                                     |
+| Safety model               | none                       | mutation admission, exclusive ownership, durable journal, armed rollback, required readback |
+| Refusal vocabulary         | none; errors are strings   | typed refusal reasons across every provider                                                 |
+| Redaction                  | none                       | key-based redaction classes for PII, credentials, SMS bodies, coordinates, USSD text        |
+| Hardware-integration tests | none                       | bench runbooks RB-1..RB-17 plus a private-session-bus integration suite                     |
+| Test surface               | none found                 | ~190 test files, including grep gates that fail the build on forbidden constructs           |
 
 Rust would not have produced any of that, and TypeScript did not prevent any of it. The
 memory-safety and concurrency guarantees a Rust rewrite buys are real, but nothing in this
@@ -159,13 +159,13 @@ this repository, including the way those ideas are expressed here, belongs to Ce
 The decision in §2 stands until one of these specific conditions is met. Each is a fact
 somebody can check, not a judgement call:
 
-| # | Trigger | Why it would reopen the question |
-|---|---|---|
-| 1 | A maintained, third-party-owned Rust binding for ModemManager's current interface surface exists, with a release history and more than one maintainer. | It removes §3.2 entirely: the generated-proxy maintenance liability disappears. |
-| 2 | A defect class attributable to the runtime, not the architecture, is measured on a board: a memory-safety fault, a data race, or a GC pause that misses a control deadline. | It would be the first evidence that §3.1's "misaimed benefit" reading is wrong. |
-| 3 | The control path acquires a sustained high-rate workload, for example continuous per-packet or per-frame processing rather than event-driven property changes. | It invalidates §3.4's adequacy argument on its own terms. |
-| 4 | Bun or the pure-JS D-Bus transport stops being viable for this workload: an upstream deprecation, an unfixed protocol defect, or a loss of maintenance. | The current runtime choice would no longer be available, so the comparison restarts from scratch. |
-| 5 | The project owner reverses the decision. | It was an owner decision; it is theirs to change. |
+| #   | Trigger                                                                                                                                                                     | Why it would reopen the question                                                                  |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1   | A maintained, third-party-owned Rust binding for ModemManager's current interface surface exists, with a release history and more than one maintainer.                      | It removes §3.2 entirely: the generated-proxy maintenance liability disappears.                   |
+| 2   | A defect class attributable to the runtime, not the architecture, is measured on a board: a memory-safety fault, a data race, or a GC pause that misses a control deadline. | It would be the first evidence that §3.1's "misaimed benefit" reading is wrong.                   |
+| 3   | The control path acquires a sustained high-rate workload, for example continuous per-packet or per-frame processing rather than event-driven property changes.              | It invalidates §3.4's adequacy argument on its own terms.                                         |
+| 4   | Bun or the pure-JS D-Bus transport stops being viable for this workload: an upstream deprecation, an unfixed protocol defect, or a loss of maintenance.                     | The current runtime choice would no longer be available, so the comparison restarts from scratch. |
+| 5   | The project owner reverses the decision.                                                                                                                                    | It was an owner decision; it is theirs to change.                                                 |
 
 A trigger firing reopens the QUESTION. It does not pre-approve a migration, and it does not
 make any part of §3 obsolete on its own.
@@ -174,12 +174,12 @@ make any part of §3 obsolete on its own.
 
 ## 7. Evidence index
 
-| Source | What it carries |
-|--------|-----------------|
-| `github.com/irlserver/modem-metrics` @ `bf15066` | The Rust metrics project surveyed in §3.1 and credited in §5: workspace layout, provider set, absence of control operations, absence of tests, MIT license text. |
-| `github.com/dbus2/zbus` | The D-Bus crate assessed in §3.2 (5.19 at review time), including `zbus_xmlgen` as the proxy-generation path. |
-| `github.com/linux-mobile-broadband/ModemManager` | Read at tag `1.24.2` for the interface surface a hand-generated binding would have to cover. |
-| [`AGENTS.md`](../../AGENTS.md) § WORKSPACE / TOOLCHAIN | The toolchain this decision preserves: Bun 1.4.0, strict TypeScript 7.0.2, Biome. |
-| [`AGENTS.md`](../../AGENTS.md) §§ safety model | The admission, ownership, journal, rollback, readback and redaction fences §3.1 and §3.3 describe. |
-| `control/src/providers/modem-manager/forbidden-subprocess.test.ts` | The proof cited in §3.4 that the production MM path spawns no CLI. |
-| `srtla-send-rs/docs/adr/ADR-001-control-protocol.md` (workspace sibling) | The Rust-core-plus-thin-TS-client precedent §3.4 distinguishes this stack from. |
+| Source                                                                   | What it carries                                                                                                                                                  |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `github.com/irlserver/modem-metrics` @ `bf15066`                         | The Rust metrics project surveyed in §3.1 and credited in §5: workspace layout, provider set, absence of control operations, absence of tests, MIT license text. |
+| `github.com/dbus2/zbus`                                                  | The D-Bus crate assessed in §3.2 (5.19 at review time), including `zbus_xmlgen` as the proxy-generation path.                                                    |
+| `github.com/linux-mobile-broadband/ModemManager`                         | Read at tag `1.24.2` for the interface surface a hand-generated binding would have to cover.                                                                     |
+| [`AGENTS.md`](../../AGENTS.md) § WORKSPACE / TOOLCHAIN                   | The toolchain this decision preserves: Bun 1.4.0, strict TypeScript 7.0.2, Biome.                                                                                |
+| [`AGENTS.md`](../../AGENTS.md) §§ safety model                           | The admission, ownership, journal, rollback, readback and redaction fences §3.1 and §3.3 describe.                                                               |
+| `control/src/providers/modem-manager/forbidden-subprocess.test.ts`       | The proof cited in §3.4 that the production MM path spawns no CLI.                                                                                               |
+| `srtla-send-rs/docs/adr/ADR-001-control-protocol.md` (workspace sibling) | The Rust-core-plus-thin-TS-client precedent §3.4 distinguishes this stack from.                                                                                  |

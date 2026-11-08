@@ -3,10 +3,10 @@
 **Status:** **`blocked` — no eUICC-capable hardware exists on the fleet.** No eSIM code
 ships and the feature gate stays off.
 
-| Date | Decision | Recorded in |
-|---|---|---|
-| 2026-08-13 | Implementation **deferred** by user decision; investigation closed as investigate-only. | §8 |
-| 2026-08-18 | Deferral **reversed** by user decision, then closed **`blocked`** on a named hardware gap: no bench modem exposes an eUICC. The adoption spike could not run; its **licensing half did**, and is recorded. | §9 |
+| Date       | Decision                                                                                                                                                                                                   | Recorded in |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 2026-08-13 | Implementation **deferred** by user decision; investigation closed as investigate-only.                                                                                                                    | §8          |
+| 2026-08-18 | Deferral **reversed** by user decision, then closed **`blocked`** on a named hardware gap: no bench modem exposes an eUICC. The adoption spike could not run; its **licensing half did**, and is recorded. | §9          |
 
 §1–§7 are the 2026-08-13 research and stand unchanged. §8 records the first decision;
 **§9 is the current one and supersedes §8's "that decision stands."**
@@ -36,7 +36,7 @@ The mechanism that makes an eSIM profile non-portable is the **Bound Profile Pac
   summarized well in the [eSeye eUICC overview](https://docs.eseye.com/Content/GettingStarted/eSIM/Euicc.htm)
   and the [Ambimat RSP provisioning writeup](https://esim.ambimat.com/blogs/esim-euicc-rsp-provisioning-architecture.html)).
 - The operator's back end (**SM-DP+**, Subscription Manager Data Preparation Plus) prepares
-  a Profile Package and, in the *binding* step, encrypts it specifically against the target
+  a Profile Package and, in the _binding_ step, encrypts it specifically against the target
   eUICC's public key and its EID (SGP.22 §2.5.4 "Bound Profile Package," full TLV structure
   given in the spec). The result — the BPP — is cryptographically linked to **one** eUICC.
   A BPP bound to EID-A cannot be installed on EID-B; the eUICC on the other end will reject
@@ -44,7 +44,7 @@ The mechanism that makes an eSIM profile non-portable is the **Bound Profile Pac
 - The eUICC's private key never leaves the chip. Decryption of the profile package happens
   **inside** the eUICC; "the decrypted profile content never leaves the chip"
   (Ambimat, citing SGP.22 §2.6 Security Overview).
-- There is no reverse path defined anywhere in SGP.21/22 to read an *installed* profile back
+- There is no reverse path defined anywhere in SGP.21/22 to read an _installed_ profile back
   out of an eUICC in a portable form. The Local Profile Assistant (LPA) can list, enable,
   disable, delete, and rename profiles (SGP.22 §2.4.9, "LPA Services") — it cannot export one.
 
@@ -98,7 +98,7 @@ introduced a standardized **Device Change** feature (§4.18, Annex O; use case i
 letting a device conduct the operator handshake on the user's behalf, without a manual
 carrier-support call. But:
 
-- It's an *optional* feature (`#SupportedForDcV3.0.0#` per the v3.0 spec's feature-support
+- It's an _optional_ feature (`#SupportedForDcV3.0.0#` per the v3.0 spec's feature-support
   tagging) — an eUICC and LPA must both explicitly implement it.
 - GlobalPlatform's compliance program did not even certify SGP.22 v3.0-conformant products;
   certification only exists from **v3.1** onward
@@ -147,7 +147,7 @@ operationally real are:
    card moves the profile. This is the only path where "moving a modem to a different board"
    preserves the subscription without any network operation at all.
 2. **Carrier reissue / QR activation targeted at the board's own EID.** The board's eUICC
-   has its own EID (§1); the operator issues a *new* profile bound to that EID, delivered as
+   has its own EID (§1); the operator issues a _new_ profile bound to that EID, delivered as
    an activation code (an `LPA:1$<sm-dp+ host>$<matching-id>` string, typically QR-encoded)
    that the LPA on the board redeems against the carrier's SM-DP+
    ([lpac USAGE.md, `profile download`](https://github.com/estkme-group/lpac/blob/main/docs/USAGE.md)).
@@ -157,7 +157,7 @@ operationally real are:
    already installed on the board's own eUICC (via path 2), an operator or the local LPA can
    `enable`/`disable` between them without a new network round-trip
    ([lpac USAGE.md — profile enable/disable](https://github.com/estkme-group/lpac/blob/main/docs/USAGE.md)).
-   This is local profile *management*, not profile *transfer* — no new binding occurs.
+   This is local profile _management_, not profile _transfer_ — no new binding occurs.
 
 **Conclusion:** the honest menu is "swap a removable eUICC card" or "have the carrier issue
 a profile to this board's own EID," optionally followed by "switch between profiles already
@@ -176,16 +176,16 @@ Per [`docs/ENVVARS.md`](https://github.com/estkme-group/lpac/blob/main/docs/ENVV
 the [Driver Architecture DeepWiki page](https://deepwiki.com/estkme-group/lpac/5-driver-architecture),
 `lpac` supports these APDU (eUICC command) backends, selected via `$LPAC_APDU`:
 
-| Backend | Purpose | Linux availability |
-|---|---|---|
-| `pcsc` | PC/SC smartcard reader (external eUICC card reader) | default, all platforms |
-| `at` | AT `+CCHO`/`+CCHC`/`+CGLA` (managed logical channel) | Linux only, opt-in build flag `LPAC_WITH_APDU_AT` |
-| `at_csim` | AT `+CSIM` (unmanaged APDU passthrough) | Linux only, same build flag |
-| `qmi` | Direct QMI character device | Qualcomm modems, opt-in |
-| `qmi_qrtr` | QMI over QRTR (PCIe/embedded Qualcomm) | Qualcomm modems, opt-in |
-| `uqmi` | OpenWrt `uqmi` CLI wrapper | OpenWrt-specific |
-| `mbim` | MBIM interface | opt-in |
-| `stdio` | Manual/scripted APDU injection | debug only, no `main` support |
+| Backend    | Purpose                                              | Linux availability                                |
+| ---------- | ---------------------------------------------------- | ------------------------------------------------- |
+| `pcsc`     | PC/SC smartcard reader (external eUICC card reader)  | default, all platforms                            |
+| `at`       | AT `+CCHO`/`+CCHC`/`+CGLA` (managed logical channel) | Linux only, opt-in build flag `LPAC_WITH_APDU_AT` |
+| `at_csim`  | AT `+CSIM` (unmanaged APDU passthrough)              | Linux only, same build flag                       |
+| `qmi`      | Direct QMI character device                          | Qualcomm modems, opt-in                           |
+| `qmi_qrtr` | QMI over QRTR (PCIe/embedded Qualcomm)               | Qualcomm modems, opt-in                           |
+| `uqmi`     | OpenWrt `uqmi` CLI wrapper                           | OpenWrt-specific                                  |
+| `mbim`     | MBIM interface                                       | opt-in                                            |
+| `stdio`    | Manual/scripted APDU injection                       | debug only, no `main` support                     |
 
 The HTTP (SM-DP+ transport) side offers `curl` (default) or `stdio`.
 
@@ -229,8 +229,8 @@ race for the port. The `qmi`/`qmi_qrtr` backends fare better here — per
 [lpac issue #94](https://github.com/estkme-group/lpac/issues/94), MBIM in particular "requires
 no updates to ModemManager… you don't need to stop ModemManager to use MBIM with lpac, both
 can communicate with the modem at the same time" — but QMI/MBIM coexistence with an
-*actively connected* bearer is a separate, unverified claim from QMI/MBIM coexistence with
-an *idle* ModemManager instance, and neither has been tested against our stack's actor
+_actively connected_ bearer is a separate, unverified claim from QMI/MBIM coexistence with
+an _idle_ ModemManager instance, and neither has been tested against our stack's actor
 model.
 
 ### AGPL-3.0 packaging constraint
@@ -246,7 +246,7 @@ docs/**, cmake/**, etc.      → MIT
 
 The bulk of the program logic (`src/`, `driver/`, `utils/`) is **AGPL-3.0-only**. AGPL-3.0 is
 a network-copyleft license: linking it (statically or dynamically) into another program
-requires that program's *entire* source, including anything communicating with it over a
+requires that program's _entire_ source, including anything communicating with it over a
 network, to also be released under AGPL-3.0-compatible terms. Given `cerastream`,
 `CeraUI`, and the rest of the CeraLive stack are not AGPL-licensed, `lpac` **must remain a
 separately-spawned external binary invoked via subprocess/CLI**, never linked into or
@@ -262,19 +262,19 @@ Claim status vocabulary, per the plan: **verified** (primary-source documentatio
 hands-on confirmation exists), **conditional** (documented as SKU/firmware-dependent, not
 universal for the part number), **unknown** (no primary source found either way).
 
-| Modem | On this bench? | eUICC claim status | Evidence |
-|---|---|---|---|
-| Sierra Wireless EM75xx (EM7565/EM7590/EM7595 family) | No (reference case) | **verified** (SKU-conditional) | EM7565 product page markets "Consumer and M2M eUICC" as a feature — [Sierra EM7565 product page](https://www.sierrawireless.com/iot-modules/4g-modules/em7565/) — but a Sierra forum thread on the *same part* states the eUICC "was never enacted" on some SKUs and that documentation across distributors is unreliable — [Sierra forum: EM7565 eUICC sku](https://forum.sierrawireless.com/t/em7565-euicc-sku/24816). Multiple independent bench reports (EM7590, EM7595, EM7511 family) show *some* units successfully listing/downloading eUICC profiles via `lpac`'s `at`/`at_csim` backend after vendor-specific `AT!CUSTOM="SIMLPA",0` unlock steps — [Sierra EM7590/EM7595 AT+CGLA thread](https://forum.sierrawireless.com/t/at-cgla-not-supported-on-em7590-and-at-ccho-returns-error/32595) — while others report "SIM failure" and no onboard eUICC at all on a nominally-eSIM SKU — [Sierra EM7595 provisioning thread](https://forum.sierrawireless.com/t/em7595-esim-provisioning/35746). **Net: this is the best-documented family in the ecosystem, but "eUICC present and lpac-reachable" is a per-SKU/per-firmware fact, not a blanket EM75xx guarantee.** |
-| Quectel RM520N-GL / RM530N-GL (5G family, shares AT+QESIM command set) | RM530N-GL is physically present on the bench | **conditional** | Quectel's proprietary `AT+QESIM` command set exists (`lpa_enable`, `profile_brief`, `profile_detail`, `eid`, `enable_profile`, `disable_profile`, `delete_profile`, `nickname`, `def_svr_addr`) — confirmed live on forum threads for the RM520N-GL sibling part — [Quectel forum: RM520N-GL eSIM Management](https://forums.quectel.com/t/quectel-rm520n-gl-esim-management/47913), [Quectel forum: RM520N-GL eSIM adding profile](https://forums.quectel.com/t/rm520n-gl-esim-adding-profile/49509). Quectel support staff explicitly state: **"module by itself doesn't have eSIM. It should be physical eSIM installed in SIM slot or soldered MFF2 SIM. You should install eSIM on your board, module don't have eSIM, just support the feature"** — [Quectel forum: RM520N-GL eSIM support](https://forums.quectel.com/t/quectel-rm520n-gl-esim-support/48053). Beyond `lpa_enable`/`eid`, most other `AT+QESIM` subcommands (`profile_brief`, `profile_detail`, `def_svr_addr`) return `ERROR` for multiple reporters even with `lpa_enable` set and a valid EID read back, and Quectel support gates the actual profile-add tool (`quectel_lpad`) behind a private, non-forum distribution channel ("we can't share in forum, please contact with your supplier"). **Net: the AT command surface exists and is documented (RM530N-GL ships the same 5G-family firmware/command set as RM520N-GL per Quectel's own module family documentation), the EID-read half works, but the profile-download half is firmware/tooling-gated and unverified on our actual RM530N-GL unit.** |
-| SIMCom SIM7600G-H | Physically present on the bench | **unknown, leaning no eUICC AT surface documented** | The official SIM7500/SIM7600 AT Command Manual (v1.10/v1.12, both fetched and checked section-by-section) has **no `AT+EID`, no `AT+QESIM`-equivalent, and no eUICC/eSIM profile-management command group** anywhere in its table of contents — [SIM7500_SIM7600 AT Command Manual v1.10](https://simcom.ee/documents/SIM7600E/SIM7500_SIM7600%20Series_AT%20Command%20Manual%20_V1.10.pdf). A field report on a physical ST4SIM eUICC inserted into a SIM7600 gets `+CME ERROR: SIM not inserted` when querying ICCID, and the reporter notes "Simcomm don't explicitly state that the module supports eSIM, unlike their other modules like the SIM7000 and SIM7070" — [STMicroelectronics community: How to activate an e-SIM on SIM7600](https://community.st.com/t5/interface-and-connectivity-ics/how-to-activate-an-e-sim-on-sim7600/td-p/653404). **Net: no vendor documentation supports an eUICC-management AT surface on this part; treat as no on-device eUICC path until contradicted by a primary source.** |
-| Huawei / ZTE USB dongles (router/HiLink-mode devices) | Physically present on the bench | **verified — no eUICC/lpac path** | These are router-mode (HiLink/CPE-style) USB sticks that present a NAT'd LAN/HTTP management surface to the host rather than a raw AT/QMI/MBIM control port — the same reason they only expose an HTTP web UI (`192.168.0.1`/`192.168.8.1`, see `docs/BENCH.md` RB-15) instead of `mmcli`-visible modem objects. `lpac`'s APDU backends all require either a PC/SC reader, a raw AT serial port, or a raw QMI/MBIM character device — none of which router-mode dongles expose to the host. **Net: router-mode USB dongles are categorically out of scope for any local LPA regardless of whether the internal baseband chip has an eUICC, because the host never gets a control channel to it.** |
-| Sierra FM350 (M.2, USB or PCIe) | **Not physically connected** as of the 2026-08-16 RB-16 probe (`docs/FM350-DECISION.md`) | **unknown** | No bench evidence exists; no primary-source AT/eUICC documentation was located for this part in this investigation. Not assessed further — the part isn't present to test even if it were the priority. |
+| Modem                                                                  | On this bench?                                                                           | eUICC claim status                                  | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sierra Wireless EM75xx (EM7565/EM7590/EM7595 family)                   | No (reference case)                                                                      | **verified** (SKU-conditional)                      | EM7565 product page markets "Consumer and M2M eUICC" as a feature — [Sierra EM7565 product page](https://www.sierrawireless.com/iot-modules/4g-modules/em7565/) — but a Sierra forum thread on the _same part_ states the eUICC "was never enacted" on some SKUs and that documentation across distributors is unreliable — [Sierra forum: EM7565 eUICC sku](https://forum.sierrawireless.com/t/em7565-euicc-sku/24816). Multiple independent bench reports (EM7590, EM7595, EM7511 family) show _some_ units successfully listing/downloading eUICC profiles via `lpac`'s `at`/`at_csim` backend after vendor-specific `AT!CUSTOM="SIMLPA",0` unlock steps — [Sierra EM7590/EM7595 AT+CGLA thread](https://forum.sierrawireless.com/t/at-cgla-not-supported-on-em7590-and-at-ccho-returns-error/32595) — while others report "SIM failure" and no onboard eUICC at all on a nominally-eSIM SKU — [Sierra EM7595 provisioning thread](https://forum.sierrawireless.com/t/em7595-esim-provisioning/35746). **Net: this is the best-documented family in the ecosystem, but "eUICC present and lpac-reachable" is a per-SKU/per-firmware fact, not a blanket EM75xx guarantee.**                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Quectel RM520N-GL / RM530N-GL (5G family, shares AT+QESIM command set) | RM530N-GL is physically present on the bench                                             | **conditional**                                     | Quectel's proprietary `AT+QESIM` command set exists (`lpa_enable`, `profile_brief`, `profile_detail`, `eid`, `enable_profile`, `disable_profile`, `delete_profile`, `nickname`, `def_svr_addr`) — confirmed live on forum threads for the RM520N-GL sibling part — [Quectel forum: RM520N-GL eSIM Management](https://forums.quectel.com/t/quectel-rm520n-gl-esim-management/47913), [Quectel forum: RM520N-GL eSIM adding profile](https://forums.quectel.com/t/rm520n-gl-esim-adding-profile/49509). Quectel support staff explicitly state: **"module by itself doesn't have eSIM. It should be physical eSIM installed in SIM slot or soldered MFF2 SIM. You should install eSIM on your board, module don't have eSIM, just support the feature"** — [Quectel forum: RM520N-GL eSIM support](https://forums.quectel.com/t/quectel-rm520n-gl-esim-support/48053). Beyond `lpa_enable`/`eid`, most other `AT+QESIM` subcommands (`profile_brief`, `profile_detail`, `def_svr_addr`) return `ERROR` for multiple reporters even with `lpa_enable` set and a valid EID read back, and Quectel support gates the actual profile-add tool (`quectel_lpad`) behind a private, non-forum distribution channel ("we can't share in forum, please contact with your supplier"). **Net: the AT command surface exists and is documented (RM530N-GL ships the same 5G-family firmware/command set as RM520N-GL per Quectel's own module family documentation), the EID-read half works, but the profile-download half is firmware/tooling-gated and unverified on our actual RM530N-GL unit.** |
+| SIMCom SIM7600G-H                                                      | Physically present on the bench                                                          | **unknown, leaning no eUICC AT surface documented** | The official SIM7500/SIM7600 AT Command Manual (v1.10/v1.12, both fetched and checked section-by-section) has **no `AT+EID`, no `AT+QESIM`-equivalent, and no eUICC/eSIM profile-management command group** anywhere in its table of contents — [SIM7500_SIM7600 AT Command Manual v1.10](https://simcom.ee/documents/SIM7600E/SIM7500_SIM7600%20Series_AT%20Command%20Manual%20_V1.10.pdf). A field report on a physical ST4SIM eUICC inserted into a SIM7600 gets `+CME ERROR: SIM not inserted` when querying ICCID, and the reporter notes "Simcomm don't explicitly state that the module supports eSIM, unlike their other modules like the SIM7000 and SIM7070" — [STMicroelectronics community: How to activate an e-SIM on SIM7600](https://community.st.com/t5/interface-and-connectivity-ics/how-to-activate-an-e-sim-on-sim7600/td-p/653404). **Net: no vendor documentation supports an eUICC-management AT surface on this part; treat as no on-device eUICC path until contradicted by a primary source.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Huawei / ZTE USB dongles (router/HiLink-mode devices)                  | Physically present on the bench                                                          | **verified — no eUICC/lpac path**                   | These are router-mode (HiLink/CPE-style) USB sticks that present a NAT'd LAN/HTTP management surface to the host rather than a raw AT/QMI/MBIM control port — the same reason they only expose an HTTP web UI (`192.168.0.1`/`192.168.8.1`, see `docs/BENCH.md` RB-15) instead of `mmcli`-visible modem objects. `lpac`'s APDU backends all require either a PC/SC reader, a raw AT serial port, or a raw QMI/MBIM character device — none of which router-mode dongles expose to the host. **Net: router-mode USB dongles are categorically out of scope for any local LPA regardless of whether the internal baseband chip has an eUICC, because the host never gets a control channel to it.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Sierra FM350 (M.2, USB or PCIe)                                        | **Not physically connected** as of the 2026-08-16 RB-16 probe (`docs/FM350-DECISION.md`) | **unknown**                                         | No bench evidence exists; no primary-source AT/eUICC documentation was located for this part in this investigation. Not assessed further — the part isn't present to test even if it were the priority.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Cross-cutting observation:** across every documented case, the actual failure mode is
 almost never "no eUICC silicon exists." It's one of: (a) the SKU variant lacks the eUICC
 option entirely (EM7565/EM7595 both have this exact ambiguity), (b) a vendor-proprietary
 lock (Sierra's `SIMLPA` custom flag, Quectel's undocumented `lpa_enable` gate) has to be
-found and disabled first, or (c) the modem's *management mode* (HiLink/router mode) removes
+found and disabled first, or (c) the modem's _management mode_ (HiLink/router mode) removes
 host-level AT/QMI access entirely, independent of what silicon is inside. None of these are
 resolvable from documentation alone — each requires the validation checklist in §7 run
 against the specific physical unit.
@@ -355,13 +355,13 @@ The phase's hardware-prerequisites gate measured the entire bench fleet live on 
 (RK3588, ModemManager 1.24.2) and recorded item (b) as **BLOCKER B5 — no eUICC/eSIM-capable
 modem on the fleet**:
 
-| Check | Measured result |
-|---|---|
-| SIMs present across the whole bench | exactly **one** — on the Quectel RM530N-GL. Every other modem reads `sim-missing`. |
-| That SIM's ModemManager property set | `active`, `imsi`, `iccid`, `operator id` — **no `eid`** |
-| Interpretation | MM 1.24.2 reports an `eid` property for an eUICC. Its absence is **positive evidence of a classic removable UICC**, not merely missing data. |
-| RM530N-GL eUICC capability | **UNPROVEN** for this unit and firmware (`RM530NGLAAR05A01M4G`). Consistent with §6: Quectel's own support staff state the module "doesn't have eSIM… it should be physical eSIM installed in SIM slot or soldered MFF2 SIM." |
-| Any other fleet modem with an eUICC | none — a `sim-missing` modem cannot present one |
+| Check                                | Measured result                                                                                                                                                                                                               |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SIMs present across the whole bench  | exactly **one** — on the Quectel RM530N-GL. Every other modem reads `sim-missing`.                                                                                                                                            |
+| That SIM's ModemManager property set | `active`, `imsi`, `iccid`, `operator id` — **no `eid`**                                                                                                                                                                       |
+| Interpretation                       | MM 1.24.2 reports an `eid` property for an eUICC. Its absence is **positive evidence of a classic removable UICC**, not merely missing data.                                                                                  |
+| RM530N-GL eUICC capability           | **UNPROVEN** for this unit and firmware (`RM530NGLAAR05A01M4G`). Consistent with §6: Quectel's own support staff state the module "doesn't have eSIM… it should be physical eSIM installed in SIM slot or soldered MFF2 SIM." |
+| Any other fleet modem with an eUICC  | none — a `sim-missing` modem cannot present one                                                                                                                                                                               |
 
 Nothing on the bench can hold, receive, or report an eUICC profile.
 
@@ -371,12 +371,12 @@ The spike had four questions: lpac↔ModemManager coexistence, device/APDU acces
 certified eUICC target, arm64 packaging, and licensing. Three of the four are hardware
 questions:
 
-| Spike step | Status | Why |
-|---|---|---|
-| lpac builds/runs on arm64, version captured | **not run** | Executable in isolation, but it is not evidence *toward the verdict* — it would prove a binary starts, not that lpac can reach an eUICC or share the port with MM. Running it would mean installing an AGPL-3.0 binary on the bench to answer a question nobody asked. |
-| APDU/QMI channel opens against the certified eUICC target, MM inhibited | **impossible** | There is no eUICC target to open a channel to. |
-| Port arbitration — MM regains the modem cleanly after lpac exits | **impossible** | Depends on the step above having run. |
-| Licensing review | **COMPLETE** — §9.3 | Research, not hardware. It ran. |
+| Spike step                                                              | Status              | Why                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| lpac builds/runs on arm64, version captured                             | **not run**         | Executable in isolation, but it is not evidence _toward the verdict_ — it would prove a binary starts, not that lpac can reach an eUICC or share the port with MM. Running it would mean installing an AGPL-3.0 binary on the bench to answer a question nobody asked. |
+| APDU/QMI channel opens against the certified eUICC target, MM inhibited | **impossible**      | There is no eUICC target to open a channel to.                                                                                                                                                                                                                         |
+| Port arbitration — MM regains the modem cleanly after lpac exits        | **impossible**      | Depends on the step above having run.                                                                                                                                                                                                                                  |
+| Licensing review                                                        | **COMPLETE** — §9.3 | Research, not hardware. It ran.                                                                                                                                                                                                                                        |
 
 **Therefore no GO/NO-GO verdict is recorded, and none may be inferred.** A NO-GO would be a
 technical judgment that lpac cannot work here; nothing was measured that would support such
@@ -399,13 +399,13 @@ Re-verified against upstream on **2026-08-18**, not carried over from §5.
 - `REUSE.toml` at [`estkme-group/lpac@main`](https://raw.githubusercontent.com/estkme-group/lpac/main/REUSE.toml)
   — confirmed **unchanged** from what §5 recorded on 2026-08-13:
 
-  | Path glob | SPDX identifier |
-  |---|---|
-  | `src/**`, `driver/**`, `utils/**` | **`AGPL-3.0-only`** |
-  | `euicc/**` | `LGPL-2.1-only OR LicenseRef-ESTKME-Commercial` |
-  | `docs/**`, `cmake/**`, `CMakeLists.txt`, `README.md`, `.github/**`, tool configs | `MIT` |
-  | `cjson-ext/**` | `MIT` |
-  | `dlfcn-win32/**` | `MIT` (Ramiro Polla + contributors) |
+  | Path glob                                                                        | SPDX identifier                                 |
+  | -------------------------------------------------------------------------------- | ----------------------------------------------- |
+  | `src/**`, `driver/**`, `utils/**`                                                | **`AGPL-3.0-only`**                             |
+  | `euicc/**`                                                                       | `LGPL-2.1-only OR LicenseRef-ESTKME-Commercial` |
+  | `docs/**`, `cmake/**`, `CMakeLists.txt`, `README.md`, `.github/**`, tool configs | `MIT`                                           |
+  | `cjson-ext/**`                                                                   | `MIT`                                           |
+  | `dlfcn-win32/**`                                                                 | `MIT` (Ramiro Polla + contributors)             |
 
 - GitHub's own repository metadata
   ([API](https://api.github.com/repos/estkme-group/lpac)) reports
@@ -414,9 +414,9 @@ Re-verified against upstream on **2026-08-18**, not carried over from §5.
   file, because the project is REUSE-structured rather than single-licensed.
 - [`LICENSES/`](https://github.com/estkme-group/lpac/tree/main/LICENSES) carries six license
   texts: `AGPL-3.0-only`, `LGPL-2.1-only`, `GPL-2.0-only`, `MIT`, `CC0-1.0`, and
-  `LicenseRef-ESTKME-Commercial`. That last one reads, in full: *"Non-public commercial
+  `LicenseRef-ESTKME-Commercial`. That last one reads, in full: _"Non-public commercial
   license, please contact ESTKME TECHNOLOGY LIMITED, Hong Kong for details via
-  inquiry@estk.me."* It is the paid alternative to LGPL-2.1 for `euicc/**` and is
+  inquiry@estk.me."_ It is the paid alternative to LGPL-2.1 for `euicc/**` and is
   irrelevant to us — LGPL-2.1-only is acceptable, so the commercial branch never applies.
 
 **Verdict 1 — the program logic is AGPL-3.0-only, so lpac can only ever be an external
@@ -431,15 +431,15 @@ clearly allowed. Two obligations attach:
 
 - **Corresponding Source, from the same place (AGPL-3.0 §6).** Conveying object code
   requires the Corresponding Source under one of §6(a)–(e); for network distribution the
-  applicable option is **§6(d)** — equivalent access to the source *at the same place*, at
+  applicable option is **§6(d)** — equivalent access to the source _at the same place_, at
   no further charge. `apt.ceralive.tv` today publishes **binary indexes only**
   (`binary-arm64` / `binary-amd64`); there is no source channel in the closure at all. So
   publishing an lpac `.deb` there would require **adding a source channel** (or an
   equivalent §6(b) written offer) before the first upload — an infrastructure precondition,
   not a paperwork detail. Recording it now means a future GO does not discover it late.
-- **§13 attaches only to *modified* versions.** AGPL-3.0 §13's obligation to offer
+- **§13 attaches only to _modified_ versions.** AGPL-3.0 §13's obligation to offer
   Corresponding Source to users interacting with the program remotely over a network is
-  written against a version *you modified*. Shipping lpac **unmodified** and driving it by
+  written against a version _you modified_. Shipping lpac **unmodified** and driving it by
   subprocess does not trigger that clause. Patch it even once, however, and the CeraUI web
   surface driving it makes §13 a live, continuous obligation. **Policy, therefore: ship
   lpac unmodified or not at all** — which happens to be exactly what `POLICY.md`'s no-fork
@@ -468,19 +468,19 @@ so does availability, and the availability answer is the one that changed since 
 
 **lpac is now packaged in Debian — but not in a suite we ship.**
 
-| Channel | State (checked 2026-08-18) | Source |
-|---|---|---|
-| Debian archive | source `lpac` **2.3.0-1** in `main`, binaries **amd64 / arm64 / armhf** — present in **testing + unstable only**; **absent from bookworm and trixie** | [tracker.debian.org/pkg/lpac](https://tracker.debian.org/pkg/lpac) |
-| Ubuntu | source `lpac` 2.3.0-1 in `universe`, amd64 / arm64 / armhf | [launchpad.net/ubuntu/+source/lpac](https://launchpad.net/ubuntu/+source/lpac) |
-| Upstream release artifacts | **v2.3.0 (2025-08-15)**, including Linux **aarch64** ZIPs and an upstream-built **`lpac_2.3.0_arm64.deb`** | [releases/tag/v2.3.0](https://github.com/estkme-group/lpac/releases/tag/v2.3.0) |
-| Others | Alpine `community` (aarch64), OpenWrt `packages` feed (2.3.0-2), Nixpkgs 2.3.0, AUR (`lpac`, `lpac-git`). **Absent** from Arch official repos and from Fedora. | [Alpine](https://pkgs.alpinelinux.org/package/v3.20/community/aarch64/lpac) · [OpenWrt](https://github.com/openwrt/packages/blob/master/utils/lpac/Makefile) · [Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/lp/lpac/package.nix) · [AUR](https://aur.archlinux.org/packages/lpac) |
-| Build from source | CMake (`cmake -B build`; `-DSTANDALONE_MODE=ON` for a relocatable install). Build deps per Debian's control: `cmake`, `libcurl4-openssl-dev`, `libpcsclite-dev`, QMI/QRTR dev libraries, `zip`. | [docs/DEVELOPERS.md](https://github.com/estkme-group/lpac/blob/main/docs/DEVELOPERS.md) · [Debian control](https://tracker.debian.org/media/packages/l/lpac/control-2.3.0-1) |
+| Channel                    | State (checked 2026-08-18)                                                                                                                                                                      | Source                                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Debian archive             | source `lpac` **2.3.0-1** in `main`, binaries **amd64 / arm64 / armhf** — present in **testing + unstable only**; **absent from bookworm and trixie**                                           | [tracker.debian.org/pkg/lpac](https://tracker.debian.org/pkg/lpac)                                                                                                                                                                                                                                       |
+| Ubuntu                     | source `lpac` 2.3.0-1 in `universe`, amd64 / arm64 / armhf                                                                                                                                      | [launchpad.net/ubuntu/+source/lpac](https://launchpad.net/ubuntu/+source/lpac)                                                                                                                                                                                                                           |
+| Upstream release artifacts | **v2.3.0 (2025-08-15)**, including Linux **aarch64** ZIPs and an upstream-built **`lpac_2.3.0_arm64.deb`**                                                                                      | [releases/tag/v2.3.0](https://github.com/estkme-group/lpac/releases/tag/v2.3.0)                                                                                                                                                                                                                          |
+| Others                     | Alpine `community` (aarch64), OpenWrt `packages` feed (2.3.0-2), Nixpkgs 2.3.0, AUR (`lpac`, `lpac-git`). **Absent** from Arch official repos and from Fedora.                                  | [Alpine](https://pkgs.alpinelinux.org/package/v3.20/community/aarch64/lpac) · [OpenWrt](https://github.com/openwrt/packages/blob/master/utils/lpac/Makefile) · [Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/lp/lpac/package.nix) · [AUR](https://aur.archlinux.org/packages/lpac) |
+| Build from source          | CMake (`cmake -B build`; `-DSTANDALONE_MODE=ON` for a relocatable install). Build deps per Debian's control: `cmake`, `libcurl4-openssl-dev`, `libpcsclite-dev`, QMI/QRTR dev libraries, `zip`. | [docs/DEVELOPERS.md](https://github.com/estkme-group/lpac/blob/main/docs/DEVELOPERS.md) · [Debian control](https://tracker.debian.org/media/packages/l/lpac/control-2.3.0-1)                                                                                                                             |
 
 Ranked the same way the bench's `uhubctl` delivery decision was ranked — stock distro
 package first, first-party build only if that fails:
 
 1. **Stock Debian package — preferred, but currently unavailable to us.** Ruled out by
-   *suite*, not by licence: 2.3.0-1 exists only in testing/unstable, and this stack's
+   _suite_, not by licence: 2.3.0-1 exists only in testing/unstable, and this stack's
    packaging targets trixie. Revisit on any suite move; this is the option that would
    cost the least.
 2. **Upstream's own `lpac_2.3.0_arm64.deb` — rejected as a shipping form.** It is not built
@@ -495,7 +495,7 @@ package first, first-party build only if that fails:
    channel from §9.3.
 
 **All three are moot today.** No GO verdict exists, so nothing ships, and this subsection
-is a decision recorded *in advance* for whoever picks eSIM back up — not authorization to
+is a decision recorded _in advance_ for whoever picks eSIM back up — not authorization to
 build anything.
 
 ### 9.5 What would unblock this
@@ -505,7 +505,7 @@ The gate is one piece of hardware. Two ways to clear it, cheapest first:
 1. **A removable eUICC card in an existing bench modem.** Per §4 path 1, a programmable
    eUICC in plastic form factor (eSTK.me, ST4SIM, or similar) dropped into the Quectel
    RM530N-GL's SIM slot gives the bench a real EID to read — no new modem required. It also
-   unlocks a second, better-behaved route: with a **PC/SC reader**, lpac's *default* `pcsc`
+   unlocks a second, better-behaved route: with a **PC/SC reader**, lpac's _default_ `pcsc`
    backend reaches the card entirely outside ModemManager, which sidesteps the port-
    arbitration question for the inventory/EID half of the spike and isolates the
    coexistence question to the modem-slot path only.
@@ -516,7 +516,7 @@ The gate is one piece of hardware. Two ways to clear it, cheapest first:
 With either in hand, §7 step 1 (EID read) becomes runnable, and the spike's three blocked
 steps become answerable. Until then this record stands as written.
 
-**The question put to the user, verbatim:** *"No modem on the bench exposes an eUICC — the
+**The question put to the user, verbatim:** _"No modem on the bench exposes an eUICC — the
 only SIM present reports no `eid`, and RM530N-GL eSIM capability is unproven for this unit.
 Can you supply an eUICC-capable modem (or confirm the RM530N-GL variant on the bench has
-one)? Otherwise eSIM closes `blocked` with its feature gate off and the docs stating so."*
+one)? Otherwise eSIM closes `blocked` with its feature gate off and the docs stating so."_

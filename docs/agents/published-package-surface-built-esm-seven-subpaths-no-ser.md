@@ -55,4 +55,3 @@ seven specifiers and no more — `.`, `./transport`, `./domain`, `./providers`,
 - **Removing `./testing` cannot pass the gate.** It is a row in `entries.ts` AND a
   literal in the shape test's `EXPECTED_SUBPATHS`, so dropping it from `package.json`
   fails four tests and dropping it from `entries.ts` too fails a fifth.
-

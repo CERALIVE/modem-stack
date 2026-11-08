@@ -59,4 +59,3 @@ classifier — not a string built around the payload — decides what the caller
 registers, so no bench modem can open a USSD session (phase-C todo 2, BLOCKER B4). The state
 machine, the refusal classifier, the timeout path and the redaction are fixture-proven; the
 live balance-check drill has not run.
-

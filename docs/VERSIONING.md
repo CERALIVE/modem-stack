@@ -61,11 +61,11 @@ for the source is read — both arches, `role=runtime` and `role=aux` alike — 
 is accepted only if all of them agree. Three conditions refuse the release outright, each
 naming the offending source:
 
-| Condition | Why it refuses |
-|-----------|----------------|
-| rows disagree on the counter (`.2` vs `.3`) | picking either risks publishing a downgrade |
-| rows mix counter and legacy `~ceraliveX.Y.Z` suffixes | the source's history is ambiguous |
-| a row's suffix is neither `~ceralive.[1-9][0-9]*` nor `~ceraliveX.Y.Z` | malformed input |
+| Condition                                                              | Why it refuses                              |
+| ---------------------------------------------------------------------- | ------------------------------------------- |
+| rows disagree on the counter (`.2` vs `.3`)                            | picking either risks publishing a downgrade |
+| rows mix counter and legacy `~ceraliveX.Y.Z` suffixes                  | the source's history is ambiguous           |
+| a row's suffix is neither `~ceralive.[1-9][0-9]*` nor `~ceraliveX.Y.Z` | malformed input                             |
 
 Two cases **bootstrap at `.1`** instead: a source whose previous-manifest rows are entirely
 legacy, and a rebuild with no previous manifest at all (the force-all bootstrap).
@@ -74,12 +74,12 @@ The current pins are ModemManager 1.24.2 (revision `-2`), libmbim 1.34.0, libqmi
 libqrtr-glib 1.4.0 (all `-1`), so a release that rebuilt only libqmi while the other three
 carried forward from `.1` would produce:
 
-| Source | Rebuilt? | Encoded `.deb` version |
-|--------|----------|------------------------|
-| ModemManager  | carried  | `1.24.2-2~ceralive.1` |
-| libmbim       | carried  | `1.34.0-1~ceralive.1` |
-| libqmi        | rebuilt  | `1.38.0-1~ceralive.2` |
-| libqrtr-glib  | carried  | `1.4.0-1~ceralive.1`  |
+| Source       | Rebuilt? | Encoded `.deb` version |
+| ------------ | -------- | ---------------------- |
+| ModemManager | carried  | `1.24.2-2~ceralive.1`  |
+| libmbim      | carried  | `1.34.0-1~ceralive.1`  |
+| libqmi       | rebuilt  | `1.38.0-1~ceralive.2`  |
+| libqrtr-glib | carried  | `1.4.0-1~ceralive.1`   |
 
 > The authoritative pin manifest is `packaging/upstream-pins.yaml`; the release workflow
 > derives `<upstream>-<rev>` from each source's `debian/changelog`, never from a value
@@ -167,12 +167,12 @@ The release workflow's **first** job validates the input tag against:
 
 Anything that does not match **fails closed before any other job runs**. In particular:
 
-| Input | Result | Why |
-|-------|--------|-----|
-| `v1.0.0` | ✅ accepted | canonical `vX.Y.Z` |
-| `v1.0.0-rc.1` | ❌ rejected | a pre-release tag inverts dpkg ordering — the companion takes the tag verbatim, and `dpkg` reads the `-rc.1` as a Debian revision, so the rc would sort **above** the final `1.0.0`, which is wrong |
-| `v1.0.0+build5` | ❌ rejected | build metadata has no meaning in a `.deb` version and is not part of the contract |
-| `1.0.0` | ❌ rejected | missing the `v` prefix |
+| Input           | Result      | Why                                                                                                                                                                                                 |
+| --------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `v1.0.0`        | ✅ accepted | canonical `vX.Y.Z`                                                                                                                                                                                  |
+| `v1.0.0-rc.1`   | ❌ rejected | a pre-release tag inverts dpkg ordering — the companion takes the tag verbatim, and `dpkg` reads the `-rc.1` as a Debian revision, so the rc would sort **above** the final `1.0.0`, which is wrong |
+| `v1.0.0+build5` | ❌ rejected | build metadata has no meaning in a `.deb` version and is not part of the contract                                                                                                                   |
+| `1.0.0`         | ❌ rejected | missing the `v` prefix                                                                                                                                                                              |
 
 The negative cases are locked by an executable test, `packaging/ci/test-tag-guard.sh`,
 which asserts the regex in `packaging/ci/tag-guard.sh` accepts only the `vX.Y.Z` shape.

@@ -17,4 +17,3 @@ Required readback, rollback and journal hooks are checked before execution; roll
 after a definite failure/readback mismatch, never after an unknown outcome. Public hook and
 reconciliation types are in `control/src/operations/contracts.ts`; the module is exported through
 the existing package root and adds no package subpath.
-

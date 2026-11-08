@@ -53,4 +53,3 @@ exactly like `usb-mode/certified-catalog.json`.
 `setCurrentBands` runs QUIESCED through the shared `ModemActor` for the same
 reason `setRadioModes` does: it re-registers the radio, so NM must stand down
 before the bearer drops underneath it rather than after.
-

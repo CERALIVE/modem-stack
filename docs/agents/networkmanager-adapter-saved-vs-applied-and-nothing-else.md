@@ -52,4 +52,3 @@ verdict. Coverage is `network-manager-adapter.test.ts`, driven by the stateful `
 harness in `control/test-support/fake-nm/` (real readback, no bus, no subprocess); its scope
 gate scans the module's comment-stripped source for radio/SIM/delete/identity identifiers and
 proves the strip non-vacuous in both directions.
-

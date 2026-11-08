@@ -31,4 +31,3 @@ Four decisions carry weight:
 Coverage: `control/src/backend/mapping.test.ts` (the read matrix, the
 fingerprint bump, and the everything-else-untouched control) plus the three
 own-number blocks in `control/src/redact.test.ts`.
-

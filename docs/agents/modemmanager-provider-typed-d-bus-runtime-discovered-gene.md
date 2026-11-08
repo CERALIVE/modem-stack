@@ -25,4 +25,3 @@ spawn `mmcli`, `qmicli`, or `mbimcli`; its detector has a non-vacuity control fo
 Private-session-bus coverage is `modem-manager-provider.integration.test.ts`. Operation-by-operation
 detail (which reads are generic, which writes stay refused, and the exact refusal vocabulary) lives in
 [`docs/MODEMMANAGER-PROVIDER.md`](../MODEMMANAGER-PROVIDER.md).
-

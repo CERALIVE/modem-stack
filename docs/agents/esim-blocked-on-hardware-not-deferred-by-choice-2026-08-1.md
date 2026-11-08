@@ -27,9 +27,8 @@ The **licensing half of the spike did complete** and binds any future adoption:
 - Redistributing it obliges **Corresponding Source from the same place** (AGPL-3.0 §6(d)).
   `apt.ceralive.tv` publishes binary indexes only — a source channel would have to exist
   BEFORE any lpac upload.
-- AGPL §13 attaches to **modified** versions only, so the rule is *ship unmodified or not at
-  all* — the same answer `POLICY.md`'s no-fork rule already gives.
+- AGPL §13 attaches to **modified** versions only, so the rule is _ship unmodified or not at
+  all_ — the same answer `POLICY.md`'s no-fork rule already gives.
 - Shipping form on a hypothetical GO: a first-party target-suite rebuild in `packaging/`, pinned
   like the other four sources. The stock Debian package (`lpac` 2.3.0-1) exists but is in
   testing/unstable only — **not** bookworm, **not** trixie.
-

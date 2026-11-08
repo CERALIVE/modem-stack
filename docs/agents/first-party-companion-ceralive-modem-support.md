@@ -34,4 +34,3 @@ asset to the frozen 9 × 2 closure as a single row with `build_arch` `all`. It i
 immutable release asset with TWO index memberships; apt-worker's publisher indexes it into
 both per-arch indexes. A per-arch build is forbidden — two byte-different files under one
 package/version key break the immutable-key rule.
-

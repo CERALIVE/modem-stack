@@ -64,4 +64,3 @@ slot number, and a signal reading across the package. It mirrors CeraUI's
 it never registers, so no bench modem can receive an SMS (todo-2 BLOCKER B4). Every
 claim here is fixture-proven, including the restart-recovery behaviour; what is
 missing is the board measurement, not the behaviour.
-

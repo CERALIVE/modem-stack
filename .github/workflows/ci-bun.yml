@@ -61,7 +61,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v4
         with:
-          predicate-quantifier: 'every'
+          predicate-quantifier: "every"
           filters: |
             code:
               - '!**/*.md'
@@ -95,7 +95,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
 
       # Node 26 is the CeraLive CI baseline AND the runtime the standalone consumer
       # fixture asserts on: `scripts/verify-consumers.ts` refuses anything but 26.x, so

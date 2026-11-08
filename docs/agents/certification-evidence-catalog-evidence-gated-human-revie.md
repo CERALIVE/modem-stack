@@ -128,4 +128,3 @@ enumeration through a sustained bonded uplink.
   exists anywhere in this repository" is true of the `providers/ufi-himi` gate it cites, but
   `usb-mode/runtime-capability.ts` carries Sierra's reviewed `AT!USBCOMP` forms, which is
   what makes the composition-switch operation `implemented` for Sierra.
-

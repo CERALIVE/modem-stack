@@ -9,7 +9,7 @@ directly on this shape.
 ## Why this library
 
 `@httptoolkit/dbus-native` is a pure-JavaScript D-Bus client (no libdbus / native
-addon), which is the deciding factor: it imports and runs under **Bun 1.4.3** with
+addon), which is the deciding factor: it imports and runs under **Bun 1.4.4** with
 **EXTERNAL** auth on a session bus — session-verified during A2.4, and pinned exactly at
 `0.1.5`. A native-addon client (anything binding libdbus) is a portability and
 cross-compile liability for the arm64 + amd64 device image; a pure-JS client is not.
@@ -27,19 +27,19 @@ and [`codec.ts`](./codec.ts) — never a caller.
 
 ## The seam contract
 
-* **No library types leak.** `index.ts` re-exports only the transport's own types
+- **No library types leak.** `index.ts` re-exports only the transport's own types
   (`DbusValue`, `DbusVariant`, `MethodCall`, `SignalEvent`, …). The raw library types
   live in [`dbus-native.ts`](./dbus-native.ts) and go no further. A guard test asserts
   the package entry (`../index.ts`) never re-exports the library.
-* **Lossless 64-bit.** D-Bus `x` (INT64) and `t` (UINT64) are `bigint` end-to-end, never
+- **Lossless 64-bit.** D-Bus `x` (INT64) and `t` (UINT64) are `bigint` end-to-end, never
   a JS `number`. On decode the library runs with `ReturnLongjs: true` and we convert its
   Long.js objects to `bigint` via their exact decimal string; on encode we require a
   `bigint` and hand the library a decimal string (its only lossless 64-bit input).
   Passing a `number` for a 64-bit field throws `BigIntRequiredError`.
-* **`h` is unsupported.** UNIX_FD / file-descriptor passing is rejected up front with a
+- **`h` is unsupported.** UNIX_FD / file-descriptor passing is rejected up front with a
   typed `UnsupportedSignatureError` — in an outgoing signature, a reply/signal signature,
   or nested in a variant — never silently dropped or coerced.
-* **Variants round-trip.** A decoded variant keeps its inner signature
+- **Variants round-trip.** A decoded variant keeps its inner signature
   (`DbusVariant { signature, value }`), so encode/decode is symmetric.
 
 ## Conformance
