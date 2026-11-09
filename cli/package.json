@@ -10,7 +10,7 @@
 	},
 	"dependencies": {
 		"@ceralive/modem-control": "workspace:*",
-		"zod": "4.4.3"
+		"zod": "4.6.7"
 	},
 	"scripts": {
 		"test": "bun test",
