@@ -20,4 +20,3 @@ documented in [`docs/DOMAIN-CONTRACTS.md`](../DOMAIN-CONTRACTS.md).
   classified idempotent reads may auto-retry.
 
 This layer is pure data and functions: no daemon, socket, network endpoint, or CeraUI import.
-

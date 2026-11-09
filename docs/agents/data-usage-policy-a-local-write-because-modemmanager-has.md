@@ -93,4 +93,3 @@ copied, recorded in [`docs/adr/ADR-STAY-TYPESCRIPT.md`](../adr/ADR-STAY-TYPESCRI
 Coverage: `control/src/backend/usage/sampling.test.ts` (the rollback fixture plus every
 unmeasured case) and `control/src/backend/usage/persistence.test.ts` (the persisted
 negative, from both the bytes on disk and the behaviour after a reload).
-

@@ -94,4 +94,3 @@ Coverage: `journal/journal-replay.test.ts` (write N, drop the engine with no shu
 reconstruct from disk, assert the pending/unknown enumeration), `journal-corruption.test.ts`
 (trailing, mid-file, torn, wrong-version and missing-field damage), `legacy-ceraui.test.ts`,
 and `journal-path-injection.test.ts`. Fixtures: `control/test-support/journal-fixture.ts`.
-

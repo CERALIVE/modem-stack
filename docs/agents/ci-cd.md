@@ -98,7 +98,7 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
   it. **Issue-only** — it never edits `packaging/upstream-pins.yaml` and never dispatches a
   build, which is why it is the ONLY workflow here that escalates `issues: write` and why it
   holds no dispatch token. The stable filter is the substance: all four projects publish their
-  unstable train on the same tag namespace (ModemManager `1.25.95` → Debian *experimental*), so
+  unstable train on the same tag namespace (ModemManager `1.25.95` → Debian _experimental_), so
   `-rc`/`-dev`, non-`X.Y.Z`, **odd-minor** and `.9x`-micro tags are rejected, as are `~`-bearing
   Debian revisions. A newer upstream release with no Debian packaging tag reports the distinct
   `upstream-ahead-no-packaging` — NOT `behind`, because with no `<upstream>-<rev>` pair there is
@@ -109,4 +109,3 @@ major action versions, per-manager caches, weekly grouped Dependabot, test-befor
 Action pins track the latest stable **major** (resolved via the `gh api` releases/latest
 endpoint); Dependabot keeps them current. JS/TS CI runs on **Node 26** — the CeraLive CI
 baseline, and the runtime the published tarball's consumer fixture asserts on.
-

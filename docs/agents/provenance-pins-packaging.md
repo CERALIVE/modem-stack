@@ -5,12 +5,12 @@
 The four rebuilt sources are pinned in `packaging/upstream-pins.yaml`, re-verified end-to-end
 by `packaging/ci/verify-upstream-pins.sh` in an isolated `GNUPGHOME`. Current pins:
 
-| Source | Upstream | Salsa packaging tag |
-|--------|----------|---------------------|
-| ModemManager | 1.24.2 | `debian/1.24.2-2` |
-| libmbim | 1.34.0 | `debian/1.34.0-1` |
-| libqmi | 1.38.0 | `debian/1.38.0-1` |
-| libqrtr-glib | 1.4.0 | `debian/1.4.0-1` |
+| Source       | Upstream | Salsa packaging tag |
+| ------------ | -------- | ------------------- |
+| ModemManager | 1.24.2   | `debian/1.24.2-2`   |
+| libmbim      | 1.34.0   | `debian/1.34.0-1`   |
+| libqmi       | 1.38.0   | `debian/1.38.0-1`   |
+| libqrtr-glib | 1.4.0    | `debian/1.4.0-1`    |
 
 Each pin carries a **four-link provenance chain**, all re-checked and failing closed with a
 named field on any drift:
@@ -40,4 +40,3 @@ and closes it when everything is current again. It is **issue-only**: it never e
 holding `issues: write` and no dispatch token. A newer upstream release with no matching
 Debian packaging tag reports the distinct `upstream-ahead-no-packaging` — there is no
 `<upstream>-<rev>` pair to pin, so there is no bump to recommend.
-

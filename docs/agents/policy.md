@@ -12,4 +12,3 @@ go **upstream first**. The Phase A → Phase B scope boundary is **version-gated
 authorized from the `v1.0.0` tag forward. Full terms: `POLICY.md` §4.
 The Fibocom **FM350** modem (PCIe / `mtk_t7xx`) is documented-**deferred**, not supported —
 rationale, source cites, and the open gates are recorded in `docs/FM350-DECISION.md`.
-

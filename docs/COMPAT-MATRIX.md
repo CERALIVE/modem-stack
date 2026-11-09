@@ -8,7 +8,7 @@ vocabulary that cannot overstate itself.
 Two documents sit either side of this one and are not duplicated here:
 
 - [`VENDOR-QUIRKS.md`](VENDOR-QUIRKS.md) is the sourced per-vendor reading list, with a
-  pinned citation for every behavioural claim. When you want to know *why* a cell below
+  pinned citation for every behavioural claim. When you want to know _why_ a cell below
   reads the way it does, that is the document, organised as one `Quirk | Evidence | Posture`
   table per vendor behind a "how to read the posture column" preamble, a pinned six-key
   SOURCES table, and a closing "what this does NOT license". Do not re-derive its content
@@ -27,7 +27,7 @@ unavailable → implemented → enabled → capable → certified
 ```
 
 - **`unavailable`** — not shipped in this build, or the device positively lacks it. It is
-  the rung *below* `implemented`, never above it.
+  the rung _below_ `implemented`, never above it.
 - **`implemented`** — code exists in this repository, gate OFF, unproven on the device.
 - **`enabled`** — gate ON, capability unknown.
 - **`capable`** — gate ON, device advertises it. The floor for offering a control.
@@ -59,30 +59,30 @@ Vendor and model, firmware/SKU including FCC state, and protocol/composition. Th
 column names the classifier tier that placed the row; `family` is the Table B column the row
 answers under.
 
-| # | Vendor / model | Firmware / SKU, FCC state | Protocol / composition | Classifier evidence | Family |
-|---|---|---|---|---|---|
-| 1 | Quectel RM530N-GL | `RM530NGLAAR05A01M4G`; FCC coverage `absent` | QMI raw-IP (`2c7c`) | vendor id, whole range cellular | Quectel |
-| 2 | SIMCom SIM7600G-H | firmware unrecorded on the bench; FCC coverage `absent` | QMI raw-IP (`1e0e`); one Zero-CD id `1e0e:f000` | vendor id | SIMCom |
-| 3 | Fibocom FM350-GL, carrier-mounted | carrier id `0e8d:7127`; FCC coverage `unknown` | RNDIS over the carrier's USB composition | no classifier row, deliberately | Fibocom |
-| 4 | Fibocom FM350-GL, native | PCI `14c3:4d75` under `mtk_t7xx`; FCC coverage `unknown` | PCIe, not USB | none; documented-deferred | see note **F** |
-| 5 | Sierra EM74xx | `1199:9071`, `1199:907b`; FCC coverage `absent` for these ids | MBIM / QMI | `mainline-kernel` | Sierra |
-| 6 | Sierra EM74xx, FCC-locked ids | `1199:9079`, `03f0:4e1d` (HP), `413c:81a3` / `413c:81a8` (Dell); FCC coverage `present` | MBIM / QMI | `modemmanager-1.24.2-fcc` | Sierra |
-| 7 | Sierra EM75xx | `1199:9091`, `1199:c081`; FCC coverage `absent` | MBIM / QMI | `mainline-kernel` | Sierra |
-| 8 | Sierra EM919x | `1199:90d3`; FCC coverage `absent` | MBIM / QMI | `mainline-kernel` | Sierra |
-| 9 | Telit module families | `1bc7:` `1031` LE910C1-EUX, `1034` LE910C4-WWX, `1040` LE922A, `1050` FN980, `1060` LN920, `1070` FN990A, `1080` FE990A, `10a0` FN920C04, `1100` ME910, `1200` LE920; FCC coverage `absent` | one application PID per composition: QMI rmnet, MBIM, RNDIS, ECM | `mainline-kernel` | Telit |
-| 10 | u-blox LARA-R6 | `1546:1311` / `1312` / `1313`; FCC coverage `absent` | per-PID composition | `mainline-kernel` | u-blox |
-| 11 | u-blox LARA-L6 | `1546:1341` / `1342` / `1343`; FCC coverage `absent` | per-PID composition | `mainline-kernel` | u-blox |
-| 12 | NETGEAR LB1120 | `0846:68e1`, `familyKind: 'router-webui'`; FCC coverage `absent` | Ethernet-over-USB tether plus a vendor web UI | `usb-ids-registry` | NETGEAR |
-| 13 | Huawei E3372H HiLink | firmware `22.200.05.00.1080`, password type 3; FCC coverage `absent` | CDC-ECM plus HTTP web UI, no control port | vendor id `12d1` | Huawei |
-| 14 | Huawei E3372H HiLink | firmware `22.333.01.00.00`, password type 4; FCC coverage `absent` | CDC-ECM plus HTTP web UI, no control port | vendor id `12d1` | Huawei |
-| 15 | Huawei Zero-CD installer personality | e.g. `12d1:1f01`, target `14db`; FCC coverage `absent` | mass-storage installer until mode-switched | vendor id plus a `usb_modeswitch` trigger | Huawei |
-| 16 | ZTE MF79U | legacy base64 under `LOGIN`; FCC coverage `absent` | router web UI (`goform`), Zero-CD lineage | vendor id `19d2` | ZTE |
-| 17 | ZTE MF79U | `LD`-salted SHA-256 under the same bare `LOGIN`; FCC coverage `absent` | router web UI (`goform`) | vendor id `19d2` | ZTE |
-| 18 | ZTE MF266 | salted SHA-256 under `LOGIN_MULTI_USER`, `stok` + `RD` + derived `AD`; FCC coverage `absent` | router web UI (`goform`) | vendor id `19d2` | ZTE |
-| 19 | ZTE, unrecognised firmware | fingerprinted, read-only telemetry profile; FCC coverage `absent` | router web UI (`goform`) | vendor id `19d2` | ZTE |
-| 20 | Qualcomm UFI / HIMI | `05c6:9091`, measured four-interface composition; FCC coverage `absent` | QMI plus an ADB-class interface; HIMI HTTP telemetry | vendor id `05c6` | UFI/HIMI |
-| 21 | Qualcomm UFI / HIMI | `05c6:9024`; FCC coverage `absent` | RNDIS plus ADB | vendor id `05c6` | UFI/HIMI |
-| 22 | Phone tether, any vendor | not applicable; FCC coverage `absent` | RNDIS or ECM/NCM data interface, no control interface | none; no positive cellular evidence | Tether |
+| #   | Vendor / model                       | Firmware / SKU, FCC state                                                                                                                                                                   | Protocol / composition                                           | Classifier evidence                       | Family         |
+| --- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------- | -------------- |
+| 1   | Quectel RM530N-GL                    | `RM530NGLAAR05A01M4G`; FCC coverage `absent`                                                                                                                                                | QMI raw-IP (`2c7c`)                                              | vendor id, whole range cellular           | Quectel        |
+| 2   | SIMCom SIM7600G-H                    | firmware unrecorded on the bench; FCC coverage `absent`                                                                                                                                     | QMI raw-IP (`1e0e`); one Zero-CD id `1e0e:f000`                  | vendor id                                 | SIMCom         |
+| 3   | Fibocom FM350-GL, carrier-mounted    | carrier id `0e8d:7127`; FCC coverage `unknown`                                                                                                                                              | RNDIS over the carrier's USB composition                         | no classifier row, deliberately           | Fibocom        |
+| 4   | Fibocom FM350-GL, native             | PCI `14c3:4d75` under `mtk_t7xx`; FCC coverage `unknown`                                                                                                                                    | PCIe, not USB                                                    | none; documented-deferred                 | see note **F** |
+| 5   | Sierra EM74xx                        | `1199:9071`, `1199:907b`; FCC coverage `absent` for these ids                                                                                                                               | MBIM / QMI                                                       | `mainline-kernel`                         | Sierra         |
+| 6   | Sierra EM74xx, FCC-locked ids        | `1199:9079`, `03f0:4e1d` (HP), `413c:81a3` / `413c:81a8` (Dell); FCC coverage `present`                                                                                                     | MBIM / QMI                                                       | `modemmanager-1.24.2-fcc`                 | Sierra         |
+| 7   | Sierra EM75xx                        | `1199:9091`, `1199:c081`; FCC coverage `absent`                                                                                                                                             | MBIM / QMI                                                       | `mainline-kernel`                         | Sierra         |
+| 8   | Sierra EM919x                        | `1199:90d3`; FCC coverage `absent`                                                                                                                                                          | MBIM / QMI                                                       | `mainline-kernel`                         | Sierra         |
+| 9   | Telit module families                | `1bc7:` `1031` LE910C1-EUX, `1034` LE910C4-WWX, `1040` LE922A, `1050` FN980, `1060` LN920, `1070` FN990A, `1080` FE990A, `10a0` FN920C04, `1100` ME910, `1200` LE920; FCC coverage `absent` | one application PID per composition: QMI rmnet, MBIM, RNDIS, ECM | `mainline-kernel`                         | Telit          |
+| 10  | u-blox LARA-R6                       | `1546:1311` / `1312` / `1313`; FCC coverage `absent`                                                                                                                                        | per-PID composition                                              | `mainline-kernel`                         | u-blox         |
+| 11  | u-blox LARA-L6                       | `1546:1341` / `1342` / `1343`; FCC coverage `absent`                                                                                                                                        | per-PID composition                                              | `mainline-kernel`                         | u-blox         |
+| 12  | NETGEAR LB1120                       | `0846:68e1`, `familyKind: 'router-webui'`; FCC coverage `absent`                                                                                                                            | Ethernet-over-USB tether plus a vendor web UI                    | `usb-ids-registry`                        | NETGEAR        |
+| 13  | Huawei E3372H HiLink                 | firmware `22.200.05.00.1080`, password type 3; FCC coverage `absent`                                                                                                                        | CDC-ECM plus HTTP web UI, no control port                        | vendor id `12d1`                          | Huawei         |
+| 14  | Huawei E3372H HiLink                 | firmware `22.333.01.00.00`, password type 4; FCC coverage `absent`                                                                                                                          | CDC-ECM plus HTTP web UI, no control port                        | vendor id `12d1`                          | Huawei         |
+| 15  | Huawei Zero-CD installer personality | e.g. `12d1:1f01`, target `14db`; FCC coverage `absent`                                                                                                                                      | mass-storage installer until mode-switched                       | vendor id plus a `usb_modeswitch` trigger | Huawei         |
+| 16  | ZTE MF79U                            | legacy base64 under `LOGIN`; FCC coverage `absent`                                                                                                                                          | router web UI (`goform`), Zero-CD lineage                        | vendor id `19d2`                          | ZTE            |
+| 17  | ZTE MF79U                            | `LD`-salted SHA-256 under the same bare `LOGIN`; FCC coverage `absent`                                                                                                                      | router web UI (`goform`)                                         | vendor id `19d2`                          | ZTE            |
+| 18  | ZTE MF266                            | salted SHA-256 under `LOGIN_MULTI_USER`, `stok` + `RD` + derived `AD`; FCC coverage `absent`                                                                                                | router web UI (`goform`)                                         | vendor id `19d2`                          | ZTE            |
+| 19  | ZTE, unrecognised firmware           | fingerprinted, read-only telemetry profile; FCC coverage `absent`                                                                                                                           | router web UI (`goform`)                                         | vendor id `19d2`                          | ZTE            |
+| 20  | Qualcomm UFI / HIMI                  | `05c6:9091`, measured four-interface composition; FCC coverage `absent`                                                                                                                     | QMI plus an ADB-class interface; HIMI HTTP telemetry             | vendor id `05c6`                          | UFI/HIMI       |
+| 21  | Qualcomm UFI / HIMI                  | `05c6:9024`; FCC coverage `absent`                                                                                                                                                          | RNDIS plus ADB                                                   | vendor id `05c6`                          | UFI/HIMI       |
+| 22  | Phone tether, any vendor             | not applicable; FCC coverage `absent`                                                                                                                                                       | RNDIS or ECM/NCM data interface, no control interface            | none; no positive cellular evidence       | Tether         |
 
 **Note F — the FM350-GL is two rows because it is two devices.** Row 3 is the carrier board
 that presents it over USB; row 4 is the native PCIe part under `mtk_t7xx`, which has no USB
@@ -110,29 +110,29 @@ wire.
 ## Table B — operation × family
 
 Eighteen operations, from first enumeration through a sustained bonded uplink. Columns are
-the Table A families. Read every cell as a claim about *this repository's code*, at the rung
+the Table A families. Read every cell as a claim about _this repository's code_, at the rung
 the ladder allows a document to state.
 
-| # | Operation | Quectel | SIMCom | Fibocom | Sierra | Telit | u-blox | NETGEAR | Huawei | ZTE | UFI/HIMI | Tether |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | Enumerate: USB descriptors, `/sys` composition, udev properties | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented |
-| 2 | Classify: device class from interfaces and drivers | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented |
-| 3 | Identity: `PhysicalModemId` stable across replug | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented |
-| 4 | Control surface: an MM control port, or a vendor HTTP session | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
-| 5 | SIM presence as evidence | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 6 | SIM unlock: PIN and PUK | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 7 | Registration and cell context read | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
-| 8 | Signal read, including the per-RAT extended metrics | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
-| 9 | Radio capability read: mode and band catalogs | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | unavailable | unavailable | unavailable |
-| 10 | Mode write, including the 5G preference postures | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | unavailable | unavailable | unavailable |
-| 11 | Band lock write, certification-gated | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 12 | USB composition switch | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 13 | FCC auto-unlock policy reconciliation | unavailable | unavailable | unavailable | implemented | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 14 | SMS list and read, never send or delete | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 15 | USSD session | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 16 | GNSS fix, live only, no history | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
-| 17 | Bearer and APN activation | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | unavailable | unavailable | unavailable |
-| 18 | Sustained bonded uplink: flap, re-enumeration, applied-state recovery | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
+| #   | Operation                                                             | Quectel     | SIMCom      | Fibocom     | Sierra      | Telit       | u-blox      | NETGEAR     | Huawei      | ZTE         | UFI/HIMI    | Tether      |
+| --- | --------------------------------------------------------------------- | ----------- | ----------- | ----------- | ----------- | ----------- | ----------- | ----------- | ----------- | ----------- | ----------- | ----------- |
+| 1   | Enumerate: USB descriptors, `/sys` composition, udev properties       | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented |
+| 2   | Classify: device class from interfaces and drivers                    | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented |
+| 3   | Identity: `PhysicalModemId` stable across replug                      | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented | implemented |
+| 4   | Control surface: an MM control port, or a vendor HTTP session         | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
+| 5   | SIM presence as evidence                                              | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 6   | SIM unlock: PIN and PUK                                               | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 7   | Registration and cell context read                                    | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
+| 8   | Signal read, including the per-RAT extended metrics                   | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
+| 9   | Radio capability read: mode and band catalogs                         | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | unavailable | unavailable | unavailable |
+| 10  | Mode write, including the 5G preference postures                      | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | unavailable | unavailable | unavailable |
+| 11  | Band lock write, certification-gated                                  | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 12  | USB composition switch                                                | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 13  | FCC auto-unlock policy reconciliation                                 | unavailable | unavailable | unavailable | implemented | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 14  | SMS list and read, never send or delete                               | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 15  | USSD session                                                          | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 16  | GNSS fix, live only, no history                                       | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | unavailable | unavailable | unavailable | unavailable |
+| 17  | Bearer and APN activation                                             | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | unavailable | unavailable | unavailable |
+| 18  | Sustained bonded uplink: flap, re-enumeration, applied-state recovery | implemented | implemented | implemented | implemented | implemented | implemented | unavailable | implemented | implemented | implemented | unavailable |
 
 ### Reading the cells that are easy to misread
 
@@ -235,16 +235,16 @@ before its cell can move past `implemented`. The runbook that captures each one 
 [`BENCH.md`](BENCH.md) (RB-1 … RB-18), and that document owns the per-runbook status; this
 matrix links and does not restate it.
 
-| Table B operations | What hardware is required | Where the evidence is captured |
-|---|---|---|
-| 1-3 | A device attached, for a real descriptor and udev capture; the derivations themselves are hardware-free | RB-9 fleet inventory, RB-2 slot-UID stability, RB-18 Sierra identity and composition |
-| 4 | The device's control interface actually claimed by a driver and, for routers, a reachable web UI | RB-1 system-bus probe, RB-14 Huawei personality, RB-15 ZTE, RB-16 FM350 |
-| 5-7 | A physical SIM, and a network the SIM registers on | RB-4 PIN/PUK, and the per-SKU captures RB-11 … RB-15 |
-| 8-9 | A registered modem reporting live measurements | RB-11 … RB-15 |
-| 10-12 | A disruptive write, its readback, and a re-enumeration | RB-5 certified USB-mode transition, RB-11 … RB-15 stage 2 |
-| 13 | A covered Sierra unit, and a boot to prove the reconciler re-materialises the link | RB-12 Sierra locked-state capture, RB-18 |
-| 14-16 | A SIM that can receive a message, open a session, and a GNSS antenna | RB-11 … RB-15 |
-| 17-18 | A live bearer and a deliberate flap under load | RB-17 modem-flap resilience, RB-10 hub VBUS cycle, RB-6 usage accuracy |
+| Table B operations | What hardware is required                                                                               | Where the evidence is captured                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 1-3                | A device attached, for a real descriptor and udev capture; the derivations themselves are hardware-free | RB-9 fleet inventory, RB-2 slot-UID stability, RB-18 Sierra identity and composition |
+| 4                  | The device's control interface actually claimed by a driver and, for routers, a reachable web UI        | RB-1 system-bus probe, RB-14 Huawei personality, RB-15 ZTE, RB-16 FM350              |
+| 5-7                | A physical SIM, and a network the SIM registers on                                                      | RB-4 PIN/PUK, and the per-SKU captures RB-11 … RB-15                                 |
+| 8-9                | A registered modem reporting live measurements                                                          | RB-11 … RB-15                                                                        |
+| 10-12              | A disruptive write, its readback, and a re-enumeration                                                  | RB-5 certified USB-mode transition, RB-11 … RB-15 stage 2                            |
+| 13                 | A covered Sierra unit, and a boot to prove the reconciler re-materialises the link                      | RB-12 Sierra locked-state capture, RB-18                                             |
+| 14-16              | A SIM that can receive a message, open a session, and a GNSS antenna                                    | RB-11 … RB-15                                                                        |
+| 17-18              | A live bearer and a deliberate flap under load                                                          | RB-17 modem-flap resilience, RB-10 hub VBUS cycle, RB-6 usage accuracy               |
 
 Two consequences follow, and both are deliberate:
 

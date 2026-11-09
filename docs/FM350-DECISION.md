@@ -27,14 +27,14 @@ It is **not** a USB modem and presents **no** USB VID:PID.
 
 ## The mechanical rule
 
-Given the question *"does this repo add FM350 device enablement to `device-classifier.ts`?"*,
+Given the question _"does this repo add FM350 device enablement to `device-classifier.ts`?"_,
 apply this decision procedure against the **verified upstream ModemManager 1.24.2 source**:
 
 1. Extract, verbatim from the MM source, how the plugin layer matches the FM350.
 2. **IF** the source matches the device by a **USB VID:PID** (a USB-bus identity):
    - the device is in scope for `device-classifier.ts` (which is a **USB-only** model);
-   - **sub-branch — contrary-evidence HARD STOP:** if the source names an *explicit FM350
-     USB VID:PID*, do not improvise a classifier representation — stop and surface the exact
+   - **sub-branch — contrary-evidence HARD STOP:** if the source names an _explicit FM350
+     USB VID:PID_, do not improvise a classifier representation — stop and surface the exact
      citation to a human; any classifier change becomes a user decision.
 3. **ELSE IF** the source matches the device by a **PCIe identity** (a PCI vendor:device
    pair gated on a PCIe kernel driver + `wwan`/`net` subsystems, with no USB VID:PID):
@@ -166,15 +166,15 @@ does not overturn).
 
 **Observed identity**
 
-| Field | Value |
-|-------|-------|
-| USB `VID:PID` | **`0e8d:7127`** |
-| sysfs node | `/sys/bus/usb/devices/1-1.2` → `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb1/1-1/1-1.2` |
-| udev `ID_PATH` | `platform-xhci-hcd.0.auto-usb-0:1.2` |
-| `manufacturer` / `product` | `Fibocom Wireless Inc.` / `FM350-GL` |
-| `ID_VENDOR_FROM_DATABASE` | **`MediaTek Inc.`** |
-| Device descriptor | `bDeviceClass=ef` `bDeviceSubClass=02` `bDeviceProtocol=01` (IAD composite), `bNumInterfaces=10`, `bcdDevice=0001`, USB 2.10 @ 480 Mb/s |
-| `ID_USB_INTERFACES` | `:0202ff:0a0000:ff0000:ff4201:` |
+| Field                      | Value                                                                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| USB `VID:PID`              | **`0e8d:7127`**                                                                                                                         |
+| sysfs node                 | `/sys/bus/usb/devices/1-1.2` → `/sys/devices/platform/fc400000.usb/xhci-hcd.0.auto/usb1/1-1/1-1.2`                                      |
+| udev `ID_PATH`             | `platform-xhci-hcd.0.auto-usb-0:1.2`                                                                                                    |
+| `manufacturer` / `product` | `Fibocom Wireless Inc.` / `FM350-GL`                                                                                                    |
+| `ID_VENDOR_FROM_DATABASE`  | **`MediaTek Inc.`**                                                                                                                     |
+| Device descriptor          | `bDeviceClass=ef` `bDeviceSubClass=02` `bDeviceProtocol=01` (IAD composite), `bNumInterfaces=10`, `bcdDevice=0001`, USB 2.10 @ 480 Mb/s |
+| `ID_USB_INTERFACES`        | `:0202ff:0a0000:ff0000:ff4201:`                                                                                                         |
 
 **Observed driver bindings — NOT `cdc_mbim`.** The Branch-A template predicted `cdc_mbim` as
 the expected driver family for a USB MBIM personality. That prediction is **wrong for this
@@ -199,8 +199,8 @@ unit**: the composition is RNDIS + AT, with no MBIM function at all.
 **`0e8d` matches NOTHING previously considered in this record.** It is neither the PCI vendor
 `14c3` of Citations 1-2, nor any of the fibocom USB plugin's vendor ids `0x2cb7` / `0x1782` /
 `0x1508` from Citation 3. It is a **fourth, previously unconsidered vendor id** — MediaTek's
-*USB* vendor id per the hwdb (`ID_VENDOR_FROM_DATABASE=MediaTek Inc.`), as distinct from
-MediaTek's *PCI* vendor id `14c3`. The product id `7127` likewise appears nowhere in the MM
+_USB_ vendor id per the hwdb (`ID_VENDOR_FROM_DATABASE=MediaTek Inc.`), as distinct from
+MediaTek's _PCI_ vendor id `14c3`. The product id `7127` likewise appears nowhere in the MM
 1.24.2 tree (Citation 4 enumerated every `14c3`/`4d75` occurrence; neither `0e8d` nor `7127`
 was among them), and it is not the `0e8d:7126` bootloader id RB-16 was written to look for.
 
@@ -237,7 +237,7 @@ run (RK3588 root complex `1d87:3588` ×3, Realtek `10ec:b852` / `10ec:8125`) —
 `/sys/class/wwan/` does not exist, `mtk_t7xx` not loaded. So this is not a module that also
 appeared on PCIe; on this bench it is USB-only.
 
-**What this does and does not overturn.** Citations 1-4 audited the MM 1.24.2 *plugin* layer
+**What this does and does not overturn.** Citations 1-4 audited the MM 1.24.2 _plugin_ layer
 and concluded no plugin matches an FM350 by USB VID:PID. That conclusion is **not** falsified
 by this observation — MM here claims the device through the `generic` plugin (the fallback for
 a device exposing AT ports), precisely because no vendor plugin's VID table contains `0e8d`.
@@ -265,11 +265,11 @@ about each: gate 1 is verified, gate 2 remains untested on the production PCIe t
 gate 3 is cleared for the carrier-mediated USB topology after correcting the downstream
 forward-port.
 
-| # | Gate | Requirement | State | Basis |
-|---|------|-------------|-------|-------|
-| 1 | MM version floor | ModemManager **≥ 1.24.2** (the release carrying the mtk-plugin FM350 fixes) | **CLEARED** | This repo now ships ModemManager **1.24.2** — see `packaging/upstream-pins.yaml` (`sources.modemmanager.upstream_tag: "1.24.2"`). The version-floor gate is satisfied. |
-| 2 | Kernel | The `mtk_t7xx` PCIe WWAN driver present and enumerating the module over PCIe on the target hardware | **OPEN** | Not validated on real bench hardware in this work. No target-kernel `mtk_t7xx` bring-up has been performed or observed. |
-| 3 | HIL (hardware-in-the-loop) | A physical FM350 module probed end-to-end through the stack on a bench device | **CLEARED — USB CARRIER** | The follow-up restored BELABOX's omitted `enabling_modem_init` override (`ATZ0`, not `ATZ`). The unit registered home, attached packet service, established the RNDIS bearer, assigned `10.0.163.14/32` to `enx000011121314`, and `curl --interface enx000011121314 https://example.com` returned HTTP 200. See [Follow-up root cause and passing HIL](#follow-up-root-cause-and-passing-hil-2026-08-23). |
+| #   | Gate                       | Requirement                                                                                         | State                     | Basis                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | -------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | MM version floor           | ModemManager **≥ 1.24.2** (the release carrying the mtk-plugin FM350 fixes)                         | **CLEARED**               | This repo now ships ModemManager **1.24.2** — see `packaging/upstream-pins.yaml` (`sources.modemmanager.upstream_tag: "1.24.2"`). The version-floor gate is satisfied.                                                                                                                                                                                                                                    |
+| 2   | Kernel                     | The `mtk_t7xx` PCIe WWAN driver present and enumerating the module over PCIe on the target hardware | **OPEN**                  | Not validated on real bench hardware in this work. No target-kernel `mtk_t7xx` bring-up has been performed or observed.                                                                                                                                                                                                                                                                                   |
+| 3   | HIL (hardware-in-the-loop) | A physical FM350 module probed end-to-end through the stack on a bench device                       | **CLEARED — USB CARRIER** | The follow-up restored BELABOX's omitted `enabling_modem_init` override (`ATZ0`, not `ATZ`). The unit registered home, attached packet service, established the RNDIS bearer, assigned `10.0.163.14/32` to `enx000011121314`, and `curl --interface enx000011121314 https://example.com` returned HTTP 200. See [Follow-up root cause and passing HIL](#follow-up-root-cause-and-passing-hil-2026-08-23). |
 
 Gate 1 being CLEARED does **not** imply the FM350 works on the production topology — it only
 removes the upstream version-floor obstacle. Gate 2 remains a PCIe hardware-gated unknown.
@@ -475,12 +475,12 @@ A read-only capture pass re-verified the carrier-mounted unit on the same board 
 the first **AT-level** evidence for it. Full record:
 [`COMPOSITION-EVIDENCE.md`](COMPOSITION-EVIDENCE.md).
 
-| Query | Response |
-|-------|----------|
-| `AT+CGMR` | `81600.0000.00.19.17.10` (matches `mmcli`'s `modem.generic.revision`) |
-| `AT+GTPKGVER?` | `81600.0000.00.19.17.10_5001.0000.030.000.026_B77` |
-| `AT+GTUSBMODE?` | `41` |
-| `AT+GTUSBMODE=?` | `(40,41)` |
+| Query            | Response                                                              |
+| ---------------- | --------------------------------------------------------------------- |
+| `AT+CGMR`        | `81600.0000.00.19.17.10` (matches `mmcli`'s `modem.generic.revision`) |
+| `AT+GTPKGVER?`   | `81600.0000.00.19.17.10_5001.0000.030.000.026_B77`                    |
+| `AT+GTUSBMODE?`  | `41`                                                                  |
+| `AT+GTUSBMODE=?` | `(40,41)`                                                             |
 
 Only bare-execute, READ (`?`), and TEST (`=?`) forms were sent; **no SET form**, and the
 unit's `0e8d:7127` identity was read from sysfs before and after and was unchanged.
@@ -540,7 +540,7 @@ confident-sounding wrong class). Therefore:
 
 - No classifier entry, branch, type, or fixture is added for the FM350.
 - The classifier's four classes are unchanged. There is **no** fifth "deferred" class and
-  none is added — "deferred" is the status of *this decision record*, never a device class.
+  none is added — "deferred" is the status of _this decision record_, never a device class.
 - If a mis-fed FM350-shaped descriptor were ever handed to the USB-only classifier, the
   correct, truthful result is `unmanaged` (an unrecognized device), with no mode-switch
   recommendation. That behavior is exercised by the negative-drill test whose output is

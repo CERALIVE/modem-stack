@@ -36,13 +36,13 @@ durable claim about the SOURCE) and `read` (`not-reported`, `not-observed`, `mal
 whether to HIDE a control or show it pending by branching on that class, never on the bare
 fact that a value is absent. The three distinctions this buys, all pinned by tests:
 
-| Situation | Reason | Class |
-|---|---|---|
-| ModemManager exposes no bar scale, only a percentage | `unsupported` | capability |
-| The `Sim` interface was never read | `not-observed` | read |
-| `Modem.State` was absent from the payload | `not-reported` | read |
-| `Sim.EsimStatus` was present but decoded to nothing | `malformed` | read |
-| The HiLink session answered `125002` | `auth-expired` | read |
+| Situation                                            | Reason         | Class      |
+| ---------------------------------------------------- | -------------- | ---------- |
+| ModemManager exposes no bar scale, only a percentage | `unsupported`  | capability |
+| The `Sim` interface was never read                   | `not-observed` | read       |
+| `Modem.State` was absent from the payload            | `not-reported` | read       |
+| `Sim.EsimStatus` was present but decoded to nothing  | `malformed`    | read       |
+| The HiLink session answered `125002`                 | `auth-expired` | read       |
 
 `metricUnknownReasonFromRouter` is a WIDENING, never a re-classification — every
 `RouterSignalUnknownReason` member keeps its exact meaning.
@@ -67,10 +67,10 @@ returns an IMSI and an ICCID, and they ARE retained — normalization does not g
 what a diagnostician may need. Anything that logs, serializes or files a diagnostics block
 must route it through `redactObservationDiagnostics`, which runs the package's own key-based
 `redact`, so the classes masked here are the classes masked everywhere else. Retention and
- disclosure are separate decisions; this layer only guarantees the first. The former B5
- gap is closed: the shared redactor masks `imei`, `EquipmentIdentifier`, separator variants,
- and dotted mmcli spellings. The raw diagnostics block still contains source values in
- memory, so every serialization boundary must continue to call the redactor.
+disclosure are separate decisions; this layer only guarantees the first. The former B5
+gap is closed: the shared redactor masks `imei`, `EquipmentIdentifier`, separator variants,
+and dotted mmcli spellings. The raw diagnostics block still contains source values in
+memory, so every serialization boundary must continue to call the redactor.
 
 **PER-METRIC PROVENANCE, INCLUDING PER-METRIC AUTHORITY.** One normalized observation folds
 several provider reads together — HiLink answers `monitoring_status` and `device_signal`
@@ -113,4 +113,3 @@ Each fixture deliberately carries vendor-specific fields the normalized model ha
 — `Modem.Ports`, `CurrentNetworkTypeEx`, `wan_lte_ca`, `cputemp` — and the round-trip
 assertions are what prove those survive. Later provider work should reuse those fixtures
 rather than re-invent them.
-

@@ -63,4 +63,3 @@ Coverage: `control/src/radio/{mode-combinations,mode-truth,band-truth}.test.ts` 
 `control/src/providers/modem-manager/capability-truth.test.ts` (the whole path, over the
 in-memory MM transport, with FM350 / Quectel / SIMCom / unknown-combination / no-SIM
 specs).
-

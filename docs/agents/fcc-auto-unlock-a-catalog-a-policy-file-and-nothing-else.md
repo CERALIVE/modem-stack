@@ -63,4 +63,3 @@ Coverage: `control/src/fcc/{coverage,policy}.test.ts` plus
 [`packaging/ci/test-fcc-reconcile.sh`](../../packaging/ci/test-fcc-reconcile.sh) (the
 shell reconciler's behaviour on any host) and `packaging/ci/test-companion-chroot.sh`
 § 6 (the same logic from its PACKAGED location after a real `dpkg` install).
-

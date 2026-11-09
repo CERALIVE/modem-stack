@@ -88,4 +88,3 @@ A strict narrowing, never a new way to claim a capability.
 coverage exist at the bench (`docs/BENCH.md` per-SKU blockers; the CeraLive-side
 record is todo 2's BLOCKER B3), so the readback/registration/data/fallback drill
 on the RM530N-GL has not run. Every claim above is fixture-proven only.
-

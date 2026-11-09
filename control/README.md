@@ -24,15 +24,15 @@ tarball is exercised against on every CI run.
 Seven specifiers, and nothing else. Every other module is internal and reachable only
 through the root entry, so an internal reorganisation is not a breaking change.
 
-| Specifier | What it carries |
-|-----------|-----------------|
-| `@ceralive/modem-control` | Everything below plus the ports, backend, reconciler, redaction, SMS, USSD, location and FCC modules |
-| `@ceralive/modem-control/domain` | Frozen v1.1 contracts: `PhysicalModemId`, `DeviceGeneration`, `ObservationEnvelope`, `OperationDescriptor` / `OperationResult` |
-| `@ceralive/modem-control/providers` | `ProviderDefinition`, the registry, and the evidence-scored matcher |
-| `@ceralive/modem-control/capabilities` | The five-state support-claim taxonomy and per-modem capability detection |
-| `@ceralive/modem-control/hardware` | The per-SKU hardware model: USB composition modes + certified catalog, and the band vocabulary + band-lock certification |
-| `@ceralive/modem-control/transport` | The D-Bus transport seam (no underlying-library type is re-exported) |
-| `@ceralive/modem-control/testing` | Public **contract fakes** for consumers' own tests |
+| Specifier                              | What it carries                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `@ceralive/modem-control`              | Everything below plus the ports, backend, reconciler, redaction, SMS, USSD, location and FCC modules                           |
+| `@ceralive/modem-control/domain`       | Frozen v1.1 contracts: `PhysicalModemId`, `DeviceGeneration`, `ObservationEnvelope`, `OperationDescriptor` / `OperationResult` |
+| `@ceralive/modem-control/providers`    | `ProviderDefinition`, the registry, and the evidence-scored matcher                                                            |
+| `@ceralive/modem-control/capabilities` | The five-state support-claim taxonomy and per-modem capability detection                                                       |
+| `@ceralive/modem-control/hardware`     | The per-SKU hardware model: USB composition modes + certified catalog, and the band vocabulary + band-lock certification       |
+| `@ceralive/modem-control/transport`    | The D-Bus transport seam (no underlying-library type is re-exported)                                                           |
+| `@ceralive/modem-control/testing`      | Public **contract fakes** for consumers' own tests                                                                             |
 
 The `./hardware` surface also owns the transport-free response parsers migrated
 from CeraUI: SIM-presence evidence plus normalized Huawei HiLink, ZTE goform,
@@ -43,7 +43,7 @@ consumer-owned.
 The root entry also carries the **observation layer** built on those parsers. It turns a raw
 per-vendor payload into one `ObservationEnvelope<NormalizedModemObservation>` in which every
 metric records which source produced it and when, and in which a missing value carries a
-reason that says whether the source *cannot* report it (`unsupported`) or merely *did not*
+reason that says whether the source _cannot_ report it (`unsupported`) or merely _did not_
 on this read. `fresh`, `stale`, `unavailable` and `unknown` are four distinct shapes rather
 than a value plus a flag: stale keeps its value, unavailable carries none and never ages into
 stale, and unknown says which field is missing and why. Nothing the provider sent is
@@ -228,7 +228,7 @@ at construction rather than marshalled.
 `NormalizedRadio` carries `operatorName` and `operatorCode`, and every observation carries
 an additive `cell` block (`cellId` + `tac`). Both operator fields come from
 `Modem3gpp` — the operator the modem is **registered with** — and never from
-`Sim.OperatorName`, which is the *home* operator written into the SIM and differs for the
+`Sim.OperatorName`, which is the _home_ operator written into the SIM and differs for the
 whole time a device is roaming. `operatorCode` stays text: the MNC is two or three digits
 and the width is significant, so `31001` and `310001` are different networks.
 
@@ -271,7 +271,7 @@ Interface counters restart at zero when the interface is re-created. Clamping th
 negative delta to zero would show an idle link that was in fact carrying traffic, and using
 the raw post-reset value would show every byte since the interface came up as if it moved
 inside one interval. So a backwards counter reports **no rate at all**, and the baseline is
-rebased in the same pass so the *next* interval is measured correctly rather than inheriting
+rebased in the same pass so the _next_ interval is measured correctly rather than inheriting
 the gap.
 
 Rates are never persisted. A same-boot reload resumes the counter baseline — a cumulative
@@ -333,7 +333,7 @@ fallback location to accidentally write to. An empty path is refused with
 `JournalPathError`.
 
 The store is append-only and never truncates itself. A record it cannot decode is returned
-as typed damage alongside every record that *did* decode — including the ones after it — so
+as typed damage alongside every record that _did_ decode — including the ones after it — so
 a single corrupt line can never take the rest of the journal with it. Call
 `assertJournalIntact(recovery)` to escalate that damage to a `JournalRecoveryError` once
 you have seen what survived. Neither an operation's input nor its returned value is ever
@@ -390,7 +390,7 @@ bun run verify:consumers  # install the tarball into standalone Node 26 + Bun pr
 
 `dist/` mirrors `src/` one-to-one rather than being bundled. Bundling with code
 splitting produced an entry whose `export { … }` list named symbols the file never
-imported — accepted by one loader, a `SyntaxError` in another. Bundling *without*
+imported — accepted by one loader, a `SyntaxError` in another. Bundling _without_
 splitting instead gives each subpath its own copy of the shared modules, which silently
 breaks `instanceof` across two subpaths of the same package. A 1:1 emit has exactly one
 instance of every module.

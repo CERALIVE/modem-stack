@@ -9,4 +9,3 @@ starting at the `v1.0.0` release tag** — see `POLICY.md` §4. Each downstream 
 remains its own explicit, reviewed change in the receiving repository.
 
 Canonical branch: `main`. Sole remote: `origin` → `https://github.com/CERALIVE/modem-stack`.
-

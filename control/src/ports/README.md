@@ -7,16 +7,16 @@ performs I/O; these are pure TypeScript contracts.
 
 ## The ports
 
-| Port | File | Responsibility |
-|------|------|----------------|
-| `ModemObservationPort` | [`observation.ts`](./observation.ts) | Read-only: `start()`, `observe()`, `stop()`; emits discriminated `ObservationList` results that **retain rows** on source failure (removal is only ever an authoritative snapshot omission). |
-| `ModemManagerPort` | [`modem-manager.ts`](./modem-manager.ts) | **Extends** the observation port with the mutations MM owns: `setRadioModes`, `setPrimarySimSlot`, `sendPin`/`sendPuk`, `scanNetworks`, `inhibit`/`uninhibit`. **NO bearer/connect verb.** |
-| `NetworkManagerPort` | [`network-manager.ts`](./network-manager.ts) | GSM profile CRUD; `activate`/`deactivate` taking **both** `(connectionId, deviceIfname)`; quiesce lease. Implemented by `backend/nmcli-nm-port.ts`; `providers/network-manager/` is the saved-vs-applied adapter built on top of it. |
-| `RouterPort` | [`router.ts`](./router.ts) | Presence + advisory health only, for devices MM cannot control. |
-| `MutationAdmissionPort` | [`mutation-admission.ts`](./mutation-admission.ts) | Consumer-owned acquire/refuse authority for descriptor-gated mutations; no policy is derived here. |
-| `ResourceOwnershipPort` | [`resource-ownership.ts`](./resource-ownership.ts) | Non-queueing exclusive ownership for file stores, router sessions, and USB-hub access. |
-| `ModemManagerInhibitPort` | [`modem-manager.ts`](./modem-manager.ts) | Narrow MM inhibit/uninhibit maintenance lease. |
-| `UhubctlPort` | [`uhubctl.ts`](./uhubctl.ts) | Injected USB-hub actuator contract; the control package ships no implementation. |
+| Port                      | File                                               | Responsibility                                                                                                                                                                                                                       |
+| ------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ModemObservationPort`    | [`observation.ts`](./observation.ts)               | Read-only: `start()`, `observe()`, `stop()`; emits discriminated `ObservationList` results that **retain rows** on source failure (removal is only ever an authoritative snapshot omission).                                         |
+| `ModemManagerPort`        | [`modem-manager.ts`](./modem-manager.ts)           | **Extends** the observation port with the mutations MM owns: `setRadioModes`, `setPrimarySimSlot`, `sendPin`/`sendPuk`, `scanNetworks`, `inhibit`/`uninhibit`. **NO bearer/connect verb.**                                           |
+| `NetworkManagerPort`      | [`network-manager.ts`](./network-manager.ts)       | GSM profile CRUD; `activate`/`deactivate` taking **both** `(connectionId, deviceIfname)`; quiesce lease. Implemented by `backend/nmcli-nm-port.ts`; `providers/network-manager/` is the saved-vs-applied adapter built on top of it. |
+| `RouterPort`              | [`router.ts`](./router.ts)                         | Presence + advisory health only, for devices MM cannot control.                                                                                                                                                                      |
+| `MutationAdmissionPort`   | [`mutation-admission.ts`](./mutation-admission.ts) | Consumer-owned acquire/refuse authority for descriptor-gated mutations; no policy is derived here.                                                                                                                                   |
+| `ResourceOwnershipPort`   | [`resource-ownership.ts`](./resource-ownership.ts) | Non-queueing exclusive ownership for file stores, router sessions, and USB-hub access.                                                                                                                                               |
+| `ModemManagerInhibitPort` | [`modem-manager.ts`](./modem-manager.ts)           | Narrow MM inhibit/uninhibit maintenance lease.                                                                                                                                                                                       |
+| `UhubctlPort`             | [`uhubctl.ts`](./uhubctl.ts)                       | Injected USB-hub actuator contract; the control package ships no implementation.                                                                                                                                                     |
 
 ## Ownership matrix — one sole writer per resource
 
@@ -25,17 +25,17 @@ the NM-owns-bearers architecture the whole package is built around (independent
 review correction, draft §Oracle #1): the controller is a reconciler over two
 adapters, never a second writer of the same resource.
 
-| Resource | Sole writer | Port / owner |
-|----------|-------------|--------------|
-| APN | NetworkManager | `NetworkManagerPort` (`gsm.apn` / auto-config) |
-| Connection auth (username / password) | NetworkManager | `NetworkManagerPort` (`gsm.username` / `gsm.password`) |
-| Roaming | NetworkManager | `NetworkManagerPort` (`gsm.home-only`) |
-| Autoconnect | NetworkManager | `NetworkManagerPort` (`connection.autoconnect`) |
-| Activation (bearer lifecycle) | NetworkManager | `NetworkManagerPort` (`activate`/`deactivate`) |
-| Radio access-technology modes | ModemManager | `ModemManagerPort.setRadioModes` |
-| SIM operations (PIN / PUK / primary slot / scan) | ModemManager | `ModemManagerPort` |
-| Recovery ladder | Local controller | policy `recovery` (disabled by default, A3.4) |
-| Usage policy (cycle / threshold) | Local controller | policy `usage` (A4.3 sampler) |
+| Resource                                         | Sole writer      | Port / owner                                           |
+| ------------------------------------------------ | ---------------- | ------------------------------------------------------ |
+| APN                                              | NetworkManager   | `NetworkManagerPort` (`gsm.apn` / auto-config)         |
+| Connection auth (username / password)            | NetworkManager   | `NetworkManagerPort` (`gsm.username` / `gsm.password`) |
+| Roaming                                          | NetworkManager   | `NetworkManagerPort` (`gsm.home-only`)                 |
+| Autoconnect                                      | NetworkManager   | `NetworkManagerPort` (`connection.autoconnect`)        |
+| Activation (bearer lifecycle)                    | NetworkManager   | `NetworkManagerPort` (`activate`/`deactivate`)         |
+| Radio access-technology modes                    | ModemManager     | `ModemManagerPort.setRadioModes`                       |
+| SIM operations (PIN / PUK / primary slot / scan) | ModemManager     | `ModemManagerPort`                                     |
+| Recovery ladder                                  | Local controller | policy `recovery` (disabled by default, A3.4)          |
+| Usage policy (cycle / threshold)                 | Local controller | policy `usage` (A4.3 sampler)                          |
 
 ### The bearer invariant (safety-critical)
 

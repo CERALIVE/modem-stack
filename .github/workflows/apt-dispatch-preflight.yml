@@ -22,9 +22,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'An ALREADY-PUBLISHED modem-stack tag to dry-run against. Leave empty to test credentials + reachability only.'
+        description: "An ALREADY-PUBLISHED modem-stack tag to dry-run against. Leave empty to test credentials + reachability only."
         required: false
-        default: ''
+        default: ""
         type: string
 
 permissions:

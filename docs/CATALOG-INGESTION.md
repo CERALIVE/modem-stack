@@ -4,7 +4,7 @@ This is the documented path between a bench capture and `certified-catalog.json`
 so the transcription step — reading descriptor bytes out of a capture by eye and typing them
 into a JSON file — stops being a place where a certification claim can quietly become wrong.
 
-**It promotes nothing.** The seam is a pure transform that emits a *review artifact*. A
+**It promotes nothing.** The seam is a pure transform that emits a _review artifact_. A
 catalog addition remains what Phase A made it: a human-reviewed commit. Nothing here writes
 a file, mutates the shipped catalog, or opens a PR.
 
@@ -23,7 +23,7 @@ Not by convention, not by a reviewer remembering — by `buildCatalogEntryCandid
 returns a typed refusal (`reason: 'synthetic-bundle'`) before it looks at anything else. A
 catalog entry asserts a certified hardware fact; synthetic evidence can never back one.
 
-Classifier *fixtures* are a different matter: `buildClassifierFixture` **accepts** a
+Classifier _fixtures_ are a different matter: `buildClassifierFixture` **accepts** a
 synthetic bundle and stamps `provenance.synthetic = true` on the result, because synthetic
 fixtures are legitimate test data. The asymmetry is deliberate and is the whole design.
 
@@ -55,14 +55,14 @@ modem-control certify <slot> [--transition <mode>]
 
 ### Where each field comes from
 
-| Output field | Source in the bundle |
-|---|---|
-| `vidPid` / `model` / `firmwarePrefix` | `sku` (the three catalog discriminators, captured together) |
-| `bDeviceClass`, per-interface class/subclass/protocol, **per-interface driver** | the `usb-devices` text, parsed by `parseUsbDevices` |
-| `physicalUid`, `ifname` | `usb.udevProperties` → `ID_PATH`, `INTERFACE` |
-| `expectedDescriptors` | `transition.afterDescriptors` (stage 2 only) |
-| `evidenceBundleSha256` | the sha256 `certify` printed for **this** bundle |
-| `canonicalMode` | **the reviewer's stated claim** — never inferred |
+| Output field                                                                    | Source in the bundle                                        |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `vidPid` / `model` / `firmwarePrefix`                                           | `sku` (the three catalog discriminators, captured together) |
+| `bDeviceClass`, per-interface class/subclass/protocol, **per-interface driver** | the `usb-devices` text, parsed by `parseUsbDevices`         |
+| `physicalUid`, `ifname`                                                         | `usb.udevProperties` → `ID_PATH`, `INTERFACE`               |
+| `expectedDescriptors`                                                           | `transition.afterDescriptors` (stage 2 only)                |
+| `evidenceBundleSha256`                                                          | the sha256 `certify` printed for **this** bundle            |
+| `canonicalMode`                                                                 | **the reviewer's stated claim** — never inferred            |
 
 `usb-devices` rather than `lsusb -v` because it is the only half of a base bundle that names
 each interface's **bound kernel driver**, and `classifyDevice` decides `mm-managed` vs
@@ -92,17 +92,17 @@ table; in short:
 Every refusal is a named condition with an actionable `detail`, never a throw and never a
 partial result.
 
-| `reason` | What it means |
-|---|---|
-| `sha256-malformed` | the sha is not 64 lowercase hex — checked before the bundle is read |
-| `bundle-malformed` | the bundle fails the ingestion view schema |
-| `sku-missing` | the capture matched no USB device to the slot; the promotion gate remains strict even if capture wiring regresses |
-| `device-not-in-capture` | the SKU's VID:PID is absent from the `usb-devices` text |
-| `device-ambiguous` | two or more devices share that VID:PID — a fixture must name one physical device (this bench has an identical Huawei HiLink pair) |
-| `no-interfaces-captured` | the device parsed with zero interfaces; such a fixture classifies nothing |
-| `synthetic-bundle` | **catalog promotion only** — the bundle is `synthetic: true` |
-| `transition-mode-mismatch` | the claimed `canonicalMode` contradicts the captured `transition.from` |
-| `entry-schema-invalid` | the candidate fails the authoritative `catalogEntrySchema` (e.g. a router-mode SKU declaring a transition) |
+| `reason`                   | What it means                                                                                                                     |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `sha256-malformed`         | the sha is not 64 lowercase hex — checked before the bundle is read                                                               |
+| `bundle-malformed`         | the bundle fails the ingestion view schema                                                                                        |
+| `sku-missing`              | the capture matched no USB device to the slot; the promotion gate remains strict even if capture wiring regresses                 |
+| `device-not-in-capture`    | the SKU's VID:PID is absent from the `usb-devices` text                                                                           |
+| `device-ambiguous`         | two or more devices share that VID:PID — a fixture must name one physical device (this bench has an identical Huawei HiLink pair) |
+| `no-interfaces-captured`   | the device parsed with zero interfaces; such a fixture classifies nothing                                                         |
+| `synthetic-bundle`         | **catalog promotion only** — the bundle is `synthetic: true`                                                                      |
+| `transition-mode-mismatch` | the claimed `canonicalMode` contradicts the captured `transition.from`                                                            |
+| `entry-schema-invalid`     | the candidate fails the authoritative `catalogEntrySchema` (e.g. a router-mode SKU declaring a transition)                        |
 
 ### The view schema is deliberately non-strict
 
@@ -225,17 +225,17 @@ does not add entries, and does not apply to band certification.
 
 ```ts
 import {
-  buildCatalogEntryCandidate,
-  buildClassifierFixture,
-  renderPromotionReview,
+	buildCatalogEntryCandidate,
+	buildClassifierFixture,
+	renderPromotionReview,
 } from '@ceralive/modem-control';
 
 const request = { bundle: JSON.parse(bundleJson), bundleSha256: shaFromCertifyOkLine };
 
 const comment = renderPromotionReview({
-  context: { runbook: 'RB-11', evidencePath: 'test-results/modem-phase-b/08/…/bundle.json' },
-  entry: buildCatalogEntryCandidate(request, { canonicalMode: 'qmi' }),
-  fixture: buildClassifierFixture(request),
+	context: { runbook: 'RB-11', evidencePath: 'test-results/modem-phase-b/08/…/bundle.json' },
+	entry: buildCatalogEntryCandidate(request, { canonicalMode: 'qmi' }),
+	fixture: buildClassifierFixture(request),
 });
 ```
 
@@ -254,11 +254,11 @@ defects below were fixed in software on 2026-08-20, but the fixed build has not 
 the board. The historical bundles stay destroyed/unpromotable and prove no post-fix behavior.
 [`BENCH.md`](BENCH.md) carries the hardware-status ledger.
 
-| Defect | Historical effect and current software behavior |
-|---|---|
-| **B2** — target USB parent was matched by an unpopulated `ifname` | Pre-fix bundles had no `sku` and empty `udevProperties`, and the seam correctly refused `sku-missing`. The enumerator now retains its `/sys` path and `certify` matches MM `Device`/`Physdev` to the most-specific USB parent |
-| **B5** — `imei` / `EquipmentIdentifier` spellings were outside the shared redaction class | Pre-fix fleet-wide managed objects leaked every modem's IMEI. Shared-redactor and bundle regressions now mask MM property, bare/camel/separator, and dotted keyfile spellings while preserving model/vendor/SKU facts |
-| **B6** — `firmwarePrefix` came from USB `ID_REVISION` / `bcdDevice` | Pre-fix entries would have been keyed on `0318` / `0001`. `captureBase` now derives the discriminator from MM `Modem.Revision`; the RM530N regression distinguishes `0504` from `RM530NGLAAR05A01M4G` |
+| Defect                                                                                    | Historical effect and current software behavior                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **B2** — target USB parent was matched by an unpopulated `ifname`                         | Pre-fix bundles had no `sku` and empty `udevProperties`, and the seam correctly refused `sku-missing`. The enumerator now retains its `/sys` path and `certify` matches MM `Device`/`Physdev` to the most-specific USB parent |
+| **B5** — `imei` / `EquipmentIdentifier` spellings were outside the shared redaction class | Pre-fix fleet-wide managed objects leaked every modem's IMEI. Shared-redactor and bundle regressions now mask MM property, bare/camel/separator, and dotted keyfile spellings while preserving model/vendor/SKU facts         |
+| **B6** — `firmwarePrefix` came from USB `ID_REVISION` / `bcdDevice`                       | Pre-fix entries would have been keyed on `0318` / `0001`. `captureBase` now derives the discriminator from MM `Modem.Revision`; the RM530N regression distinguishes `0504` from `RM530NGLAAR05A01M4G`                         |
 
 None was a flaw in the seam itself: its typed refusals were the correct response to broken
 capture input. No SKU may reach `certified-catalog.json` from this evidence until a new

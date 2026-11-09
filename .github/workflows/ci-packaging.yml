@@ -56,7 +56,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@v4
         with:
-          predicate-quantifier: 'every'
+          predicate-quantifier: "every"
           filters: |
             code:
               - '!**/*.md'

@@ -34,4 +34,3 @@ raw target through its own vendor READ. AT `OK` is proof in neither tier. The ca
 therefore remains valuable evidence without being a model allowlist for an interrogable
 device. This change is composition-only; band writes retain their separate four-proof
 certification gate.
-

@@ -15,11 +15,11 @@ build if either SKU is promoted without going through
 
 Every AT command sent was one of three read-only forms:
 
-| Form | Example | Effect |
-|------|---------|--------|
-| bare execute | `ATI` | identifies the module |
-| READ | `AT+GTUSBMODE?` | returns the current value |
-| TEST | `AT+GTUSBMODE=?` | returns the supported parameter range (ITU-T V.250 §5.4.1) |
+| Form         | Example          | Effect                                                     |
+| ------------ | ---------------- | ---------------------------------------------------------- |
+| bare execute | `ATI`            | identifies the module                                      |
+| READ         | `AT+GTUSBMODE?`  | returns the current value                                  |
+| TEST         | `AT+GTUSBMODE=?` | returns the supported parameter range (ITU-T V.250 §5.4.1) |
 
 **No SET form (`AT+X=<value>`) was sent to either unit.** The capture harness carried a
 guard that refused any command containing `=` unless it was exactly `=?`. Each unit's
@@ -27,24 +27,24 @@ guard that refused any command containing `=` unless it was exactly `=?`. Each u
 was **unchanged** in both cases — `1e0e:9001` → `1e0e:9001`, `0e8d:7127` → `0e8d:7127`.
 
 No modem was enabled, no SIM operation was attempted (neither unit has a SIM), no USB port
-was power-cycled, and no ModemManager inhibit was taken. MM held only the *Quectel's*
+was power-cycled, and no ModemManager inhibit was taken. MM held only the _Quectel's_
 `ttyUSB7`/`ttyUSB8`, so the AT ports used here were free.
 
 ---
 
 ## SIMCom SIM7600G-H R2 — `1e0e:9001`
 
-| Field | Value |
-|-------|-------|
-| USB id | `1e0e:9001` (`bcdDevice` 3.18) |
-| sysfs / udev `ID_PATH` | `1-1.3.4` / `platform-xhci-hcd.0.auto-usb-0:1.3.4` |
-| Device descriptor | `bDeviceClass=00` (class is per-interface), 6 interfaces |
-| Drivers | 5 × `option` + 1 × `qmi_wwan` |
-| MM plugin / primary port | `simtech` / `cdc-wdm0` (QMI) |
-| MM state | `failed` / `sim-missing` (no SIM in either slot) |
-| Classifier verdict | `mm-managed`, mode `qmi` |
-| Firmware (`AT+CGMR`, `mmcli`) | `LE20B04SIM7600G22` |
-| Sub-version (`AT+CSUB`) | `B04V03` / `MDM9x07_LE20_G-H_22_V1.16_221104` |
+| Field                         | Value                                                    |
+| ----------------------------- | -------------------------------------------------------- |
+| USB id                        | `1e0e:9001` (`bcdDevice` 3.18)                           |
+| sysfs / udev `ID_PATH`        | `1-1.3.4` / `platform-xhci-hcd.0.auto-usb-0:1.3.4`       |
+| Device descriptor             | `bDeviceClass=00` (class is per-interface), 6 interfaces |
+| Drivers                       | 5 × `option` + 1 × `qmi_wwan`                            |
+| MM plugin / primary port      | `simtech` / `cdc-wdm0` (QMI)                             |
+| MM state                      | `failed` / `sim-missing` (no SIM in either slot)         |
+| Classifier verdict            | `mm-managed`, mode `qmi`                                 |
+| Firmware (`AT+CGMR`, `mmcli`) | `LE20B04SIM7600G22`                                      |
+| Sub-version (`AT+CSUB`)       | `B04V03` / `MDM9x07_LE20_G-H_22_V1.16_221104`            |
 
 ### The USB-mode command — domain read back, tuple NOT proven
 
@@ -62,7 +62,7 @@ facts that were previously guesses:
 
 1. **Arity is three**, not one: `AT+CUSBPIDSWITCH=<pid>,<p2>,<p3>`, with both trailing
    parameters in `(0-1)`. Vendor documentation commonly describes these as a
-   *save-to-NV* flag and a *reset-now* flag, **but this capture does not establish that** —
+   _save-to-NV_ flag and a _reset-now_ flag, **but this capture does not establish that** —
    the module reports only the ranges, not the semantics.
 2. **The PID domain is the 26 values listed above**, and the unit is currently on `9001`.
 
@@ -89,19 +89,19 @@ command, so USB-speed selection is not a control surface on this unit.
 > `0e8d:7127` identity belongs to the **bench carrier**, not to a native FM350 USB
 > personality; a production board seats this module in a real M.2 **PCIe** slot. That
 > decision is unchanged by this capture, and **no USB classifier entry is added for
-> `0e8d:7127`.** Everything below is classified strictly as *USB-attachment-only* evidence.
+> `0e8d:7127`.** Everything below is classified strictly as _USB-attachment-only_ evidence.
 
-| Field | Value |
-|-------|-------|
-| USB id | `0e8d:7127` (`bcdDevice` 0.01) — MediaTek's **USB** vendor id, not the PCI `14c3` |
-| sysfs / udev `ID_PATH` | `1-1.2` / `platform-xhci-hcd.0.auto-usb-0:1.2` |
-| Device descriptor | `bDeviceClass=ef` / `Sub=02` / `Prot=01` (IAD composite), 10 interfaces |
-| Drivers | 2 × `rndis_host`, 7 × `option`, 1 × unbound (`ff/42/01`) |
-| MM plugin / primary port | `generic` / `ttyUSB12` (AT) |
-| MM state | `failed` / `sim-missing` |
-| Classifier verdict | `mm-managed`, mode `rndis` |
-| Firmware (`AT+CGMR`, `mmcli`) | `81600.0000.00.19.17.10` |
-| Package version (`AT+GTPKGVER?`) | `81600.0000.00.19.17.10_5001.0000.030.000.026_B77` |
+| Field                            | Value                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| USB id                           | `0e8d:7127` (`bcdDevice` 0.01) — MediaTek's **USB** vendor id, not the PCI `14c3` |
+| sysfs / udev `ID_PATH`           | `1-1.2` / `platform-xhci-hcd.0.auto-usb-0:1.2`                                    |
+| Device descriptor                | `bDeviceClass=ef` / `Sub=02` / `Prot=01` (IAD composite), 10 interfaces           |
+| Drivers                          | 2 × `rndis_host`, 7 × `option`, 1 × unbound (`ff/42/01`)                          |
+| MM plugin / primary port         | `generic` / `ttyUSB12` (AT)                                                       |
+| MM state                         | `failed` / `sim-missing`                                                          |
+| Classifier verdict               | `mm-managed`, mode `rndis`                                                        |
+| Firmware (`AT+CGMR`, `mmcli`)    | `81600.0000.00.19.17.10`                                                          |
+| Package version (`AT+GTPKGVER?`) | `81600.0000.00.19.17.10_5001.0000.030.000.026_B77`                                |
 
 ### The USB-mode command — read back cleanly
 

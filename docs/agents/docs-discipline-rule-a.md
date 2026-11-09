@@ -5,4 +5,3 @@
 Any change to this repo's behavior or structure updates this `AGENTS.md`, the relevant
 `README.md`, and `docs/` in the **same** change. Keep the three-artifact map, the versioning
 contract, and the no-fork policy authoritative.
-

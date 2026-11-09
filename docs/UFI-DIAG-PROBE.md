@@ -94,15 +94,15 @@ with `UFI_CAPTURE_DIR`), which is repo-local and gitignored. It is staged in a t
 directory and moved into place as a unit, so the published path either holds a complete
 bundle or does not exist.
 
-| File | What it holds |
-|------|---------------|
-| `manifest.json` | schema version, USB id, capture time, host, kernel, matched sysfs devices, and a per-step status |
-| `lsusb-verbose.txt` | `lsusb -v -d 05c6:` — the full configuration/interface/endpoint descriptors |
-| `usb-devices.txt` | `usb-devices` — the same tree in the kernel's own per-interface `I:` form |
-| `udev-properties.txt` | `udevadm info -q property` for the device **and** each interface |
-| `driver-bindings.txt` | one line per interface: sysfs address, class triple, and the bound driver (or `unbound`) |
-| `sys-composition.txt` | `/sys` device attributes plus each interface's attributes and its `net`/`tty` children |
-| `himi-identity.json` | `getproduceinfo` + `getsysinfo` replies — present only when `UFI_BENCH_PASSWORD` was supplied |
+| File                  | What it holds                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `manifest.json`       | schema version, USB id, capture time, host, kernel, matched sysfs devices, and a per-step status |
+| `lsusb-verbose.txt`   | `lsusb -v -d 05c6:` — the full configuration/interface/endpoint descriptors                      |
+| `usb-devices.txt`     | `usb-devices` — the same tree in the kernel's own per-interface `I:` form                        |
+| `udev-properties.txt` | `udevadm info -q property` for the device **and** each interface                                 |
+| `driver-bindings.txt` | one line per interface: sysfs address, class triple, and the bound driver (or `unbound`)         |
+| `sys-composition.txt` | `/sys` device attributes plus each interface's attributes and its `net`/`tty` children           |
+| `himi-identity.json`  | `getproduceinfo` + `getsysinfo` replies — present only when `UFI_BENCH_PASSWORD` was supplied    |
 
 **Per-step status is honest and is not a boolean.** `captured`, `empty`,
 `tool-unavailable` (this host lacks the tool), `unreachable` (the device's HTTP API did
@@ -145,16 +145,16 @@ and an `unbound` driver is a real and interesting finding, not a contradiction.
 half; `readUfiDriverBindings()` reads a whole `driver-bindings.txt` into one row per
 interface.
 
-| `bInterfaceClass` / `SubClass` / `Protocol` | Role | Typical claiming driver |
-|---|---|---|
-| `e0` / `01` / `03` | `rndis-control` — the RNDIS control channel | `rndis_host` |
-| `0a` / any / any | `rndis-data` — CDC data, the RNDIS payload leg | `rndis_host` |
-| `ff` / `42` / `01` | `adb-class` — Google's shell interface | usually `unbound` on a Linux host |
-| `ff` / `ff` / `30` | `diag` — **the only proof of a DIAG channel** | usually `unbound` |
-| `ff` / any other | `vendor-specific` | `qmi_wwan`, `option`, or `unbound` |
-| `02` / `02` / any | `cdc-acm-control` | `cdc_acm` |
-| `08` / any / any | `mass-storage` | `usb-storage` |
-| anything else | `unclassified` | — |
+| `bInterfaceClass` / `SubClass` / `Protocol` | Role                                           | Typical claiming driver            |
+| ------------------------------------------- | ---------------------------------------------- | ---------------------------------- |
+| `e0` / `01` / `03`                          | `rndis-control` — the RNDIS control channel    | `rndis_host`                       |
+| `0a` / any / any                            | `rndis-data` — CDC data, the RNDIS payload leg | `rndis_host`                       |
+| `ff` / `42` / `01`                          | `adb-class` — Google's shell interface         | usually `unbound` on a Linux host  |
+| `ff` / `ff` / `30`                          | `diag` — **the only proof of a DIAG channel**  | usually `unbound`                  |
+| `ff` / any other                            | `vendor-specific`                              | `qmi_wwan`, `option`, or `unbound` |
+| `02` / `02` / any                           | `cdc-acm-control`                              | `cdc_acm`                          |
+| `08` / any / any                            | `mass-storage`                                 | `usb-storage`                      |
+| anything else                               | `unclassified`                                 | —                                  |
 
 `ff/ff/*` is a convention space, not a registry: Qualcomm firmware conventionally carries
 QMI, NMEA and modem functions in it alongside DIAG's `30`. Which of those a given
@@ -265,12 +265,12 @@ Todo 13's capture tooling was run against sysfs device `1-1.4.1` on `ceralive2`,
 `7.1.7-ceralive-rk3588`. Both redaction sweeps were clean and the manifest records
 `mutations: "none"`.
 
-| Interface | Descriptor | Classification | Captured binding |
-|---:|---|---|---|
-| 0 | `ff/ff/ff` | vendor-specific | unbound |
-| 1 | `ff/00/00` | vendor-specific | unbound |
-| 2 | `ff/ff/ff` | vendor-specific | `qmi_wwan` (`wwan1`) |
-| 3 | `ff/42/01` | ADB-class | unbound |
+| Interface | Descriptor | Classification  | Captured binding     |
+| --------: | ---------- | --------------- | -------------------- |
+|         0 | `ff/ff/ff` | vendor-specific | unbound              |
+|         1 | `ff/00/00` | vendor-specific | unbound              |
+|         2 | `ff/ff/ff` | vendor-specific | `qmi_wwan` (`wwan1`) |
+|         3 | `ff/42/01` | ADB-class       | unbound              |
 
 The result is `diag-not-present`: the USB-id database label “Diagnostic Mode” is not borne
 out by the descriptor triple required by this runbook. Upstream's `05c6:9091` interface-2

@@ -30,4 +30,3 @@ by the ONE sourced library `packaging/ci/suffix-contract.sh`, from both
 `deb_version_suffix:`** — under per-source counters no single suffix value is truthful. The
 companion `ceralive-modem-support` stays outside this entirely: bare SemVer tag version, no
 `~ceralive` suffix, and always rebuilt.
-

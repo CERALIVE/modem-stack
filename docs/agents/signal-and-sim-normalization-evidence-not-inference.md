@@ -140,4 +140,3 @@ is a fact about this package, not a claim about the vendor's firmware.
 Coverage: `control/src/observations/registration-context.test.ts` (the decoder's token
 rules, the Modem3gpp-vs-Sim distinction, the four unknown reasons, and the per-source
 claims) plus the `ci` / `tac` / no-ARFCN cases in `control/src/backend/cell-info.test.ts`.
-

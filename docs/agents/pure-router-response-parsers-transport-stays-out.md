@@ -47,4 +47,3 @@ with it about one key name. Both are fixed here, and both are pinned by tests:
 input shape** (three bodies here, five there — no `status`/`networkMode`). No
 consumer probes for it today, so nothing is broken; a future cutover must reconcile
 it before pointing CeraUI's UFI path at this one.
-

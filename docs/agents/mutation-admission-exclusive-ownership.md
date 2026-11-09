@@ -30,4 +30,3 @@ physical modem. `ModemManagerInhibitPort` is the narrow MM inhibit/uninhibit con
 maintenance transactions. `UhubctlPort` is port-only in the control package: v1.1 ships no
 provider, runner, argv builder or concrete `uhubctl` call. The bench CLI owns its existing
 HIL-only adapter and acquires the same exclusive lock before using it.
-

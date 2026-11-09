@@ -10,7 +10,7 @@ of the named revisit triggers fires. That record also carries the idea-attributi
 before proposing a rewrite or extending the telemetry surface:
 [`docs/adr/ADR-STAY-TYPESCRIPT.md`](../adr/ADR-STAY-TYPESCRIPT.md).
 
-- **Bun 1.4.3** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
+- **Bun 1.4.4** (`.bun-version`, `packageManager` in `package.json`). `control/` + `cli/`
   are Bun workspace members.
 - **Strict TypeScript 7.0.2** incl. `exactOptionalPropertyTypes` — the repo-root
   `tsconfig.json` is the workspace checker (`bun run typecheck` → `tsc --noEmit`) for both
@@ -60,7 +60,6 @@ The suite move to trixie did NOT let the `debian/` adaptations be reverted, whic
 counter-intuitive part and is re-measured rather than assumed in
 `packaging/SUITE-ADAPTATIONS.md`: trixie moved BOTH `udev.pc` and `systemd.pc` into
 `systemd-dev`, so the `udev` build-dep supplies neither and the two meson install-dir pins
-are *more* load-bearing than they were on bookworm. The GI substitution likewise still
+are _more_ load-bearing than they were on bookworm. The GI substitution likewise still
 resolves (`libgirepository1.0-dev` is current at `1.84.0-1`), so reverting it would re-open a
 verified deviation surface for no gain.
-

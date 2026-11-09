@@ -55,4 +55,3 @@ capability gate is satisfied, but whether a GNSS antenna is physically attached 
 Quectel is unanswered (phase-C todo 2, `needs-user` N1), so the live-fix drill has not run.
 The capability, no-fix, disable, expiry and redaction paths are fixture-proven; the
 acquire-a-real-fix path is not.
-

@@ -164,10 +164,10 @@ Debian bookworm.
 
 ### Commits in this MR
 
-| Commit | Origin SHA | Content |
-|--------|-----------|---------|
-| 1 | `da01610c` squashed with `419dc598`, `90bcd376`, `9e2bc499`, `9716d38b` | The plugin, with its own four bug fixes folded in. A reviewer should read a working plugin, not a plugin plus four of its own regressions. |
-| 2 | `b4377c50` | The `ID_MM_PREFERRED_NETWORKS_CPOL_DISABLED` udev row, kept separate because it is device data using an existing upstream mechanism. |
+| Commit | Origin SHA                                                              | Content                                                                                                                                    |
+| ------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1      | `da01610c` squashed with `419dc598`, `90bcd376`, `9e2bc499`, `9716d38b` | The plugin, with its own four bug fixes folded in. A reviewer should read a working plugin, not a plugin plus four of its own regressions. |
+| 2      | `b4377c50`                                                              | The `ID_MM_PREFERRED_NETWORKS_CPOL_DISABLED` udev row, kept separate because it is device data using an existing upstream mechanism.       |
 
 Full per-commit provenance, file lists and forward-port verdicts:
 [`ADR-FM350-RNDIS-BEARER.md`](ADR-FM350-RNDIS-BEARER.md) §4.
@@ -210,10 +210,10 @@ directory does not exist today, and it stays that way.
 
 ## 5. Filed-MR record — fill in on submission
 
-| MR | URL | Filed on | Filed by | Outcome |
-|----|-----|----------|----------|---------|
-| MR 1 (`+COPS` quirk) | _not filed_ | — | — | — |
-| MR 2 (`fm350gl` plugin) | _not filed_ | — | — | — |
+| MR                      | URL         | Filed on | Filed by | Outcome |
+| ----------------------- | ----------- | -------- | -------- | ------- |
+| MR 1 (`+COPS` quirk)    | _not filed_ | —        | —        | —       |
+| MR 2 (`fm350gl` plugin) | _not filed_ | —        | —        | —       |
 
 Filling a row here also requires updating row (c) of the gate table in
 [`ADR-FM350-RNDIS-BEARER.md`](ADR-FM350-RNDIS-BEARER.md) §7, in the same change.

@@ -60,4 +60,3 @@ decision. Full behaviour: [`docs/PROVIDER-MATCHING.md`](../PROVIDER-MATCHING.md)
   matrix is what found it. The HIMI fingerprint needs a session, so an unfenced probe spent the
   provider's single bounded login against every non-HIMI device in the registry. An ABSENT usb
   fact is still probed; a MISMATCHING one is not.
-
