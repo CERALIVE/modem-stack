@@ -1,4 +1,5 @@
-// Pure nmcli GSM-connection argv builders — the FULL nine-field write parity today's
+// Pure nmcli GSM-connection argv builders — base fields plus optional IP methods.
+// Preserves the GSM write parity today's
 // CeraUI carried (modem-registration.ts `sanitizeModemConfigForNetworkManager` +
 // `addConnectionForModem`), rebuilt from scratch for the device-exact adapter so the
 // greenfield port loses nothing the wrap-first path wrote.
@@ -14,6 +15,7 @@
 //   connection.autoconnect                 — always "yes"
 //   connection.autoconnect-retries         — "2"
 
+import type { IpFamily } from '../domain';
 import type { ConnectionId, GsmProfile, GsmProfileInput, GsmProfilePatch } from '../ports';
 
 // Empty-string fallback; Bun runtime limitation with empty CLI args: a bare
@@ -47,6 +49,18 @@ export function gsmFieldPairs(input: GsmProfileInput): Array<[string, string]> {
 		['gsm.auto-config', auto ? 'yes' : 'no'],
 		['connection.autoconnect', 'yes'],
 		['connection.autoconnect-retries', '2'],
+		...ipMethodPairs(input.ipFamily),
+	];
+}
+
+/** Only an explicit request owns the two IP methods; may-fail stays NM-owned. */
+function ipMethodPairs(family: IpFamily | undefined): Array<[string, string]> {
+	if (family === undefined) {
+		return [];
+	}
+	return [
+		['ipv4.method', family === 'ipv6' ? 'disabled' : 'auto'],
+		['ipv6.method', family === 'ipv4' ? 'disabled' : 'auto'],
 	];
 }
 
@@ -55,7 +69,7 @@ export function flattenPairs(pairs: ReadonlyArray<readonly [string, string]>): s
 	return pairs.flat();
 }
 
-/** `connection add type gsm con-name <name> <nine fields>` — device-exact create argv. */
+/** `connection add type gsm con-name <name> <base fields> [IP methods]` — device-exact create argv. */
 export function createGsmArgs(input: GsmProfileInput): string[] {
 	return [
 		'connection',
@@ -101,16 +115,28 @@ export function patchPairs(patch: GsmProfilePatch): string[] {
 	} else if (patch.networkId !== undefined) {
 		pairs.push('gsm.network-id', cliArg(patch.networkId));
 	}
+	pairs.push(...flattenPairs(ipMethodPairs(patch.ipFamily)));
 	return pairs;
 }
 
 /** Map an nmcli terse readback back onto a `GsmProfile` (inverse of the write parity). */
 export function buildProfile(id: ConnectionId, settings: Map<string, string>): GsmProfile {
+	const v4 = settings.get('ipv4.method');
+	const v6 = settings.get('ipv6.method');
+	const ipFamily: IpFamily | undefined =
+		v4 === 'auto' && v6 === 'auto'
+			? 'ipv4v6'
+			: v4 === 'auto' && v6 === 'disabled'
+				? 'ipv4'
+				: v4 === 'disabled' && v6 === 'auto'
+					? 'ipv6'
+					: undefined;
 	const username = settings.get('gsm.username') ?? '';
 	const password = settings.get('gsm.password') ?? '';
 	const networkId = settings.get('gsm.network-id') ?? '';
 	return {
 		connectionId: id,
+		...(ipFamily !== undefined ? { ipFamily } : {}),
 		connectionName: settings.get('connection.id') ?? '',
 		apn: settings.get('gsm.apn') ?? '',
 		homeOnly: settings.get('gsm.home-only') === 'yes',
