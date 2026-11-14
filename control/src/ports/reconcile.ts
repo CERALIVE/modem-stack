@@ -4,7 +4,12 @@
 // side effects: the same inputs always yield the same ops and receipts, which is
 // what makes re-applying a policy idempotent (see reconcile.test.ts).
 
-import type { DesiredCellularPolicy, NmActivation, RadioAccessTechnology } from '../domain';
+import type {
+	DesiredCellularPolicy,
+	IpFamily,
+	NmActivation,
+	RadioAccessTechnology,
+} from '../domain';
 import type { ConnectionId, DeviceIfname, GsmProfileInput } from './network-manager';
 import { mmOp, nmOp, type PortTaggedOp } from './ops';
 import { type Receipt, receipt } from './receipts';
@@ -27,6 +32,8 @@ export interface AppliedCellularState {
 	readonly connectionId?: ConnectionId;
 	readonly deviceIfname?: DeviceIfname;
 	readonly appliedApn?: 'auto' | string;
+	/** Saved profile methods from NM readback, not the carrier-granted addresses. */
+	readonly appliedIpFamily?: IpFamily;
 	readonly appliedRoaming?: boolean;
 	readonly appliedRadioPreference?: readonly RadioAccessTechnology[];
 	readonly activePrimarySlot?: number;
@@ -83,6 +90,7 @@ function profileFromPolicy(desired: DesiredCellularPolicy): GsmProfileInput {
 	const auto = desired.connection.apn === 'auto';
 	const base: GsmProfileInput = {
 		connectionName: 'ceralive-cellular',
+		...(desired.connection.ipFamily !== undefined ? { ipFamily: desired.connection.ipFamily } : {}),
 		apn: auto ? '' : desired.connection.apn,
 		homeOnly: !desired.roaming,
 		autoConfig: auto,
@@ -124,13 +132,15 @@ function planNmProfile(
 	const needsWrite =
 		!current.hasProfile ||
 		current.appliedApn !== desired.connection.apn ||
-		current.appliedRoaming !== desired.roaming;
+		current.appliedRoaming !== desired.roaming ||
+		(desired.connection.ipFamily !== undefined &&
+			current.appliedIpFamily !== desired.connection.ipFamily);
 	if (!needsWrite) {
 		return {
 			connection: receipt(
 				'connection',
 				'applied',
-				`connection APN '${desired.connection.apn}' already configured`,
+				`connection APN '${desired.connection.apn}'${desired.connection.ipFamily ? ` (${desired.connection.ipFamily})` : ''} already configured`,
 			),
 			roaming: receipt(
 				'roaming',
@@ -152,7 +162,7 @@ function planNmProfile(
 		connection: receipt(
 			'connection',
 			'pending',
-			`${verb} connection profile for APN '${desired.connection.apn}'`,
+			`${verb} connection profile for APN '${desired.connection.apn}'${desired.connection.ipFamily ? ` (${desired.connection.ipFamily})` : ''}`,
 		),
 		roaming: receipt(
 			'roaming',

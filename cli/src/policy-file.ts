@@ -26,7 +26,7 @@ const authSchema = z
 const connectionSchema = z
 	.object({
 		apn: z.string().min(1),
-		ipFamily: z.enum(['ipv4', 'ipv6', 'ipv4v6']),
+		ipFamily: z.enum(['ipv4', 'ipv6', 'ipv4v6']).optional(),
 		auth: authSchema.optional(),
 		networkId: z.string().optional(),
 	})
@@ -106,7 +106,7 @@ export function toDesiredPolicy(
 		enabled: spec.enabled,
 		connection: {
 			apn: spec.connection.apn,
-			ipFamily: spec.connection.ipFamily,
+			...(spec.connection.ipFamily !== undefined ? { ipFamily: spec.connection.ipFamily } : {}),
 			...(spec.connection.auth !== undefined ? { auth: toAuth(spec.connection.auth) } : {}),
 			...(spec.connection.networkId !== undefined ? { networkId: spec.connection.networkId } : {}),
 		},

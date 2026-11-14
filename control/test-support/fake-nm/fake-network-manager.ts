@@ -8,6 +8,7 @@
 // carries. A4.1's `NmcliNmPort` owns the full nine-field GSM write parity and the
 // atomic Auto-APN transitions; this harness is what A4.1 injects to assert them.
 
+import { buildProfile, patchPairs } from '../../src/backend/nm-gsm-fields';
 import { epochMillis } from '../../src/domain';
 import {
 	type ConnectionId,
@@ -24,6 +25,8 @@ import {
 import { type NmcliResult, StatefulNmcliRunner } from './nmcli-runner';
 
 const READBACK_FIELDS = [
+	'ipv4.method',
+	'ipv6.method',
 	'connection.id',
 	'gsm.apn',
 	'gsm.username',
@@ -71,6 +74,7 @@ export class FakeNetworkManagerPort implements NetworkManagerPort {
 		if (profile.networkId !== undefined) {
 			argv.push('gsm.network-id', profile.networkId);
 		}
+		argv.push(...patchPairs(profile.ipFamily !== undefined ? { ipFamily: profile.ipFamily } : {}));
 		const result = this.#runner.run(argv);
 		const uuid = /\(([^)]+)\) successfully added/.exec(result.stdout)?.[1];
 		if (uuid === undefined) {
@@ -121,6 +125,7 @@ export class FakeNetworkManagerPort implements NetworkManagerPort {
 		if (patch.networkId !== undefined) {
 			argv.push('gsm.network-id', patch.networkId);
 		}
+		argv.push(...patchPairs(patch.ipFamily !== undefined ? { ipFamily: patch.ipFamily } : {}));
 		const result = this.#runner.run(argv);
 		if (result.exitCode !== 0) {
 			throw new Error(`fake nmcli: modify failed (${result.stderr})`);
@@ -187,20 +192,4 @@ function parseTerse(stdout: string): Map<string, string> {
 		}
 	}
 	return settings;
-}
-
-function buildProfile(id: ConnectionId, settings: Map<string, string>): GsmProfile {
-	const username = settings.get('gsm.username') ?? '';
-	const password = settings.get('gsm.password') ?? '';
-	const networkId = settings.get('gsm.network-id') ?? '';
-	return {
-		connectionId: id,
-		connectionName: settings.get('connection.id') ?? '',
-		apn: settings.get('gsm.apn') ?? '',
-		homeOnly: settings.get('gsm.home-only') === 'yes',
-		autoConfig: settings.get('gsm.auto-config') === 'yes',
-		...(username !== '' ? { username } : {}),
-		...(password !== '' ? { password } : {}),
-		...(networkId !== '' ? { networkId } : {}),
-	};
 }

@@ -420,6 +420,42 @@ The declared entries live in `scripts/entries.ts` and the test additionally spel
 seven specifiers out as a literal, so a subpath cannot be dropped without a reviewable
 change to the public contract.
 
+## Opt-in NetworkManager IP family
+
+Set `connection.ipFamily` in a desired cellular policy, or `ipFamily` on a
+`GsmProfileInput` / `GsmProfilePatch`, to request saved NetworkManager methods:
+
+| Request  | `ipv4.method` | `ipv6.method` |
+| -------- | ------------- | ------------- |
+| `ipv4`   | `auto`        | `disabled`    |
+| `ipv6`   | `disabled`    | `auto`        |
+| `ipv4v6` | `auto`        | `auto`        |
+
+Omit the family to retain the previous writer behavior: creation supplies neither
+method, and patches leave existing methods untouched. `defaultCellularPolicy()`
+therefore omits the family; its former nominal `ipv4v6` value was never written.
+An explicit `ipv4v6` now opts in, including in existing policy files.
+
+NetworkManager's `nmcli --offline connection add type gsm con-name example gsm.auto-config yes`
+produces `auto` for both methods (verified with NM 1.54.3),
+so omission must not be described as an IPv4-only default. Existing profile values
+and NetworkManager configuration remain authoritative. See the
+[NetworkManager settings reference](https://networkmanager.pages.freedesktop.org/NetworkManager/NetworkManager/nm-settings-nmcli.html)
+for `auto`, `disabled` and `may-fail` semantics. No `may-fail`, route, DNS, CLAT or
+APN-ownership setting is changed by this option.
+
+Readback reports `GsmProfile.ipFamily` only for the exact method pairs above;
+manual, ignored or unknown combinations leave it absent. This is saved intent,
+not proof of the carrier-granted addresses. Feed this readback into the planner's
+`AppliedCellularState.appliedIpFamily`: a requested mismatch remains `pending`,
+and matching saved methods yield an `applied` connection receipt. With no family
+request, the planner does not compare or reconcile methods.
+
+Profile writes do not reconnect an active device. The consumer still owns when
+to activate a changed profile and must retain its disruption and recovery rules.
+IPv6-only service also requires family-aware consumers and an IPv4 service path
+such as CLAT for IPv4 hotspot clients; this option does not provide those.
+
 ## License
 
 AGPL-3.0

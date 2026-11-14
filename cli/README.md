@@ -34,13 +34,18 @@ intent only — `apply` binds it to the selected modem's live identity:
 {
 	"slot": "Modem/0",
 	"enabled": true,
-	"connection": { "apn": "auto", "ipFamily": "ipv4v6" },
+	"connection": { "apn": "auto" },
 	"roaming": false,
 	"radio": { "preferenceOrdered": ["5gnr", "lte", "umts", "gsm"] },
 	"recovery": { "enabled": false },
 	"usage": { "cycleDay": 1, "thresholdBytes": 5000000000 }
 }
 ```
+
+`connection.ipFamily` is optional. Omit it to preserve NetworkManager defaults or
+existing profile methods. Explicit `ipv4`, `ipv6`, or `ipv4v6` opts into the
+[profile method mapping](../control/README.md#opt-in-networkmanager-ip-family);
+existing files with `ipv4v6` now explicitly request both automatic methods.
 
 ## Develop
 
