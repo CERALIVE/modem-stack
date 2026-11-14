@@ -431,10 +431,12 @@ Set `connection.ipFamily` in a desired cellular policy, or `ipFamily` on a
 | `ipv6`   | `disabled`    | `auto`        |
 | `ipv4v6` | `auto`        | `auto`        |
 
-Omit the family to retain the previous writer behavior: creation supplies neither
-method, and patches leave existing methods untouched. `defaultCellularPolicy()`
-therefore omits the family; its former nominal `ipv4v6` value was never written.
-An explicit `ipv4v6` now opts in, including in existing policy files.
+At the low-level port, omitting the family retains the previous writer behavior:
+creation supplies neither method, and patches leave existing methods untouched.
+`DesiredConnection.ipFamily` remains required for 1.x type compatibility, and
+`defaultCellularPolicy()` retains `ipv4v6`. Policy-driven writes now honor that
+value; CLI files that omit it default to `ipv4v6`. IPv4-only profiles use
+`ipv6.method disabled`, which requires NetworkManager 1.20 or newer.
 
 NetworkManager's `nmcli --offline connection add type gsm con-name example gsm.auto-config yes`
 produces `auto` for both methods (verified with NM 1.54.3),
@@ -447,9 +449,11 @@ APN-ownership setting is changed by this option.
 Readback reports `GsmProfile.ipFamily` only for the exact method pairs above;
 manual, ignored or unknown combinations leave it absent. This is saved intent,
 not proof of the carrier-granted addresses. Feed this readback into the planner's
-`AppliedCellularState.appliedIpFamily`: a requested mismatch remains `pending`,
-and matching saved methods yield an `applied` connection receipt. With no family
-request, the planner does not compare or reconcile methods.
+`AppliedCellularState.appliedIpFamily`: a known mismatch remains `pending`,
+and matching saved methods yield an `applied` connection receipt. An absent
+readback is unknown and causes no family reconciliation, so existing consumers
+do not repeatedly update a profile until they add readback support. APN and
+roaming changes still reconcile normally; creation includes the requested family.
 
 Profile writes do not reconnect an active device. The consumer still owns when
 to activate a changed profile and must retain its disruption and recovery rules.

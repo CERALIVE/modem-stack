@@ -106,7 +106,7 @@ export function toDesiredPolicy(
 		enabled: spec.enabled,
 		connection: {
 			apn: spec.connection.apn,
-			...(spec.connection.ipFamily !== undefined ? { ipFamily: spec.connection.ipFamily } : {}),
+			ipFamily: spec.connection.ipFamily ?? 'ipv4v6',
 			...(spec.connection.auth !== undefined ? { auth: toAuth(spec.connection.auth) } : {}),
 			...(spec.connection.networkId !== undefined ? { networkId: spec.connection.networkId } : {}),
 		},

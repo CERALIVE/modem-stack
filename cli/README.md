@@ -42,8 +42,8 @@ intent only — `apply` binds it to the selected modem's live identity:
 }
 ```
 
-`connection.ipFamily` is optional. Omit it to preserve NetworkManager defaults or
-existing profile methods. Explicit `ipv4`, `ipv6`, or `ipv4v6` opts into the
+`connection.ipFamily` is optional in JSON files and defaults to `ipv4v6` when
+converted to the required 1.x policy field. `ipv4`, `ipv6`, or `ipv4v6` selects the
 [profile method mapping](../control/README.md#opt-in-networkmanager-ip-family);
 existing files with `ipv4v6` now explicitly request both automatic methods.
 

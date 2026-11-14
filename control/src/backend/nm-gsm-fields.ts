@@ -1,4 +1,5 @@
-// Pure nmcli GSM-connection argv builders — the FULL nine-field write parity today's
+// Pure nmcli GSM-connection argv builders — base fields plus optional IP methods.
+// Preserves the GSM write parity today's
 // CeraUI carried (modem-registration.ts `sanitizeModemConfigForNetworkManager` +
 // `addConnectionForModem`), rebuilt from scratch for the device-exact adapter so the
 // greenfield port loses nothing the wrap-first path wrote.
@@ -68,7 +69,7 @@ export function flattenPairs(pairs: ReadonlyArray<readonly [string, string]>): s
 	return pairs.flat();
 }
 
-/** `connection add type gsm con-name <name> <nine fields>` — device-exact create argv. */
+/** `connection add type gsm con-name <name> <base fields> [IP methods]` — device-exact create argv. */
 export function createGsmArgs(input: GsmProfileInput): string[] {
 	return [
 		'connection',

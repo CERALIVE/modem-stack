@@ -10,9 +10,9 @@ const base = {
 };
 const binding = { equipmentId: imeiEquipmentId('490154203237518') };
 
-test('policy files preserve omission and each explicit family', () => {
+test('policy files default omission to dual stack and preserve each explicit family', () => {
 	const omitted = toDesiredPolicy(parsePolicyText(JSON.stringify(base), 'policy.json'), binding);
-	expect(omitted.connection).toEqual({ apn: 'auto' });
+	expect(omitted.connection).toEqual({ apn: 'auto', ipFamily: 'ipv4v6' });
 	for (const ipFamily of ['ipv4', 'ipv6', 'ipv4v6'] as const) {
 		const input = { ...base, connection: { apn: 'auto', ipFamily } };
 		expect(

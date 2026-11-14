@@ -55,7 +55,11 @@ for (const [family, v4, v6] of [
 	});
 	test(`${family}: planner writes until readback matches, without reconnect`, () => {
 		const desired = { ...policy, connection: { apn: 'auto', ipFamily: family } };
-		const plan = planReconcile(current, desired, capabilities);
+		const plan = planReconcile(
+			{ ...current, appliedIpFamily: family === 'ipv4' ? 'ipv6' : 'ipv4' },
+			desired,
+			capabilities,
+		);
 		const writes = plan.ops.filter((op) => op.port === 'nm');
 		expect(writes).toEqual([
 			{
@@ -83,7 +87,7 @@ for (const [family, v4, v6] of [
 	});
 }
 
-test('omission preserves the legacy argv and default policy does not opt in', () => {
+test('omission preserves the legacy port argv and the default retains its 1.x family', () => {
 	expect(createGsmArgs(profile)).toEqual([
 		'connection',
 		'add',
@@ -111,7 +115,8 @@ test('omission preserves the legacy argv and default policy does not opt in', ()
 		'2',
 	]);
 	expect(patchPairs({ apn: 'changed' })).toEqual(['gsm.apn', 'changed']);
-	expect(policy.connection.ipFamily).toBeUndefined();
+	const family: IpFamily = policy.connection.ipFamily;
+	expect(family).toBe('ipv4v6');
 	expect(planReconcile(current, policy, capabilities).ops.filter((op) => op.port === 'nm')).toEqual(
 		[],
 	);
@@ -132,5 +137,35 @@ test('readback never invents a family for unsupported method combinations', () =
 				]),
 			).ipFamily,
 		).toBeUndefined();
+	}
+});
+
+for (const ipFamily of ['ipv4', 'ipv6', 'ipv4v6'] as const) {
+	test(`${ipFamily}: unknown applied family causes no reconcile write`, () => {
+		const desired = { ...policy, connection: { apn: 'auto', ipFamily } };
+		for (let pass = 0; pass < 2; pass++) {
+			const plan = planReconcile(current, desired, capabilities);
+			expect(plan.ops.filter((op) => op.port === 'nm')).toEqual([]);
+			expect(plan.receipts.find((r) => r.dimension === 'connection')?.status).toBe('applied');
+		}
+	});
+}
+
+test('saved readback follows independently written methods rather than the request', async () => {
+	const runner = new StatefulNmcliRunner();
+	const port = new NmcliNmPort({ runner });
+	const saved = await port.createGsmProfile({ ...profile, ipFamily: 'ipv4' });
+	const fake = new FakeNetworkManagerPort(runner);
+	for (const [v4, v6, expected] of [
+		['disabled', 'auto', 'ipv6'],
+		['auto', 'auto', 'ipv4v6'],
+		['auto', 'disabled', 'ipv4'],
+		['auto', 'ignore', undefined],
+		['manual', 'auto', undefined],
+		['disabled', 'disabled', undefined],
+	] as const) {
+		runner.run(['connection', 'modify', saved.connectionId, 'ipv4.method', v4, 'ipv6.method', v6]);
+		expect((await port.readGsmProfile(saved.connectionId))?.ipFamily).toBe(expected);
+		expect((await fake.readGsmProfile(saved.connectionId))?.ipFamily).toBe(expected);
 	}
 });

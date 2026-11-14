@@ -32,7 +32,7 @@ export interface AppliedCellularState {
 	readonly connectionId?: ConnectionId;
 	readonly deviceIfname?: DeviceIfname;
 	readonly appliedApn?: 'auto' | string;
-	/** Saved profile methods from NM readback, not the carrier-granted addresses. */
+	/** Saved profile methods, not carrier-granted addresses. Absent means unknown: no family drift. */
 	readonly appliedIpFamily?: IpFamily;
 	readonly appliedRoaming?: boolean;
 	readonly appliedRadioPreference?: readonly RadioAccessTechnology[];
@@ -133,7 +133,7 @@ function planNmProfile(
 		!current.hasProfile ||
 		current.appliedApn !== desired.connection.apn ||
 		current.appliedRoaming !== desired.roaming ||
-		(desired.connection.ipFamily !== undefined &&
+		(current.appliedIpFamily !== undefined &&
 			current.appliedIpFamily !== desired.connection.ipFamily);
 	if (!needsWrite) {
 		return {

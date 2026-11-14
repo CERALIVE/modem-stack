@@ -5,10 +5,9 @@
 // so a `readGsmProfile` after a `createGsmProfile`/`updateGsmProfile` returns exactly
 // what was written — a genuine readback double for reconcile/observer tests. It is a
 // TEST DOUBLE, not the shipping adapter: it wires only the fields the port interface
-// carries. A4.1's `NmcliNmPort` owns the full nine-field GSM write parity and the
+// carries. A4.1's `NmcliNmPort` owns the base GSM fields plus optional IP methods and the
 // atomic Auto-APN transitions; this harness is what A4.1 injects to assert them.
 
-import { buildProfile, patchPairs } from '../../src/backend/nm-gsm-fields';
 import { epochMillis } from '../../src/domain';
 import {
 	type ConnectionId,
@@ -74,7 +73,14 @@ export class FakeNetworkManagerPort implements NetworkManagerPort {
 		if (profile.networkId !== undefined) {
 			argv.push('gsm.network-id', profile.networkId);
 		}
-		argv.push(...patchPairs(profile.ipFamily !== undefined ? { ipFamily: profile.ipFamily } : {}));
+		if (profile.ipFamily !== undefined) {
+			argv.push(
+				'ipv4.method',
+				profile.ipFamily === 'ipv6' ? 'disabled' : 'auto',
+				'ipv6.method',
+				profile.ipFamily === 'ipv4' ? 'disabled' : 'auto',
+			);
+		}
 		const result = this.#runner.run(argv);
 		const uuid = /\(([^)]+)\) successfully added/.exec(result.stdout)?.[1];
 		if (uuid === undefined) {
@@ -125,7 +131,14 @@ export class FakeNetworkManagerPort implements NetworkManagerPort {
 		if (patch.networkId !== undefined) {
 			argv.push('gsm.network-id', patch.networkId);
 		}
-		argv.push(...patchPairs(patch.ipFamily !== undefined ? { ipFamily: patch.ipFamily } : {}));
+		if (patch.ipFamily !== undefined) {
+			argv.push(
+				'ipv4.method',
+				patch.ipFamily === 'ipv6' ? 'disabled' : 'auto',
+				'ipv6.method',
+				patch.ipFamily === 'ipv4' ? 'disabled' : 'auto',
+			);
+		}
 		const result = this.#runner.run(argv);
 		if (result.exitCode !== 0) {
 			throw new Error(`fake nmcli: modify failed (${result.stderr})`);
@@ -192,4 +205,31 @@ function parseTerse(stdout: string): Map<string, string> {
 		}
 	}
 	return settings;
+}
+
+function buildProfile(id: ConnectionId, settings: Map<string, string>): GsmProfile {
+	const username = settings.get('gsm.username') ?? '';
+	const password = settings.get('gsm.password') ?? '';
+	const networkId = settings.get('gsm.network-id') ?? '';
+	const v4 = settings.get('ipv4.method');
+	const v6 = settings.get('ipv6.method');
+	const ipFamily =
+		v4 === 'auto' && v6 === 'disabled'
+			? ('ipv4' as const)
+			: v4 === 'disabled' && v6 === 'auto'
+				? ('ipv6' as const)
+				: v4 === 'auto' && v6 === 'auto'
+					? ('ipv4v6' as const)
+					: undefined;
+	return {
+		...(ipFamily !== undefined ? { ipFamily } : {}),
+		connectionId: id,
+		connectionName: settings.get('connection.id') ?? '',
+		apn: settings.get('gsm.apn') ?? '',
+		homeOnly: settings.get('gsm.home-only') === 'yes',
+		autoConfig: settings.get('gsm.auto-config') === 'yes',
+		...(username !== '' ? { username } : {}),
+		...(password !== '' ? { password } : {}),
+		...(networkId !== '' ? { networkId } : {}),
+	};
 }
