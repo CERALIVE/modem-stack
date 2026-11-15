@@ -3,7 +3,7 @@
 // way the controller touches any of those resources; the ModemManager port has no
 // bearer / connection verbs at all.
 
-import type { Brand, EpochMillis } from '../domain';
+import type { Brand, EpochMillis, IpFamily } from '../domain';
 import { nonEmptyString } from '../domain';
 import type { Receipt } from './receipts';
 
@@ -30,6 +30,8 @@ export function deviceIfname(value: string): DeviceIfname {
  * contract that adapter fulfils.
  */
 export interface GsmProfileInput {
+	/** Explicit saved IP methods; omission leaves methods untouched. */
+	readonly ipFamily?: IpFamily;
 	readonly connectionName: string;
 	/** Concrete APN, or the empty string when `autoConfig` drives it (A4.1). */
 	readonly apn: string;

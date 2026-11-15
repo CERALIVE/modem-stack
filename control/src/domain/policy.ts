@@ -39,6 +39,7 @@ export interface DesiredAuth {
 /** The data-connection intent. `apn: "auto"` selects NM Auto-APN (A4.1). */
 export interface DesiredConnection {
 	readonly apn: 'auto' | string;
+	/** Requested saved-profile family; retained as a required field for 1.x consumers. */
 	readonly ipFamily: IpFamily;
 	readonly auth?: DesiredAuth;
 	/**
@@ -107,7 +108,7 @@ export const RECOVERY_DISABLED: DesiredRecovery = { enabled: false };
 
 /**
  * Build a sensible default policy for a bindable identity: NM activation on,
- * Auto-APN, dual-stack IP, roaming off, prefer newest RAT down to GSM, recovery
+ * Auto-APN, dual-stack IP request, roaming off, prefer newest RAT down to GSM, recovery
  * disabled, no usage limits. Concrete adapters and the planner refine from here.
  */
 export function defaultCellularPolicy(boundTo: PolicyBindingKey): DesiredCellularPolicy {

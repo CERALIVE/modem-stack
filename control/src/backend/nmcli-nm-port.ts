@@ -28,6 +28,8 @@ import { buildProfile, createGsmArgs, patchPairs } from './nm-gsm-fields';
 import { type NmcliResult, type NmcliRunner, parseTerse, runNmcli } from './nmcli-runner';
 
 const READBACK_FIELDS = [
+	'ipv4.method',
+	'ipv6.method',
 	'connection.id',
 	'gsm.apn',
 	'gsm.username',

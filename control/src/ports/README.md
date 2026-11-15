@@ -25,17 +25,18 @@ the NM-owns-bearers architecture the whole package is built around (independent
 review correction, draft §Oracle #1): the controller is a reconciler over two
 adapters, never a second writer of the same resource.
 
-| Resource                                         | Sole writer      | Port / owner                                           |
-| ------------------------------------------------ | ---------------- | ------------------------------------------------------ |
-| APN                                              | NetworkManager   | `NetworkManagerPort` (`gsm.apn` / auto-config)         |
-| Connection auth (username / password)            | NetworkManager   | `NetworkManagerPort` (`gsm.username` / `gsm.password`) |
-| Roaming                                          | NetworkManager   | `NetworkManagerPort` (`gsm.home-only`)                 |
-| Autoconnect                                      | NetworkManager   | `NetworkManagerPort` (`connection.autoconnect`)        |
-| Activation (bearer lifecycle)                    | NetworkManager   | `NetworkManagerPort` (`activate`/`deactivate`)         |
-| Radio access-technology modes                    | ModemManager     | `ModemManagerPort.setRadioModes`                       |
-| SIM operations (PIN / PUK / primary slot / scan) | ModemManager     | `ModemManagerPort`                                     |
-| Recovery ladder                                  | Local controller | policy `recovery` (disabled by default, A3.4)          |
-| Usage policy (cycle / threshold)                 | Local controller | policy `usage` (A4.3 sampler)                          |
+| Resource                                         | Sole writer      | Port / owner                                                                |
+| ------------------------------------------------ | ---------------- | --------------------------------------------------------------------------- |
+| APN                                              | NetworkManager   | `NetworkManagerPort` (`gsm.apn` / auto-config)                              |
+| Saved IP family methods                          | NetworkManager   | `NetworkManagerPort` (explicit `ipFamily` only; omission preserves methods) |
+| Connection auth (username / password)            | NetworkManager   | `NetworkManagerPort` (`gsm.username` / `gsm.password`)                      |
+| Roaming                                          | NetworkManager   | `NetworkManagerPort` (`gsm.home-only`)                                      |
+| Autoconnect                                      | NetworkManager   | `NetworkManagerPort` (`connection.autoconnect`)                             |
+| Activation (bearer lifecycle)                    | NetworkManager   | `NetworkManagerPort` (`activate`/`deactivate`)                              |
+| Radio access-technology modes                    | ModemManager     | `ModemManagerPort.setRadioModes`                                            |
+| SIM operations (PIN / PUK / primary slot / scan) | ModemManager     | `ModemManagerPort`                                                          |
+| Recovery ladder                                  | Local controller | policy `recovery` (disabled by default, A3.4)                               |
+| Usage policy (cycle / threshold)                 | Local controller | policy `usage` (A4.3 sampler)                                               |
 
 ### The bearer invariant (safety-critical)
 
