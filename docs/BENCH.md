@@ -1729,3 +1729,8 @@ Recorded on 2026-10-05 at the owner's direction. The owner confirmed that each m
 | Generic         | HIMI U01 in QMI mode                                                      | USB                  | completed modem-carried CeraLive stream (owner field use) |
 | NETGEAR         | LB1120                                                                    | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
 | Any phone       | USB tethering                                                             | router over Ethernet | completed modem-carried CeraLive stream (owner field use) |
+
+The HIMI U01 row in QMI mode was investigated on the bench on 2026-11-14/15: the stick's own
+Android holds the data call, and turning that off arms a SIM-switch watchdog that detaches LTE
+about every 70 s. Findings, the per-stick fixes and their undo are in
+[HIMI-U01-FIELD-NOTES.md](HIMI-U01-FIELD-NOTES.md) (internal engineering note).
