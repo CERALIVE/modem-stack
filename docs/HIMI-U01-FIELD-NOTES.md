@@ -55,17 +55,7 @@ off, the unchanged NetworkManager profile connected and two of two pings went ou
 the modem interface, on both sticks. In the same minute a stick whose own data was still on
 failed with the same internal (2,201).
 
-Turning the stick's own data off:
-
-```sh
-adb shell settings put global mobile_data 0
-# then power-cycle the stick: Android 4.4 reads mobile_data only at boot
-```
-
-Setting the value back to 1 and power-cycling restores the stick's own data call. What did
-not work: `svc data disable` throws (tried on V1.0; the shell uid lacks
-`MODIFY_PHONE_STATE`); the web admin has no working mobile-data switch (its handler is
-empty); `settings put` alone has no runtime effect until the next boot.
+With the stick's own mobile data off, host data calls succeed; with it on, they fail.
 
 Turning the stick's data off arms the SIM-switch watchdog described next.
 
@@ -91,10 +81,6 @@ matched to logcat on both sticks:
    (`mBroadcastSimRunable`), independent of the broadcast; the V1.0 stick's logcat showed
    SimDetector switching without it.
 
-`INTERNET_DETECT` (already 0) and `HIMI_USB_STATUS` are read only on the connected path. On
-the V1.0 stick the per-slot `mobile_data0=0` had no effect and was reverted, and
-`setprop persist.himi.sim.num 1` is denied by init.
-
 The SIM switch can only be disabled with root access on the stick. A verified procedure
 exists in CeraLive's internal engineering notes; there is no user-level setting for it.
 
@@ -105,18 +91,11 @@ exists in CeraLive's internal engineering notes; there is no user-level setting 
 - Once, without any restart, one stick's QMI port hung roughly 20 minutes after it attached,
   while its Android stayed healthy (SIM READY, LTE registered).
 
-Recovery: power-cycle only that stick's hub port.
-
-```sh
-uhubctl -l <hub> -p <port> -a cycle -d 3
-```
-
-Each stick came back as `05c6:9091` (no switch to router mode), registered and connected
-with an IPv4 address within 26 to 32 s. After the last pair of cycles there were no QMI
-timeouts for 5 minutes 13 seconds. Prefer this to a ModemManager restart, which drops every
-modem and preceded the first hang. uhubctl also toggles the USB3 companion lane of the same
-physical port, so anything attached there is cycled too. **Unproven:** the cause of the
-hang.
+A power cycle of only the affected stick's USB hub port recovered it. Each stick came back
+as `05c6:9091` (no switch to router mode), registered and connected with an IPv4 address
+within 26 to 32 s, and after the last pair of cycles there were no QMI timeouts for 5
+minutes 13 seconds. A ModemManager restart drops every modem and preceded the first hang.
+**Unproven:** the cause of the hang.
 
 ## Security observations
 
