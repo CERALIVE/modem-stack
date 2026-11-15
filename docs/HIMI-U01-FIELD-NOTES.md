@@ -22,7 +22,7 @@ address or password appears here; the raw evidence stays outside the repository.
 | Interfaces  | `ff/ff/ff` (0, unbound), `ff/00/00` (1, unbound), `ff/ff/ff` (2, `qmi_wwan`), `ff/42/01` (3, ADB); the stick's `persist.sys.usb.config` is `diag,serial_smd,rmnet_bam,adb` |
 | QMI         | raw-IP, no aggregation, autoconnect off; the LTE attach PDN is the carrier's internet APN                                                                                  |
 | Android     | `ro.debuggable=1`, `ro.secure=1`, SELinux permissive, ADB shell uid 2000                                                                                                   |
-| Bootloader  | Qualcomm LK. V1.0: locked (`fastboot oem device-info` reports unlocked false, tampered false). V2.0: **Unproven**, not measured                                            |
+| Bootloader  | Qualcomm LK. V1.0: the bootloader reports itself locked (unlocked false, tampered false). V2.0: **Unproven**, not measured                                                 |
 | Storage     | 3.9 GB eMMC, 30 GPT partitions                                                                                                                                             |
 
 Signals that identify the stick and its two failure modes from data a host already has:
