@@ -1732,5 +1732,4 @@ Recorded on 2026-10-05 at the owner's direction. The owner confirmed that each m
 
 The HIMI U01 row in QMI mode was investigated on the bench on 2026-11-14/15: the stick's own
 Android holds the data call, and turning that off arms a SIM-switch watchdog that detaches LTE
-about every 70 s. Findings, the per-stick fixes and their undo are in
-[HIMI-U01-FIELD-NOTES.md](HIMI-U01-FIELD-NOTES.md) (internal engineering note).
+about every 70 s. Findings are in [HIMI-U01-FIELD-NOTES.md](HIMI-U01-FIELD-NOTES.md).
