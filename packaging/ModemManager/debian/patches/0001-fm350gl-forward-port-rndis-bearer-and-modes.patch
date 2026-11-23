@@ -1,4 +1,4 @@
-From 55d1b9bde66467d5316ae3a498a4bb25367ebe7a Mon Sep 17 00:00:00 2001
+From f5f975478fa2dd4a45178f257338af65b6547dc6 Mon Sep 17 00:00:00 2001
 From: rationalsa <belaboxproject@gmail.com>
 Date: Sat, 22 Aug 2026 19:02:33 -0500
 Subject: [PATCH 1/3] fm350gl: forward-port USB RNDIS bearer and mode handling
@@ -12,6 +12,13 @@ Description: Add the FM350-GL USB/RNDIS bearer and GTACT mode handling on 1.24.2
  instead of the unsupported ATZ form. The 4-second GMR guard, IPv4-only DNS
  relaxation, set-mode completion fix, and single-RAT stale-preference fix are
  folded here.
+ .
+ The bearer parses the FM350's +CGCONTRDP answer itself, as BELABOX's plugin
+ did: one line per IP family, an empty bearer id (which the generic parser
+ rejects), IPv6 in dotted decimal, the MTU, and the older layout with a
+ separate subnet field. A malformed line is skipped. An answer without a
+ usable line is not fatal once +CGPADDR has given the address; an error
+ answer, cancellation or timeout still fails the connection.
 Author: rationalsa <belaboxproject@gmail.com>
 Origin: vendor, https://github.com/BELABOX/modemmanager/commit/da01610c46c581b0c6f2acd0ac50f5bba666efdf
 Origin-Commit: da01610c46c581b0c6f2acd0ac50f5bba666efdf
@@ -24,24 +31,24 @@ Forwarded: no (merge request drafted but not filed; no upstream MR URL exists)
 Applied-Upstream: no
 Upstream-Status: NOT UPSTREAM; no USB/RNDIS fm350gl plugin exists in 1.24.2 or upstream main
 Rationale: The USB 0e8d:7126/7127 compositions expose RNDIS plus AT ports but no MBIM/QMI port. Generic ModemManager therefore issues ATD*99***N# and the modem returns 0,NONE. The bearer must use +CGACT and the RNDIS net port.
-Credit: BELABOX-authored fixes forward-ported by CeraLive; this patch is not CeraLive-originated work.
-Last-Update: 2026-08-23
+Credit: BELABOX-authored fixes forward-ported by CeraLive; this patch is not CeraLive-originated work. The +CGCONTRDP parser restores BELABOX's tolerance of the FM350 answer that the forward-port had lost.
+Last-Update: 2026-11-23
 
 ---
  meson.build                                   |   1 +
  meson_options.txt                             |   1 +
  src/plugins/fm350gl/77-mm-fm350gl.rules       |  32 ++
- .../fm350gl/mm-broadband-bearer-fm350gl.c     | 525 ++++++++++++++++++
+ .../fm350gl/mm-broadband-bearer-fm350gl.c     | 505 +++++++++++++++++
  .../fm350gl/mm-broadband-bearer-fm350gl.h     |  46 ++
- .../fm350gl/mm-broadband-modem-fm350gl.c      | 330 +++++++++++
+ .../fm350gl/mm-broadband-modem-fm350gl.c      | 330 ++++++++++++
  .../fm350gl/mm-broadband-modem-fm350gl.h      |  44 ++
- .../fm350gl/mm-modem-helpers-fm350gl.c        | 162 ++++++
- .../fm350gl/mm-modem-helpers-fm350gl.h        |  25 +
+ .../fm350gl/mm-modem-helpers-fm350gl.c        | 507 ++++++++++++++++++
+ .../fm350gl/mm-modem-helpers-fm350gl.h        |  51 ++
  src/plugins/fm350gl/mm-plugin-fm350gl.c       |  74 +++
- .../tests/test-modem-helpers-fm350gl.c        |  96 ++++
+ .../tests/test-modem-helpers-fm350gl.c        | 372 +++++++++++++
  src/plugins/meson.build                       |  21 +
  src/plugins/mm-builtin-plugins.c              |   6 +
- 13 files changed, 1363 insertions(+)
+ 13 files changed, 1990 insertions(+)
  create mode 100644 src/plugins/fm350gl/77-mm-fm350gl.rules
  create mode 100644 src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c
  create mode 100644 src/plugins/fm350gl/mm-broadband-bearer-fm350gl.h
@@ -116,10 +123,10 @@ index 0000000000000000000000000000000000000000..f0ab95930cf6e725d2acad3d416c0ec1
 +LABEL="mm_fm350gl_port_types_end"
 diff --git a/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c b/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..8e5ee961b7ab70cce4e8ea7e8d3e900f9e9b8736
+index 0000000000000000000000000000000000000000..fcd24251978ae05e8cfc9bdd2b4eb7d203e98c73
 --- /dev/null
 +++ b/src/plugins/fm350gl/mm-broadband-bearer-fm350gl.c
-@@ -0,0 +1,525 @@
+@@ -0,0 +1,505 @@
 +/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 +/*
 + * This program is free software; you can redistribute it and/or modify
@@ -143,6 +150,7 @@ index 0000000000000000000000000000000000000000..8e5ee961b7ab70cce4e8ea7e8d3e900f
 +#include "mm-iface-modem-3gpp.h"
 +#include "mm-log-object.h"
 +#include "mm-modem-helpers.h"
++#include "mm-modem-helpers-fm350gl.h"
 +
 +G_DEFINE_TYPE (MMBroadbandBearerFm350gl, mm_broadband_bearer_fm350gl, MM_TYPE_BROADBAND_BEARER)
 +
@@ -345,27 +353,6 @@ index 0000000000000000000000000000000000000000..8e5ee961b7ab70cce4e8ea7e8d3e900f
 +    return g_steal_pointer (&copy);
 +}
 +
-+static GInetAddress *
-+parse_decimal_ipv6 (const gchar *field)
-+{
-+    g_auto(GStrv) parts = NULL;
-+    guint8        bytes[16];
-+    guint         i;
-+
-+    parts = g_strsplit (field, ".", -1);
-+    if (g_strv_length (parts) != G_N_ELEMENTS (bytes))
-+        return NULL;
-+
-+    for (i = 0; i < G_N_ELEMENTS (bytes); i++) {
-+        guint value;
-+
-+        if (!mm_get_uint_from_str (parts[i], &value) || value > G_MAXUINT8)
-+            return NULL;
-+        bytes[i] = (guint8) value;
-+    }
-+    return g_inet_address_new_from_bytes (bytes, G_SOCKET_FAMILY_IPV6);
-+}
-+
 +static gboolean
 +parse_cgpaddr_response (const gchar  *response,
 +                        guint         expected_cid,
@@ -399,9 +386,7 @@ index 0000000000000000000000000000000000000000..8e5ee961b7ab70cce4e8ea7e8d3e900f
 +        field = unquote_field (fields[i]);
 +        if (!field[0])
 +            continue;
-+        address = g_inet_address_new_from_string (field);
-+        if (!address)
-+            address = parse_decimal_ipv6 (field);
++        address = mm_fm350gl_parse_address (field);
 +        if (!address) {
 +            g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
 +                         "Invalid address in +CGPADDR response: '%s'", field);
@@ -449,59 +434,61 @@ index 0000000000000000000000000000000000000000..8e5ee961b7ab70cce4e8ea7e8d3e900f
 +}
 +
 +static void
-+cgcontrdp_ready (MMBaseModem  *modem,
-+                 GAsyncResult *res,
-+                 GTask        *task)
++complete_ip_config (ConnectContext     *ctx,
++                    MMFm350glCgcontrdp *info)
 +{
-+    MMBroadbandBearerFm350gl *self;
-+    ConnectContext          *ctx;
-+    const gchar             *response;
-+    g_autoptr(GError)        error = NULL;
-+    g_autofree gchar        *local_address = NULL;
-+    g_autofree gchar        *subnet = NULL;
-+    g_autofree gchar        *gateway = NULL;
-+    g_autofree gchar        *dns_primary = NULL;
-+    g_autofree gchar        *dns_secondary = NULL;
-+    const gchar             *dns[3] = { NULL, NULL, NULL };
-+
-+    self = g_task_get_source_object (task);
-+    ctx = g_task_get_task_data (task);
-+    response = mm_base_modem_at_command_finish (modem, res, &error);
-+    if (!response || !mm_3gpp_parse_cgcontrdp_response (response,
-+                                                         NULL,
-+                                                         NULL,
-+                                                         NULL,
-+                                                         &local_address,
-+                                                         &subnet,
-+                                                         &gateway,
-+                                                         &dns_primary,
-+                                                         &dns_secondary,
-+                                                         &error)) {
-+        g_task_return_error (task, g_steal_pointer (&error));
-+        g_object_unref (task);
-+        return;
-+    }
-+
 +    if (ctx->ipv4_config) {
 +        const gchar *address;
 +
 +        address = mm_bearer_ip_config_get_address (ctx->ipv4_config);
-+        if (subnet && subnet[0])
-+            mm_bearer_ip_config_set_prefix (ctx->ipv4_config, mm_netmask_to_cidr (subnet));
-+        else
-+            mm_bearer_ip_config_set_prefix (ctx->ipv4_config, 32);
-+        if (gateway && gateway[0] && !g_str_equal (gateway, "0.0.0.0"))
-+            mm_bearer_ip_config_set_gateway (ctx->ipv4_config, gateway);
-+        else
-+            mm_bearer_ip_config_set_gateway (ctx->ipv4_config, address);
-+
-+        if (dns_primary && dns_primary[0] && !g_str_equal (dns_primary, "0.0.0.0"))
-+            dns[0] = dns_primary;
-+        if (dns_secondary && dns_secondary[0] && !g_str_equal (dns_secondary, "0.0.0.0"))
-+            dns[dns[0] ? 1 : 0] = dns_secondary;
-+        if (dns[0])
-+            mm_bearer_ip_config_set_dns (ctx->ipv4_config, dns);
++        mm_bearer_ip_config_set_prefix (ctx->ipv4_config,
++                                        (info && info->ipv4.prefix) ? info->ipv4.prefix : 32);
++        mm_bearer_ip_config_set_gateway (ctx->ipv4_config,
++                                         (info && info->ipv4.gateway) ? info->ipv4.gateway : address);
++        if (info && info->ipv4.dns[0])
++            mm_bearer_ip_config_set_dns (ctx->ipv4_config, (const gchar **) info->ipv4.dns);
++        if (info && info->ipv4.mtu)
++            mm_bearer_ip_config_set_mtu (ctx->ipv4_config, info->ipv4.mtu);
 +    }
++
++    if (ctx->ipv6_config && info) {
++        if (info->ipv6.dns[0])
++            mm_bearer_ip_config_set_dns (ctx->ipv6_config, (const gchar **) info->ipv6.dns);
++        if (info->ipv6.mtu)
++            mm_bearer_ip_config_set_mtu (ctx->ipv6_config, info->ipv6.mtu);
++    }
++}
++
++static void
++cgcontrdp_ready (MMBaseModem  *modem,
++                 GAsyncResult *res,
++                 GTask        *task)
++{
++    MMBroadbandBearerFm350gl      *self;
++    ConnectContext                *ctx;
++    const gchar                   *response;
++    g_autoptr(GError)              error = NULL;
++    g_autoptr(MMFm350glCgcontrdp)  info = NULL;
++
++    self = g_task_get_source_object (task);
++    ctx = g_task_get_task_data (task);
++    response = mm_base_modem_at_command_finish (modem, res, &error);
++    if (!response) {
++        g_task_return_error (task, g_steal_pointer (&error));
++        g_object_unref (task);
++        return;
++    }
++    info = mm_fm350gl_parse_cgcontrdp_response (response, ctx->cid, &error);
++
++    /* An answer that can't be parsed doesn't fail the connection: +CGPADDR
++     * already gave the address, so it goes on without the details (a /32
++     * with the address as gateway, no DNS). An error answer, cancellation
++     * or timeout fails it as before. */
++    if (!info)
++        mm_obj_warn (self, "couldn't load IP details for PDP context #%u, continuing without DNS: %s",
++                     ctx->cid, error->message);
++
++    complete_ip_config (ctx, info);
 +
 +    mm_obj_dbg (self, "IP settings loaded for RNDIS PDP context #%u", ctx->cid);
 +    g_task_return_pointer (
@@ -699,7 +686,7 @@ index 0000000000000000000000000000000000000000..85f0508ae955b4d5bb1dbf15d46451cc
 +#endif /* MM_BROADBAND_BEARER_FM350GL_H */
 diff --git a/src/plugins/fm350gl/mm-broadband-modem-fm350gl.c b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..6b061b88e04ab658021baa63321a1f0ded48684f
+index 0000000000000000000000000000000000000000..0801557007eb01ce17be38aadc41ff451868151b
 --- /dev/null
 +++ b/src/plugins/fm350gl/mm-broadband-modem-fm350gl.c
 @@ -0,0 +1,330 @@
@@ -1085,10 +1072,10 @@ index 0000000000000000000000000000000000000000..babc65f849c1069bc2af80399c69c9f7
 +#endif /* MM_BROADBAND_MODEM_FM350GL_H */
 diff --git a/src/plugins/fm350gl/mm-modem-helpers-fm350gl.c b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..01de53e766606fc57011b4cc5f2d347b2f13196b
+index 0000000000000000000000000000000000000000..95ef0cfe341cd8c525a27c290f8bf0f2d4f6d325
 --- /dev/null
 +++ b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.c
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,507 @@
 +/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 +/*
 + * This program is free software; you can redistribute it and/or modify
@@ -1101,6 +1088,7 @@ index 0000000000000000000000000000000000000000..01de53e766606fc57011b4cc5f2d347b
 + */
 +
 +#include <config.h>
++#include <string.h>
 +
 +#define _LIBMM_INSIDE_MM
 +#include <libmm-glib.h>
@@ -1251,12 +1239,356 @@ index 0000000000000000000000000000000000000000..01de53e766606fc57011b4cc5f2d347b
 +
 +    return g_strdup_printf ("+GTACT=%u,%u", rat, preferred_rat);
 +}
++
++/*****************************************************************************/
++/* Addresses                                                                 */
++
++static GInetAddress *
++parse_dotted_octets (gchar   **parts,
++                     guint     n_octets,
++                     gboolean  ipv6)
++{
++    guint8 bytes[16];
++    guint  i;
++
++    g_assert (n_octets <= G_N_ELEMENTS (bytes));
++    for (i = 0; i < n_octets; i++) {
++        guint value;
++
++        if (!parts[i] || !mm_get_uint_from_str (parts[i], &value) || value > G_MAXUINT8)
++            return NULL;
++        bytes[i] = (guint8) value;
++    }
++    return g_inet_address_new_from_bytes (bytes, ipv6 ? G_SOCKET_FAMILY_IPV6 : G_SOCKET_FAMILY_IPV4);
++}
++
++GInetAddress *
++mm_fm350gl_parse_address (const gchar *field)
++{
++    g_auto(GStrv) parts = NULL;
++    guint         n_parts;
++
++    if (!field || !field[0])
++        return NULL;
++    if (strchr (field, ':'))
++        return g_inet_address_new_from_string (field);
++
++    parts = g_strsplit (field, ".", -1);
++    n_parts = g_strv_length (parts);
++    if (n_parts == 4)
++        return parse_dotted_octets (parts, 4, FALSE);
++    if (n_parts == 16)
++        return parse_dotted_octets (parts, 16, TRUE);
++    return NULL;
++}
++
++/* Local address and subnet mask in one field (TS 27.007 v9.4 and later):
++ * 8 octets for IPv4, 32 octets for IPv6. A bare address is accepted too. */
++static gboolean
++parse_address_and_mask (const gchar   *field,
++                        GInetAddress **out_address,
++                        GInetAddress **out_mask)
++{
++    g_auto(GStrv) parts = NULL;
++    guint         n_parts;
++
++    *out_address = NULL;
++    *out_mask = NULL;
++
++    if (strchr (field, ':')) {
++        *out_address = g_inet_address_new_from_string (field);
++        return *out_address != NULL;
++    }
++
++    parts = g_strsplit (field, ".", -1);
++    n_parts = g_strv_length (parts);
++    if (n_parts == 4 || n_parts == 16) {
++        *out_address = parse_dotted_octets (parts, n_parts, n_parts == 16);
++        return *out_address != NULL;
++    }
++    if (n_parts == 8 || n_parts == 32) {
++        guint half = n_parts / 2;
++
++        *out_address = parse_dotted_octets (parts, half, half == 16);
++        *out_mask = parse_dotted_octets (&parts[half], half, half == 16);
++        if (*out_address && *out_mask)
++            return TRUE;
++        g_clear_object (out_address);
++        g_clear_object (out_mask);
++    }
++    return FALSE;
++}
++
++static guint
++mask_to_prefix (GInetAddress *mask)
++{
++    const guint8 *bytes;
++    gsize         len;
++    gsize         i;
++    gint          bit;
++    guint         prefix = 0;
++    gboolean      host_bits = FALSE;
++
++    bytes = g_inet_address_to_bytes (mask);
++    len = g_inet_address_get_native_size (mask);
++    for (i = 0; i < len; i++) {
++        for (bit = 7; bit >= 0; bit--) {
++            if (!(bytes[i] & (1 << bit)))
++                host_bits = TRUE;
++            else if (host_bits)
++                return 0; /* not a contiguous mask */
++            else
++                prefix++;
++        }
++    }
++    return prefix;
++}
++
++/*****************************************************************************/
++/* +CGCONTRDP                                                                */
++
++/* Split on commas outside double quotes and unquote each field; some
++ * fields (e.g. S-NSSAI "1,7") carry commas inside quotes. */
++static GPtrArray *
++split_quoted_fields (const gchar *str)
++{
++    GPtrArray   *fields;
++    GString     *current;
++    gboolean     quoted = FALSE;
++    const gchar *p;
++
++    fields = g_ptr_array_new_with_free_func (g_free);
++    current = g_string_new (NULL);
++    for (p = str; *p; p++) {
++        if (*p == '"')
++            quoted = !quoted;
++        else if (*p == ',' && !quoted) {
++            g_ptr_array_add (fields, g_strstrip (g_string_free (current, FALSE)));
++            current = g_string_new (NULL);
++        } else
++            g_string_append_c (current, *p);
++    }
++    g_ptr_array_add (fields, g_strstrip (g_string_free (current, FALSE)));
++    return fields;
++}
++
++static void
++family_clear (MMFm350glCgcontrdpFamily *family)
++{
++    guint i;
++
++    g_free (family->gateway);
++    for (i = 0; i < G_N_ELEMENTS (family->dns); i++)
++        g_free (family->dns[i]);
++    memset (family, 0, sizeof (*family));
++}
++
++void
++mm_fm350gl_cgcontrdp_free (MMFm350glCgcontrdp *info)
++{
++    if (!info)
++        return;
++    family_clear (&info->ipv4);
++    family_clear (&info->ipv6);
++    g_slice_free (MMFm350glCgcontrdp, info);
++}
++
++#define CGCONTRDP_FIELD_LOCAL_ADDRESS 3
++#define CGCONTRDP_FIELD_GATEWAY       4
++#define CGCONTRDP_FIELD_DNS_PRIMARY   5
++#define CGCONTRDP_FIELD_DNS_SECONDARY 6
++#define CGCONTRDP_FIELD_IPV4_MTU      11
++
++/* Shortest mask taken as a separate subnet field (see below); a /0 mask
++ * would be indistinguishable from an unspecified 0.0.0.0 gateway */
++#define CGCONTRDP_LEGACY_MIN_PREFIX   1
++
++static const gchar *
++field_at (GPtrArray *fields,
++          guint      index)
++{
++    return index < fields->len ? g_ptr_array_index (fields, index) : "";
++}
++
++/* Returns FALSE with error on a malformed address; TRUE with
++ * *out_family == G_SOCKET_FAMILY_INVALID when the line has no address. */
++static gboolean
++parse_cgcontrdp_line (GPtrArray                *fields,
++                      MMFm350glCgcontrdpFamily *out,
++                      GSocketFamily            *out_family,
++                      GError                  **error)
++{
++    g_autoptr(GInetAddress) local = NULL;
++    g_autoptr(GInetAddress) mask = NULL;
++    g_autoptr(GInetAddress) gateway = NULL;
++    GInetAddress           *dns[2] = { NULL, NULL };
++    GSocketFamily           family = G_SOCKET_FAMILY_INVALID;
++    const gchar            *field;
++    guint                   n_dns = 0;
++    guint                   shift = 0;
++    guint                   mtu;
++    guint                   i;
++    gboolean                success = FALSE;
++
++    field = field_at (fields, CGCONTRDP_FIELD_LOCAL_ADDRESS);
++    if (field[0]) {
++        if (!parse_address_and_mask (field, &local, &mask)) {
++            g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                         "Invalid local address in +CGCONTRDP response: '%s'", field);
++            goto out;
++        }
++        family = g_inet_address_get_family (local);
++    }
++
++    /* Before TS 27.007 v9.4.0 the subnet mask had a field of its own after a
++     * bare local address, shifting the gateway and DNS fields by one. Take
++     * that layout when the next field is a contiguous non-zero mask of the
++     * same family, which a usable gateway address never is. */
++    if (local && !mask) {
++        g_autoptr(GInetAddress) legacy_mask = NULL;
++
++        legacy_mask = mm_fm350gl_parse_address (field_at (fields, CGCONTRDP_FIELD_GATEWAY));
++        if (legacy_mask &&
++            g_inet_address_get_family (legacy_mask) == family &&
++            mask_to_prefix (legacy_mask) >= CGCONTRDP_LEGACY_MIN_PREFIX) {
++            mask = g_steal_pointer (&legacy_mask);
++            shift = 1;
++        }
++    }
++
++    field = field_at (fields, CGCONTRDP_FIELD_GATEWAY + shift);
++    if (field[0]) {
++        gateway = mm_fm350gl_parse_address (field);
++        if (!gateway) {
++            g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                         "Invalid gateway in +CGCONTRDP response: '%s'", field);
++            goto out;
++        }
++        if (family == G_SOCKET_FAMILY_INVALID)
++            family = g_inet_address_get_family (gateway);
++    }
++
++    for (i = 0; i < G_N_ELEMENTS (dns); i++) {
++        field = field_at (fields, CGCONTRDP_FIELD_DNS_PRIMARY + shift + i);
++        if (!field[0])
++            continue;
++        dns[i] = mm_fm350gl_parse_address (field);
++        if (!dns[i]) {
++            g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                         "Invalid DNS address in +CGCONTRDP response: '%s'", field);
++            goto out;
++        }
++        if (family == G_SOCKET_FAMILY_INVALID)
++            family = g_inet_address_get_family (dns[i]);
++    }
++
++    *out_family = family;
++    if (family == G_SOCKET_FAMILY_INVALID) {
++        success = TRUE;
++        goto out;
++    }
++
++    out->present = TRUE;
++    if (mask && g_inet_address_get_family (mask) == family)
++        out->prefix = mask_to_prefix (mask);
++    if (gateway && g_inet_address_get_family (gateway) == family && !g_inet_address_get_is_any (gateway))
++        out->gateway = g_inet_address_to_string (gateway);
++    for (i = 0; i < G_N_ELEMENTS (dns); i++) {
++        if (dns[i] && g_inet_address_get_family (dns[i]) == family && !g_inet_address_get_is_any (dns[i]))
++            out->dns[n_dns++] = g_inet_address_to_string (dns[i]);
++    }
++    /* The FM350 reports the same MTU value in this field on its IPv4 and
++     * IPv6 lines. The legacy layout predates the MTU field. */
++    field = shift ? "" : field_at (fields, CGCONTRDP_FIELD_IPV4_MTU);
++    if (field[0] && mm_get_uint_from_str (field, &mtu) && mtu > 0)
++        out->mtu = mtu;
++    success = TRUE;
++
++out:
++    for (i = 0; i < G_N_ELEMENTS (dns); i++)
++        g_clear_object (&dns[i]);
++    return success;
++}
++
++MMFm350glCgcontrdp *
++mm_fm350gl_parse_cgcontrdp_response (const gchar  *response,
++                                     guint         cid,
++                                     GError      **error)
++{
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++    g_autoptr(GError)             line_error = NULL;
++    g_auto(GStrv)                 lines = NULL;
++    guint                         i;
++
++    /* The FM350 answers +CGCONTRDP=<cid> with one line per IP family. The
++     * bearer id may be empty (seen on T-Mobile US), which the generic parser
++     * rejects, and IPv6 addresses come as 16 dotted-decimal octets:
++     *
++     *   +CGCONTRDP: 1,,"apn","","","192.0.2.34","192.0.2.210","","",0,,1436,...
++     *   +CGCONTRDP: 1,,"apn","","","32.1.13.184.0.0.0.0.0.0.0.0.0.0.0.9",...
++     *
++     * A line's family is taken from its first address field. A malformed
++     * line is skipped, so it can't hide a usable line for the other family. */
++    if (!response) {
++        g_set_error_literal (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                             "Missing +CGCONTRDP response");
++        return NULL;
++    }
++
++    info = g_slice_new0 (MMFm350glCgcontrdp);
++    lines = g_strsplit (response, "\n", -1);
++    for (i = 0; lines[i]; i++) {
++        g_autoptr(GPtrArray)      fields = NULL;
++        MMFm350glCgcontrdpFamily  parsed = { 0 };
++        MMFm350glCgcontrdpFamily *target;
++        GSocketFamily             family = G_SOCKET_FAMILY_INVALID;
++        const gchar              *line;
++        guint                     line_cid;
++
++        line = g_strstrip (lines[i]);
++        if (!g_str_has_prefix (line, "+CGCONTRDP:"))
++            continue;
++
++        fields = split_quoted_fields (mm_strip_tag (line, "+CGCONTRDP:"));
++        if (!mm_get_uint_from_str (field_at (fields, 0), &line_cid) || line_cid != cid)
++            continue;
++
++        if (!parse_cgcontrdp_line (fields, &parsed, &family, line_error ? NULL : &line_error)) {
++            family_clear (&parsed);
++            continue;
++        }
++
++        if (family == G_SOCKET_FAMILY_IPV4)
++            target = &info->ipv4;
++        else if (family == G_SOCKET_FAMILY_IPV6)
++            target = &info->ipv6;
++        else
++            continue;
++
++        /* Keep the first line reported per family */
++        if (target->present)
++            family_clear (&parsed);
++        else
++            *target = parsed;
++    }
++
++    if (!info->ipv4.present && !info->ipv6.present) {
++        if (line_error)
++            g_propagate_error (error, g_steal_pointer (&line_error));
++        else
++            g_set_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED,
++                         "No usable +CGCONTRDP line for context #%u", cid);
++        return NULL;
++    }
++
++    return g_steal_pointer (&info);
++}
 diff --git a/src/plugins/fm350gl/mm-modem-helpers-fm350gl.h b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..7caec9eabab5819d002331be9ca89b7445fd0314
+index 0000000000000000000000000000000000000000..ae8dc85007922e3204605af547788c5186c0eba8
 --- /dev/null
 +++ b/src/plugins/fm350gl/mm-modem-helpers-fm350gl.h
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,51 @@
 +/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 +/*
 + * This program is free software; you can redistribute it and/or modify
@@ -1271,6 +1603,7 @@ index 0000000000000000000000000000000000000000..7caec9eabab5819d002331be9ca89b74
 +#ifndef MM_MODEM_HELPERS_FM350GL_H
 +#define MM_MODEM_HELPERS_FM350GL_H
 +
++#include <gio/gio.h>
 +#include <ModemManager.h>
 +
 +gboolean mm_fm350gl_parse_current_modes       (const gchar  *response,
@@ -1280,6 +1613,31 @@ index 0000000000000000000000000000000000000000..7caec9eabab5819d002331be9ca89b74
 +gchar   *mm_fm350gl_build_set_modes_command   (MMModemMode  allowed,
 +                                                MMModemMode  preferred,
 +                                                GError     **error);
++
++/* Address fields: dotted-decimal IPv4 (4 octets), dotted-decimal IPv6
++ * (16 octets, the modem's default +CGPIAF format) or colon-notation IPv6. */
++GInetAddress *mm_fm350gl_parse_address (const gchar *field);
++
++/* +CGCONTRDP=<cid> details for one IP family */
++typedef struct {
++    gboolean  present;
++    guint     prefix;  /* from the subnet mask; 0 if not reported */
++    gchar    *gateway; /* NULL if empty or unspecified */
++    gchar    *dns[3];  /* NULL-terminated; empty and unspecified entries skipped */
++    guint     mtu;     /* 0 if not reported */
++} MMFm350glCgcontrdpFamily;
++
++typedef struct {
++    MMFm350glCgcontrdpFamily ipv4;
++    MMFm350glCgcontrdpFamily ipv6;
++} MMFm350glCgcontrdp;
++
++void                mm_fm350gl_cgcontrdp_free           (MMFm350glCgcontrdp *info);
++G_DEFINE_AUTOPTR_CLEANUP_FUNC (MMFm350glCgcontrdp, mm_fm350gl_cgcontrdp_free)
++
++MMFm350glCgcontrdp *mm_fm350gl_parse_cgcontrdp_response (const gchar  *response,
++                                                         guint         cid,
++                                                         GError      **error);
 +
 +#endif /* MM_MODEM_HELPERS_FM350GL_H */
 diff --git a/src/plugins/fm350gl/mm-plugin-fm350gl.c b/src/plugins/fm350gl/mm-plugin-fm350gl.c
@@ -1364,10 +1722,10 @@ index 0000000000000000000000000000000000000000..2437156fd5ff38b5146e5f3ec83e5892
 +}
 diff --git a/src/plugins/fm350gl/tests/test-modem-helpers-fm350gl.c b/src/plugins/fm350gl/tests/test-modem-helpers-fm350gl.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..6b8626625bc38794ac14046b3c11eef90a521299
+index 0000000000000000000000000000000000000000..af2caf52848df99d9c51b5ac78c2f59c31552641
 --- /dev/null
 +++ b/src/plugins/fm350gl/tests/test-modem-helpers-fm350gl.c
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,372 @@
 +/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 +/*
 + * This program is free software; you can redistribute it and/or modify
@@ -1451,6 +1809,269 @@ index 0000000000000000000000000000000000000000..6b8626625bc38794ac14046b3c11eef9
 +    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_UNSUPPORTED);
 +}
 +
++/*****************************************************************************/
++/* +CGCONTRDP (addresses replaced with documentation ranges)                 */
++
++/* T-Mobile US: empty bearer id, one line per IP family, IPv6 in dotted
++ * decimal. Live answer to +CGCONTRDP=0 on the attach bearer. */
++static const gchar *tmobile_cgcontrdp =
++    "+CGCONTRDP: 0,,\"wholesale\",\"\",\"\",\"192.0.2.34\",\"192.0.2.210\",\"\",\"\",0,,1436,,,,,,,1,1,0,\"1\",0,65535\r\n"
++    "\r\n"
++    "+CGCONTRDP: 0,,\"wholesale\",\"\",\"\",\"32.1.13.184.0.0.0.0.0.0.0.0.0.0.0.9\",\"32.1.13.184.0.0.0.0.0.0.0.0.0.0.0.16\",\"\",\"\",0,,1436,,,,,,,1,1,0,\"1\",0,65535";
++
++/* Verizon: bearer id filled, shorter trailing field list */
++static const gchar *verizon_cgcontrdp =
++    "+CGCONTRDP: 3,5,\"vzwinternet.mnc480.mcc311.gprs\",\"\",\"\",\"198.51.100.4\",\"198.51.100.5\",\"\",\"\",0,,1428,,,,,,,,,,,,0\r\n"
++    "\r\n"
++    "+CGCONTRDP: 3,5,\"vzwinternet.mnc480.mcc311.gprs\",\"\",\"\",\"32.1.13.184.0.21.255.0.1.148.0.13.0.0.0.4\",\"32.1.13.184.0.20.255.0.1.150.0.13.0.0.0.5\",\"\",\"\",0,,1428,,,,,,,,,,,,0";
++
++/* Verizon, +CGCONTRDP without a cid: every context, empty bearer ids, a
++ * quoted S-NSSAI list holding a comma, and an IMS line with P-CSCF only */
++static const gchar *verizon_all_contexts =
++    "+CGCONTRDP: 0,,\"vzwinternet.mnc480.mcc311.gprs\",\"\",\"\",\"198.51.100.4\",\"198.51.100.5\",\"\",\"\",0,,1428,,,,,,,1,8,0,\"1,7\",0,65535\r\n"
++    "+CGCONTRDP: 0,,\"vzwinternet.mnc480.mcc311.gprs\",\"\",\"\",\"32.1.13.184.0.21.255.0.1.148.0.13.0.0.0.4\",\"32.1.13.184.0.20.255.0.1.150.0.13.0.0.0.5\",\"\",\"\",0,,1428,,,,,,,1,8,0,\"1,7\",0,65535\r\n"
++    "+CGCONTRDP: 1,,\"ims\",\"\",\"\",\"32.1.13.184.0.21.255.0.1.148.0.13.0.0.0.4\",\"32.1.13.184.0.20.255.0.1.150.0.13.0.0.0.5\",\"32.1.13.184.0.2.49.5.0.160.1.4.0.0.0.6\",\"32.1.13.184.0.2.49.5.0.160.1.4.0.0.0.7\",0,,1428,,,,,,,2,5,0,\"1,7\",0,65535\r\n"
++    "+CGCONTRDP: 1,,\"ims\",\"\",\"\",\"\",\"\",\"32.1.13.184.0.4.49.8.0.176.1.4.0.0.0.8\",\"\",0,,1428,,,,,,,2,5,0,\"1,7\",0,65535\r\n"
++    "+CGCONTRDP: 2,,\"vzwadmin\",\"\",\"\",\"203.0.113.4\",\"203.0.113.5\",\"\",\"\",0,,1428,,,,,,,3,8,0,\"1,7\",0,65535";
++
++static void
++assert_dns (MMFm350glCgcontrdpFamily *family,
++            const gchar              *dns1,
++            const gchar              *dns2)
++{
++    g_assert_cmpstr (family->dns[0], ==, dns1);
++    g_assert_cmpstr (family->dns[1], ==, dns2);
++    g_assert_null (family->dns[2]);
++}
++
++static void
++test_cgcontrdp_tmobile (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    info = mm_fm350gl_parse_cgcontrdp_response (tmobile_cgcontrdp, 0, &error);
++    g_assert_no_error (error);
++    g_assert_nonnull (info);
++
++    g_assert_true (info->ipv4.present);
++    g_assert_cmpuint (info->ipv4.prefix, ==, 0);
++    g_assert_null (info->ipv4.gateway);
++    assert_dns (&info->ipv4, "192.0.2.34", "192.0.2.210");
++    g_assert_cmpuint (info->ipv4.mtu, ==, 1436);
++
++    g_assert_true (info->ipv6.present);
++    g_assert_null (info->ipv6.gateway);
++    assert_dns (&info->ipv6, "2001:db8::9", "2001:db8::10");
++    g_assert_cmpuint (info->ipv6.mtu, ==, 1436);
++}
++
++static void
++test_cgcontrdp_tmobile_ipv4_line_only (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    /* Same answer shape on cid 1, IPv4 line alone */
++    info = mm_fm350gl_parse_cgcontrdp_response (
++        "+CGCONTRDP: 1,,\"wholesale\",\"\",\"\",\"192.0.2.34\",\"192.0.2.210\",\"\",\"\",0,,1436,,,,,,,7,1,0,\"1\",0,65535",
++        1, &error);
++    g_assert_no_error (error);
++    g_assert_nonnull (info);
++    g_assert_true (info->ipv4.present);
++    assert_dns (&info->ipv4, "192.0.2.34", "192.0.2.210");
++    g_assert_false (info->ipv6.present);
++    assert_dns (&info->ipv6, NULL, NULL);
++}
++
++static void
++test_cgcontrdp_verizon (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    info = mm_fm350gl_parse_cgcontrdp_response (verizon_cgcontrdp, 3, &error);
++    g_assert_no_error (error);
++    g_assert_nonnull (info);
++    g_assert_true (info->ipv4.present);
++    assert_dns (&info->ipv4, "198.51.100.4", "198.51.100.5");
++    g_assert_cmpuint (info->ipv4.mtu, ==, 1428);
++    g_assert_true (info->ipv6.present);
++    assert_dns (&info->ipv6, "2001:db8:15:ff00:194:d:0:4", "2001:db8:14:ff00:196:d:0:5");
++    g_assert_cmpuint (info->ipv6.mtu, ==, 1428);
++}
++
++static void
++test_cgcontrdp_all_contexts (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++    g_autoptr(MMFm350glCgcontrdp) ims = NULL;
++    g_autoptr(MMFm350glCgcontrdp) admin = NULL;
++
++    info = mm_fm350gl_parse_cgcontrdp_response (verizon_all_contexts, 0, &error);
++    g_assert_no_error (error);
++    assert_dns (&info->ipv4, "198.51.100.4", "198.51.100.5");
++    assert_dns (&info->ipv6, "2001:db8:15:ff00:194:d:0:4", "2001:db8:14:ff00:196:d:0:5");
++
++    /* The P-CSCF-only IMS line carries no family of its own and is skipped */
++    ims = mm_fm350gl_parse_cgcontrdp_response (verizon_all_contexts, 1, &error);
++    g_assert_no_error (error);
++    g_assert_false (ims->ipv4.present);
++    g_assert_true (ims->ipv6.present);
++    assert_dns (&ims->ipv6, "2001:db8:15:ff00:194:d:0:4", "2001:db8:14:ff00:196:d:0:5");
++
++    admin = mm_fm350gl_parse_cgcontrdp_response (verizon_all_contexts, 2, &error);
++    g_assert_no_error (error);
++    assert_dns (&admin->ipv4, "203.0.113.4", "203.0.113.5");
++    g_assert_false (admin->ipv6.present);
++}
++
++static void
++test_cgcontrdp_address_mask_and_gateway (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    /* TS 27.007 v9.4+ layout with local address, mask, gateway and
++     * unspecified 0.0.0.0 entries that must be dropped */
++    info = mm_fm350gl_parse_cgcontrdp_response (
++        "+CGCONTRDP: 4,5,\"internet\",\"192.0.2.49.255.255.255.0\",\"192.0.2.1\",\"0.0.0.0\",\"198.51.100.132\",\"0.0.0.0\",\"0.0.0.0\",0",
++        4, &error);
++    g_assert_no_error (error);
++    g_assert_true (info->ipv4.present);
++    g_assert_cmpuint (info->ipv4.prefix, ==, 24);
++    g_assert_cmpstr (info->ipv4.gateway, ==, "192.0.2.1");
++    assert_dns (&info->ipv4, "198.51.100.132", NULL);
++    g_assert_cmpuint (info->ipv4.mtu, ==, 0);
++}
++
++static void
++test_cgcontrdp_legacy_subnet_field (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    /* Layout before TS 27.007 v9.4.0: the mask in a field of its own */
++    info = mm_fm350gl_parse_cgcontrdp_response (
++        "+CGCONTRDP: 4,5,\"internet\",\"192.0.2.49\",\"255.255.255.0\",\"192.0.2.1\",\"198.51.100.46\",\"198.51.100.132\",\"0.0.0.0\",\"0.0.0.0\"",
++        4, &error);
++    g_assert_no_error (error);
++    g_assert_true (info->ipv4.present);
++    g_assert_cmpuint (info->ipv4.prefix, ==, 24);
++    g_assert_cmpstr (info->ipv4.gateway, ==, "192.0.2.1");
++    assert_dns (&info->ipv4, "198.51.100.46", "198.51.100.132");
++    g_assert_cmpuint (info->ipv4.mtu, ==, 0);
++}
++
++static void
++test_cgcontrdp_legacy_short_mask (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    info = mm_fm350gl_parse_cgcontrdp_response (
++        "+CGCONTRDP: 4,5,\"internet\",\"10.0.0.49\",\"254.0.0.0\",\"10.0.0.1\",\"198.51.100.46\",\"198.51.100.132\"",
++        4, &error);
++    g_assert_no_error (error);
++    g_assert_cmpuint (info->ipv4.prefix, ==, 7);
++    g_assert_cmpstr (info->ipv4.gateway, ==, "10.0.0.1");
++    assert_dns (&info->ipv4, "198.51.100.46", "198.51.100.132");
++}
++
++static void
++test_cgcontrdp_bare_address_with_gateway (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    /* A bare local address followed by a gateway stays in the v9.4 layout */
++    info = mm_fm350gl_parse_cgcontrdp_response (
++        "+CGCONTRDP: 4,5,\"internet\",\"192.0.2.49\",\"192.0.2.1\",\"198.51.100.46\",\"198.51.100.132\"",
++        4, &error);
++    g_assert_no_error (error);
++    g_assert_cmpuint (info->ipv4.prefix, ==, 0);
++    g_assert_cmpstr (info->ipv4.gateway, ==, "192.0.2.1");
++    assert_dns (&info->ipv4, "198.51.100.46", "198.51.100.132");
++}
++
++static void
++test_cgcontrdp_bad_second_line (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    /* A malformed IPv6 line doesn't discard the valid IPv4 line */
++    info = mm_fm350gl_parse_cgcontrdp_response (
++        "+CGCONTRDP: 1,,\"wholesale\",\"\",\"\",\"192.0.2.34\",\"192.0.2.210\",\"\",\"\",0,,1436\r\n"
++        "+CGCONTRDP: 1,,\"wholesale\",\"\",\"\",\"32.1.13.184.0.0.0.0.0.0.0.0.0.0.0.999\",\"\",\"\",\"\",0,,1436",
++        1, &error);
++    g_assert_no_error (error);
++    g_assert_nonnull (info);
++    g_assert_true (info->ipv4.present);
++    assert_dns (&info->ipv4, "192.0.2.34", "192.0.2.210");
++    g_assert_false (info->ipv6.present);
++}
++
++static void
++test_cgcontrdp_no_line_for_cid (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    info = mm_fm350gl_parse_cgcontrdp_response (tmobile_cgcontrdp, 1, &error);
++    g_assert_null (info);
++    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED);
++}
++
++static void
++test_cgcontrdp_empty (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    info = mm_fm350gl_parse_cgcontrdp_response ("", 0, &error);
++    g_assert_null (info);
++    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED);
++}
++
++static void
++test_cgcontrdp_invalid_address (void)
++{
++    g_autoptr(GError)             error = NULL;
++    g_autoptr(MMFm350glCgcontrdp) info = NULL;
++
++    info = mm_fm350gl_parse_cgcontrdp_response (
++        "+CGCONTRDP: 0,,\"wholesale\",\"\",\"\",\"192.0.2.300\",\"\",\"\",\"\",0,,1436", 0, &error);
++    g_assert_null (info);
++    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_FAILED);
++}
++
++static void
++test_parse_address (void)
++{
++    g_autoptr(GInetAddress) v4 = NULL;
++    g_autoptr(GInetAddress) v6_dotted = NULL;
++    g_autoptr(GInetAddress) v6_colon = NULL;
++    g_autofree gchar       *v6_str = NULL;
++
++    v4 = mm_fm350gl_parse_address ("192.0.2.34");
++    g_assert_nonnull (v4);
++    g_assert_cmpint (g_inet_address_get_family (v4), ==, G_SOCKET_FAMILY_IPV4);
++
++    v6_dotted = mm_fm350gl_parse_address ("32.1.13.184.0.0.0.0.10.211.217.82.132.0.49.82");
++    g_assert_nonnull (v6_dotted);
++    v6_str = g_inet_address_to_string (v6_dotted);
++    g_assert_cmpstr (v6_str, ==, "2001:db8::ad3:d952:8400:3152");
++
++    v6_colon = mm_fm350gl_parse_address ("2001:db8::1");
++    g_assert_nonnull (v6_colon);
++
++    g_assert_null (mm_fm350gl_parse_address (""));
++    g_assert_null (mm_fm350gl_parse_address ("1.2.3"));
++    g_assert_null (mm_fm350gl_parse_address ("1.2.3.256"));
++}
++
 +int
 +main (int argc, char **argv)
 +{
@@ -1461,6 +2082,19 @@ index 0000000000000000000000000000000000000000..6b8626625bc38794ac14046b3c11eef9
 +    g_test_add_func ("/MM/fm350gl/modes/parse-invalid", test_parse_invalid_mode);
 +    g_test_add_func ("/MM/fm350gl/modes/build-command", test_build_set_command);
 +    g_test_add_func ("/MM/fm350gl/modes/build-invalid-preference", test_build_invalid_preference);
++    g_test_add_func ("/MM/fm350gl/address/parse", test_parse_address);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/tmobile", test_cgcontrdp_tmobile);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/tmobile-ipv4-line-only", test_cgcontrdp_tmobile_ipv4_line_only);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/verizon", test_cgcontrdp_verizon);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/all-contexts", test_cgcontrdp_all_contexts);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/address-mask-gateway", test_cgcontrdp_address_mask_and_gateway);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/legacy-subnet-field", test_cgcontrdp_legacy_subnet_field);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/legacy-short-mask", test_cgcontrdp_legacy_short_mask);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/bare-address-gateway", test_cgcontrdp_bare_address_with_gateway);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/bad-second-line", test_cgcontrdp_bad_second_line);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/no-line-for-cid", test_cgcontrdp_no_line_for_cid);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/empty", test_cgcontrdp_empty);
++    g_test_add_func ("/MM/fm350gl/cgcontrdp/invalid-address", test_cgcontrdp_invalid_address);
 +
 +    return g_test_run ();
 +}
