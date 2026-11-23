@@ -164,9 +164,9 @@ The code originates in the BELABOX ModemManager fork, forward-ported from
 Tested on a Fibocom FM350-GL, firmware 81600.0000.00.19.17.10, in both
 GTUSBMODE compositions (0e8d:7126 and 0e8d:7127), on an RK3588 board running
 Debian bookworm. The empty-bearer-id parsing is covered by unit tests with
-captured T-Mobile US answers from firmware 81600.0000.00.29.18.01; a data
-connection with the fixed bearer on that firmware still needs a hardware
-check.
+captured T-Mobile US answers from firmware 81600.0000.00.29.18.01, and a
+data connection on that firmware and carrier was checked on hardware
+(connect, DNS, HTTPS, two disconnect and reconnect cycles).
 ```
 
 ### Commits in this MR

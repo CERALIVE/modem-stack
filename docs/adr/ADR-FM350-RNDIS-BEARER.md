@@ -129,16 +129,23 @@ the address as gateway and no DNS. An error answer, cancellation or timeout stil
 connection, as before. This restores what BELABOX's bearer did; with it the first attempt
 succeeds, so the 5847 retry loop doesn't start.
 
-Not changed: a later `+CGACT=1,0` on the still-active attach bearer may still be refused with
-5847, for example on a reconnect after a disconnect that couldn't deactivate it. Whether that
-happens with an unchanged profile is untested; it needs a hardware check before any handling is
-added, and reusing an active context safely needs more than the module reports (`+CGACT?` shows
-the cid active, not which APN session it carries).
+No reuse of an already active context was added: `+CGACT?` shows a cid active, not which APN
+session it carries, so it can't be done safely. On hardware it wasn't needed: after a disconnect,
+`+CGACT=0,0` answered OK and the next `+CGACT=1,0` with an unchanged profile answered OK too,
+twice in a row, with no 5847.
 
 The change is folded into patch 0001, so the series stays at three patches. Unit tests cover the
 T-Mobile and Verizon answers as captured (documentation-range addresses), the older subnet
 layout including a short mask, a bare address followed by a gateway, and a malformed line next
-to a good one. Hardware confirmation on T-Mobile is pending.
+to a good one.
+
+Hardware check (2026-11-23, firmware `81600.0000.00.29.18.01`, mode 41, T-Mobile US SIM, this
+series built for arm64): the first connection after boot came up on attempt 1 from the two-line
+answer, with a static IPv4 /32, the reported IPv4 and IPv6 DNS and MTU 1436; DNS and HTTPS over
+IPv4 worked through the RNDIS interface. After a USB re-enumeration it reconnected on the first
+attempt. Of two disconnect and reconnect cycles, one re-activation was granted IPv6 only (the
+answer had only the IPv6 line, which parsed); the other got IPv4 and IPv6 again. Which families
+the network grants on a re-activation is outside the plugin.
 
 ---
 
