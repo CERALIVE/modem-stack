@@ -142,10 +142,14 @@ Also included:
     Feedback on a better mechanism than a fixed delay is welcome — see the
     open question below.
 
-  * IPv4-only +CGCONTRDP replies. The initial parser required at least 30
+  * +CGCONTRDP replies. The initial parser required at least 30
     comma-separated fields and hard-failed shorter replies, so an IPv4-only
-    APN never connected. The floor is now 7 fields, with the IPv6 DNS pair
-    read only when present.
+    APN never connected. The generic parser can't be used instead: some
+    networks (T-Mobile US) leave the bearer id empty, which it rejects. The
+    bearer parses the answer itself, line by line, by cid and address
+    family (IPv4-only and dual-stack replies, IPv6 in dotted decimal), and
+    treats an answer without a usable line as non-fatal once +CGPADDR has
+    given the address.
 
 The code originates in the BELABOX ModemManager fork, forward-ported from
 1.23-era ModemManager onto current main. Original commits:
@@ -159,7 +163,10 @@ The code originates in the BELABOX ModemManager fork, forward-ported from
 
 Tested on a Fibocom FM350-GL, firmware 81600.0000.00.19.17.10, in both
 GTUSBMODE compositions (0e8d:7126 and 0e8d:7127), on an RK3588 board running
-Debian bookworm.
+Debian bookworm. The empty-bearer-id parsing is covered by unit tests with
+captured T-Mobile US answers from firmware 81600.0000.00.29.18.01; a data
+connection with the fixed bearer on that firmware still needs a hardware
+check.
 ```
 
 ### Commits in this MR

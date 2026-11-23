@@ -20,4 +20,14 @@ if grep -Fq '+                                   "Z",' "$PATCH"; then
 	fail 'FM350 override regressed to Z, which this firmware rejects with CME 59'
 fi
 
+grep -Fq '+    info = mm_fm350gl_parse_cgcontrdp_response (response, ctx->cid, &error);' "$PATCH" ||
+	fail 'FM350 bearer does not parse +CGCONTRDP with its own lenient parser'
+if grep -Fq '+    if (!response || !mm_3gpp_parse_cgcontrdp_response' "$PATCH"; then
+	fail 'FM350 bearer regressed to the generic +CGCONTRDP parser, which rejects an empty bearer id'
+fi
+grep -Fq '+    g_test_add_func ("/MM/fm350gl/cgcontrdp/tmobile", test_cgcontrdp_tmobile);' "$PATCH" ||
+	fail 'FM350 patch lost the empty-bearer-id +CGCONTRDP regression test'
+
 printf 'PASS: FM350 patch preserves the hardware-required Z0 first-enable override\n'
+
+printf 'PASS: FM350 patch keeps the lenient +CGCONTRDP parser and its regression test\n'
